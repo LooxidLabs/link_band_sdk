@@ -84,24 +84,51 @@ class DeviceManager:
 
         self.logger.info(f"Attempting to connect to {address}...")
         try:
-            self.client = BleakClient(address, disconnected_callback=self._handle_disconnect)
-            await self.client.connect(timeout=10.0)
+            # First, try to discover the device
+            devices = await BleakScanner.discover(timeout=5.0)
+            device = next((dev for dev in devices if dev.address == address), None)
+            
+            if not device:
+                self.logger.error(f"Device with address {address} not found during scanning")
+                return False
+
+            self.client = BleakClient(device, disconnected_callback=self._handle_disconnect)
+            
+            try:
+                await self.client.connect(timeout=10.0)
+            except Exception as connect_error:
+                self.logger.error(f"Failed to connect to device: {connect_error}")
+                await self._cleanup_connection()
+                return False
+
             self.is_connected_flag = self.client.is_connected
             if self.is_connected_flag:
                 # Ensure address and name are stored as strings immediately
                 self.device_address = str(address) 
-                raw_name = getattr(self.client, 'name', None)
+                raw_name = getattr(self.client, 'name', None) or device.name
                 self.device_name = str(raw_name) if raw_name is not None else self.device_address
                 self.logger.info(f"Successfully connected to {self.device_name} ({self.device_address})")
+                
                 # 연결 성공 후 자동으로 데이터 수집 시작
-                await self.start_data_acquisition()
+                acquisition_success = await self.start_data_acquisition()
+                if not acquisition_success:
+                    self.logger.error("Failed to start data acquisition")
+                    await self._cleanup_connection()
+                    return False
+                
+                # 배터리 모니터링 시작
+                battery_success = await self.start_battery_monitoring()
+                if not battery_success:
+                    self.logger.warning("Failed to start battery monitoring")
+                
                 return True
             else:
                 self.logger.error(f"Failed to connect to {address}.")
                 await self._cleanup_connection()
                 return False
+                
         except Exception as e:
-            self.logger.error(f"Error connecting to {address}: {e}", exc_info=True) # Add traceback
+            self.logger.error(f"Error connecting to {address}: {e}", exc_info=True)
             await self._cleanup_connection()
             return False
 
@@ -129,21 +156,56 @@ class DeviceManager:
         """Callback executed when the device unexpectedly disconnects."""
         self.logger.warning(f"Device {self.device_name} ({self.device_address}) disconnected unexpectedly.")
         # Ensure cleanup runs in the event loop associated with the client if possible
-        # Or schedule it in a known running loop
         loop = asyncio.get_event_loop()
         loop.create_task(self._cleanup_connection())
-        # TODO: Notify the server about the disconnection. Need a mechanism.
-        # Example: self.server_disconnect_callback(self.device_address)
+        
+        # Notify the server about the disconnection
+        if self.server_disconnect_callback:
+            address = self.device_address
+            loop.create_task(self.server_disconnect_callback(address))
 
     async def _cleanup_connection(self):
         """Clean up connection resources."""
+        # Stop data acquisition if it's running
+        if self._notifications_started:
+            try:
+                await self.stop_data_acquisition()
+            except Exception as e:
+                self.logger.error(f"Error stopping data acquisition during cleanup: {e}")
+
+        # Stop battery monitoring if it's running
+        if self.battery_running:
+            try:
+                await self.stop_battery_monitoring()
+            except Exception as e:
+                self.logger.error(f"Error stopping battery monitoring during cleanup: {e}")
+
+        # Clear all buffers and reset counters
+        self.eeg_buffer.clear()
+        self.ppg_buffer.clear()
+        self.acc_buffer.clear()
+        
+        # Reset sample counters
+        self.eeg_sample_count = 0
+        self.ppg_sample_count = 0
+        self.acc_sample_count = 0
+        
+        # Reset all flags and references
         self.is_connected_flag = False
+        self._notifications_started = False
+        self.battery_running = False
+        self.battery_level = None
+        
+        # Store the device info temporarily for disconnect notification
+        device_info = self.get_device_info()
+        
+        # Clear device info
         self.client = None
         self.device_address = None
         self.device_name = None
-        self._notifications_started = False
+        
         self.logger.info("Connection resources cleaned up.")
-
+        return device_info  # Return device info for notification purposes
 
     def is_connected(self) -> bool:
         """Check if a device is currently connected."""

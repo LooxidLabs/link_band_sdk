@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { create } from 'zustand';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Container, 
@@ -20,6 +19,7 @@ import {
 import { useElectron } from './hooks/useElectron';
 import { RunServerStatus } from './components/RunServerStatus';
 import { DeviceManagerPanel } from './components/DeviceManagerPanel';
+import { useDeviceManager } from './stores/device_manager';
 
 // Create a theme instance
 const theme = createTheme({
@@ -34,61 +34,30 @@ const theme = createTheme({
   },
 });
 
-export type LeadOffStatus = 'good' | 'bad' | 'unknown';
-
-export type DeviceManagerState = {
-  leadOffCh1Status: LeadOffStatus;
-  leadOffCh2Status: LeadOffStatus;
-};
-
-export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
-  leadOffCh1Status: 'unknown',
-  leadOffCh2Status: 'unknown',
-
-  connect: () => {
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.type === 'sensor_data') {
-          set((state) => {
-            const newEEGSamples = pushWithLimit(state.eegSamples, data.eeg || [], EEG_QUEUE_LEN);
-            const eegRate = calcSamplingRateFromQueue(newEEGSamples);
-
-            let leadOffCh1: LeadOffStatus = state.leadOffCh1Status;
-            let leadOffCh2: LeadOffStatus = state.leadOffCh2Status;
-            if (data.eeg && data.eeg.length > 0) {
-              const lastEEGSample = data.eeg[data.eeg.length - 1];
-              leadOffCh1 = lastEEGSample.leadoff_ch1 === 0 ? 'good' : 'bad';
-              leadOffCh2 = lastEEGSample.leadoff_ch2 === 0 ? 'good' : 'bad';
-            }
-
-            return {
-              eegRate,
-              ppgRate,
-              accRate,
-              leadOffCh1Status: leadOffCh1,
-              leadOffCh2Status: leadOffCh2,
-            };
-          });
-        }
-      } catch (e) {
-        // ...
-      }
-    };
-    set({ ws });
-  },
-
-  clearData: () => set({
-    eegSamples: [], ppgSamples: [], accSamples: [],
-    eegRate: 0, ppgRate: 0, accRate: 0,
-    leadOffCh1Status: 'unknown', leadOffCh2Status: 'unknown'
-  }),
-}));
-
 function App() {
   const [message, setMessage] = useState('');
   const { sendMessage, response, isElectronAvailable } = useElectron();
+  const deviceManager = useDeviceManager();
+
+  // 앱 시작시 WebSocket 연결 시도 및 재연결 로직
+  useEffect(() => {
+    const attemptConnection = () => {
+      if (!deviceManager.isConnected) {
+        console.log('Attempting WebSocket connection...');
+        deviceManager.connect();
+      }
+    };
+
+    // 초기 연결 시도
+    attemptConnection();
+
+    // 1초마다 연결 상태 확인 및 재연결 시도
+    const intervalId = setInterval(() => {
+      attemptConnection();
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [deviceManager]);
 
   const handleSendMessage = () => {
     sendMessage({ message });
@@ -108,18 +77,8 @@ function App() {
           </Toolbar>
         </AppBar>
         <Container maxWidth="lg" sx={{ mt: 4 }}>
-          <Paper elevation={3} sx={{ p: 4 }}>
-            <Typography variant="h4" component="h1" gutterBottom>
-              Welcome to Link Band SDK
-            </Typography>
-            <Typography variant="body1" paragraph>
-              This is a desktop application for managing and interacting with Link Band devices.
-            </Typography>
-            
-
-          </Paper>
-          {/* Device Manager Panel: placed below main Paper for clear separation */}
           <DeviceManagerPanel />
+          
         </Container>
       </Box>
     </ThemeProvider>

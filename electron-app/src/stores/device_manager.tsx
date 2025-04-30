@@ -36,6 +36,7 @@ export type DeviceManagerState = {
   isStreaming: boolean;
   battery: number | null;
   scannedDevices: DeviceInfo[];
+  registeredDevices: DeviceInfo[];
   connectedDevice: DeviceInfo | null;
   eegSamples: EEGSample[];
   ppgSamples: PPGSample[];
@@ -56,6 +57,7 @@ export type DeviceManagerState = {
   startStreaming: () => void;
   stopStreaming: () => void;
   clearData: () => void;
+  updateRegisteredDevices: (devices: DeviceInfo[]) => void;
 };
 
 export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
@@ -64,6 +66,7 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
   isStreaming: false,
   battery: null,
   scannedDevices: [],
+  registeredDevices: [],
   connectedDevice: null,
   eegSamples: [],
   ppgSamples: [],
@@ -120,20 +123,31 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
                 battery: data.data?.battery ?? null,
                 connectedDevice: data.data?.device_info || get().connectedDevice,
               });
+            } else if (data.event_type === 'registered_devices') {
+              set({ registeredDevices: data.data.devices || [] });
             }
           } else if (data.type === 'sensor_data') {
-            // console.log("Processing sensor_data:", data);
+            console.log("Received sensor_data:", data);
             set((state) => {
-              const nowInMillis = Date.now();
-
               const newEEGSamples = pushWithLimit(state.eegSamples, data.eeg || [], EEG_QUEUE_LEN);
               const newPPGSamples = pushWithLimit(state.ppgSamples, data.ppg || [], PPG_QUEUE_LEN);
               const newACCSamples = pushWithLimit(state.accSamples, data.acc || [], ACC_QUEUE_LEN);
 
-              // 최근 3초(3000ms)간 도착한 샘플 개수를 세고 3으로 나누어 Hz 계산
-              const eegRate = newEEGSamples.filter(s => nowInMillis - s.timestamp <= 3000).length / 3.0;
-              const ppgRate = newPPGSamples.filter(s => nowInMillis - s.timestamp <= 3000).length / 3.0;
-              const accRate = newACCSamples.filter(s => nowInMillis - s.timestamp <= 3000).length / 3.0;
+              // 가장 최근 샘플과 가장 오래된 샘플 사이의 시간 차이를 이용하여 샘플링 레이트 계산
+              const getRate = (samples: { timestamp: number }[]) => {
+                if (samples.length < 2) return 0;
+                const newestTimestamp = samples[samples.length - 1].timestamp;
+                const oldestTimestamp = samples[0].timestamp;
+                const timeDiffInSeconds = (newestTimestamp - oldestTimestamp) / 1000; // ms to seconds
+                if (timeDiffInSeconds <= 0) return 0;
+                return samples.length / timeDiffInSeconds;
+              };
+
+              const eegRate = getRate(newEEGSamples);
+              const ppgRate = getRate(newPPGSamples);
+              const accRate = getRate(newACCSamples);
+
+              console.log("Calculated rates:", { eegRate, ppgRate, accRate });
 
               // 리드오프 상태 업데이트
               let leadOffCh1: LeadOffStatus = state.leadOffCh1Status;
@@ -143,8 +157,6 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
                 leadOffCh1 = lastEEGSample.leadoff_ch1 === 0 ? 'good' : 'bad';
                 leadOffCh2 = lastEEGSample.leadoff_ch2 === 0 ? 'good' : 'bad';
               }
-
-              // console.log("Calculated Rates:", { eegRate, ppgRate, accRate });
 
               return {
                 battery: data.battery ?? state.battery,
@@ -239,4 +251,7 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
     eegRate: 0, ppgRate: 0, accRate: 0,
     leadOffCh1Status: 'unknown', leadOffCh2Status: 'unknown'
   }),
+  updateRegisteredDevices: (devices: DeviceInfo[]) => {
+    set({ registeredDevices: devices });
+  },
 })); 

@@ -7,6 +7,7 @@ from typing import Set, Dict, Any, Optional
 from enum import Enum, auto
 from datetime import datetime
 from device import DeviceManager, DeviceStatus
+from device_registry import DeviceRegistry
 
 # Configure logging
 logging.basicConfig(
@@ -30,6 +31,7 @@ class EventType(Enum):
     DEVICE_INFO = "device_info"
     DATA_ACQUISITION_STARTED = "data_acquisition_started"
     DATA_ACQUISITION_STOPPED = "data_acquisition_stopped"
+    REGISTERED_DEVICES = "registered_devices"
 
 class WebSocketServer:
     def __init__(self, host: str = "localhost", port: int = 8765):
@@ -40,6 +42,8 @@ class WebSocketServer:
         self.server: Optional[websockets.WebSocketServer] = None
         self.stream_task: Optional[asyncio.Task] = None # Task for stream_data loop
         self.device_manager = DeviceManager(server_disconnect_callback=self.handle_unexpected_disconnect)
+        self.device_registry = DeviceRegistry()
+        self.auto_connect_task: Optional[asyncio.Task] = None
 
     async def initialize(self):
         logger.info("Initializing WebSocket server...")
@@ -71,20 +75,38 @@ class WebSocketServer:
 
     async def _send_current_device_status(self, websocket: websockets.WebSocketServerProtocol):
         """Send the current device connection status to a specific client."""
-        device_info = self.device_manager.get_device_info()
+        is_connected = self.device_manager.is_connected()
+        device_info = self.device_manager.get_device_info() if is_connected else None
+        
         status_data = {
-            "connected": self.device_manager.is_connected(),
-            "device_info": device_info
+            "connected": is_connected,
+            "device_info": device_info,
+            "is_streaming": self.is_streaming if is_connected else False
         }
         await self.send_event_to_client(websocket, EventType.DEVICE_INFO, status_data)
 
     async def handle_unexpected_disconnect(self, device_address: Optional[str]):
+        """Handle unexpected device disconnection."""
         logger.warning(f"Handling unexpected disconnect for address: {device_address}")
+        
+        # Stop streaming if it's active
         if self.is_streaming:
             await self.stop_streaming()
+            
+        # Get device info before cleanup
+        device_info = self.device_manager.get_device_info()
+        
+        # Notify all clients about the disconnection
         await self.broadcast_event(EventType.DEVICE_DISCONNECTED, {
             "device_address": device_address,
+            "device_info": device_info,
             "reason": "unexpected_disconnect"
+        })
+
+        # Send updated device status to all clients
+        await self.broadcast_event(EventType.DEVICE_INFO, {
+            "connected": False,
+            "device_info": None
         })
 
     async def start(self):
@@ -92,10 +114,18 @@ class WebSocketServer:
         if not self.server:
             await self.initialize()
         logger.info("WebSocket server started")
+        # Start auto-connect task
+        self.auto_connect_task = asyncio.create_task(self._auto_connect_loop())
 
     async def stop(self):
         """Stop the WebSocket server and disconnect BLE device if connected."""
         logger.info("Stopping WebSocket server...")
+        if self.auto_connect_task:
+            self.auto_connect_task.cancel()
+            try:
+                await self.auto_connect_task
+            except asyncio.CancelledError:
+                pass
         if self.stream_task: # Stop streaming task first
             self.stream_task.cancel()
             try: await self.stream_task
@@ -114,6 +144,26 @@ class WebSocketServer:
                 logger.warning("WebSocket server close timed out.")
         else:
             logger.warning("Server object not found, already stopped?")
+
+    async def _auto_connect_loop(self):
+        """Periodically check and connect to registered devices"""
+        while True:
+            try:
+                if not self.device_manager.is_connected():
+                    registered_devices = self.device_registry.get_registered_devices()
+                    for device in registered_devices:
+                        address = device.get('address')
+                        if address:
+                            logger.info(f"Attempting to connect to registered device: {address}")
+                            await self._run_connect_and_notify(address)
+                            if self.device_manager.is_connected():
+                                break
+                await asyncio.sleep(1)  # Check every second
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in auto-connect loop: {e}")
+                await asyncio.sleep(1)
 
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
         """Handle messages from clients"""
@@ -153,6 +203,41 @@ class WebSocketServer:
                     "is_streaming": self.is_streaming,
                     "device_connected": self.device_manager.is_connected()
                 }))
+
+            elif command == "get_registered_devices":
+                devices = self.device_registry.get_registered_devices()
+                await self.send_event_to_client(websocket, EventType.REGISTERED_DEVICES, {"devices": devices})
+
+            elif command == "register_device":
+                if self.device_registry.register_device(payload):
+                    devices = self.device_registry.get_registered_devices()
+                    await self.broadcast_event(EventType.REGISTERED_DEVICES, {"devices": devices})
+                else:
+                    await self.send_error_to_client(websocket, "Failed to register device")
+
+            elif command == "unregister_device":
+                address = payload.get("address")
+                if not address:
+                    await self.send_error_to_client(websocket, "Address is required for unregister_device command.")
+                    return
+
+                # 현재 연결된 디바이스인 경우 연결 해제
+                if self.device_manager.is_connected():
+                    connected_device = self.device_manager.get_device_info()
+                    if connected_device and connected_device.get("address") == address:
+                        logger.info(f"Disconnecting device {address} before unregistering")
+                        if self.is_streaming:
+                            await self.stop_streaming()
+                        await self.device_manager.disconnect()
+
+                # 디바이스 등록 해제
+                if self.device_registry.unregister_device(address):
+                    devices = self.device_registry.get_registered_devices()
+                    await self.broadcast_event(EventType.REGISTERED_DEVICES, {"devices": devices})
+                    logger.info(f"Successfully unregistered device: {address}")
+                else:
+                    await self.send_error_to_client(websocket, "Failed to unregister device")
+
             else:
                 logger.warning(f"Unknown command received: {command}")
                 await self.send_error_to_client(websocket, f"Unknown command: {command}")
@@ -227,6 +312,7 @@ class WebSocketServer:
             logger.error(f"Error in _cleanup_connection: {e}", exc_info=True)
 
     async def _run_disconnect_and_notify(self, websocket):
+        """Disconnect device and notify clients."""
         device_info = self.device_manager.get_device_info()
         if not device_info:
             await self.send_error_to_client(websocket, "No device currently connected.")
@@ -238,7 +324,16 @@ class WebSocketServer:
         try:
             success = await self.device_manager.disconnect()
             if success:
-                await self.broadcast_event(EventType.DEVICE_DISCONNECTED, {"device_info": device_info, "reason": "user_request"})
+                # Notify about disconnection
+                await self.broadcast_event(EventType.DEVICE_DISCONNECTED, {
+                    "device_info": device_info,
+                    "reason": "user_request"
+                })
+                # Update device status
+                await self.broadcast_event(EventType.DEVICE_INFO, {
+                    "connected": False,
+                    "device_info": None
+                })
             else:
                 await self.send_error_to_client(websocket, f"Failed to disconnect device {device_info['address']}")
         except Exception as e:
