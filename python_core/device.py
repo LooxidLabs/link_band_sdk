@@ -7,6 +7,7 @@ from collections import deque
 from bleak.backends.device import BLEDevice
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from enum import Enum, auto
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -56,6 +57,11 @@ class DeviceManager:
         self.ppg_buffer = deque()
         self.acc_buffer = deque()
         self._buffer_lock = asyncio.Lock() # Lock for thread-safe buffer access
+
+        self.eeg_sample_count = 0
+        self.ppg_sample_count = 0
+        self.acc_sample_count = 0
+        self.last_sample_log_time = time.time()
 
     async def scan_devices(self) -> List[Dict[str, Any]]:
         """Scan for available BLE devices."""
@@ -271,6 +277,7 @@ class DeviceManager:
             # Add all samples to the buffer
             if samples_to_add:
                 self.eeg_buffer.extend(samples_to_add)
+                self.eeg_sample_count += len(samples_to_add)
 
         except Exception as e:
             self.logger.error(f"Error processing EEG data: {e}", exc_info=True)
@@ -309,6 +316,7 @@ class DeviceManager:
 
             if samples_to_add:
                 self.ppg_buffer.extend(samples_to_add)
+                self.ppg_sample_count += len(samples_to_add)
                 self.logger.debug(f"Added {len(samples_to_add)} PPG samples to buffer")
 
         except Exception as e:
@@ -354,6 +362,7 @@ class DeviceManager:
 
             if samples_to_add:
                 self.acc_buffer.extend(samples_to_add)
+                self.acc_sample_count += len(samples_to_add)
                 self.logger.debug(f"Added {len(samples_to_add)} ACC samples to buffer")
 
         except Exception as e:
@@ -427,5 +436,16 @@ class DeviceManager:
             "acc": acc_data,
             "battery": self.battery_level
         }
+
+        # 샘플링 속도 계산 및 로그 (1초마다)
+        now = time.time()
+        if now - self.last_sample_log_time >= 0.2:
+            print(f"[샘플링 속도] EEG: {self.eeg_sample_count} samples/sec, "
+                  f"PPG: {self.ppg_sample_count} samples/sec, "
+                  f"ACC: {self.acc_sample_count} samples/sec")
+            self.eeg_sample_count = 0
+            self.ppg_sample_count = 0
+            self.acc_sample_count = 0
+            self.last_sample_log_time = now
 
         return result

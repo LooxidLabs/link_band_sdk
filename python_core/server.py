@@ -293,7 +293,7 @@ class WebSocketServer:
     async def stream_data(self):
         """Periodically fetches buffered data and broadcasts it."""
         logger.info("Stream data task started.")
-        SEND_INTERVAL = 1.0 # Send data every 1 second
+        SEND_INTERVAL = 0.1 # Send data every 1 second
         try:
             while self.is_streaming:
                 await asyncio.sleep(SEND_INTERVAL)
