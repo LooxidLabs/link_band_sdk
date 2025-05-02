@@ -42,9 +42,9 @@ function isServiceRegistered() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    show: false, // Initially hidden
+    width: 450,
+    height: 700,
+    show: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -64,21 +64,25 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
-  // Prevent window from being closed
+  // X 버튼 클릭 시 hide, Quit 메뉴 선택 시 종료
   mainWindow.on('close', (event) => {
     if (!app.isQuitting) {
       event.preventDefault();
-      mainWindow?.hide();
+      mainWindow?.hide();  // hide로 변경
+      if (process.platform === 'darwin') {
+        app.dock.hide();  // macOS에서는 dock에서도 숨김
+      }
+      return false;
     }
-    return false;
   });
 
+  // 창이 최소화되어도 dock에서 숨기지 않음
   if (process.platform === 'darwin') {
     mainWindow.on('show', () => {
-      app.dock.show();
+      app.dock.show();  // 창이 다시 보일 때 dock에도 표시
     });
-    mainWindow.on('hide', () => {
-      app.dock.hide();
+    mainWindow.on('minimize', () => {
+      mainWindow?.show();  // 최소화 시도시 다시 보이게 함
     });
   }
 
@@ -112,6 +116,10 @@ function createTray() {
       label: 'Show App', 
       click: () => {
         mainWindow?.show();
+        if (process.platform === 'darwin') {
+          app.dock.show();
+        }
+        mainWindow?.focus();
       }
     },
     { type: 'separator' },
@@ -127,26 +135,52 @@ function createTray() {
   tray.setToolTip('Link Band SDK');
   tray.setContextMenu(contextMenu);
 
-  // Double click to show window
+  // 트레이 아이콘 클릭으로 창 열기
+  tray.on('click', () => {
+    mainWindow?.show();
+    if (process.platform === 'darwin') {
+      app.dock.show();
+    }
+    mainWindow?.focus();
+  });
+
+  // Double click도 동일하게 처리
   tray.on('double-click', () => {
     mainWindow?.show();
+    if (process.platform === 'darwin') {
+      app.dock.show();
+    }
+    mainWindow?.focus();
   });
 }
 
 // Initialize isQuitting property
 app.isQuitting = false;
 
+// 앱이 실행될 때 dock에 표시
 app.whenReady().then(() => {
   createWindow();
   createTray();
 
   if (process.platform === 'darwin') {
+    app.dock.show();  // dock에 항상 표시
     app.dock.setIcon(path.join(__dirname, 'assets', 'dockIcon.png'));
   }
 });
 
+// 모든 창이 닫혔을 때의 동작
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    app.isQuitting = true;
     app.quit();
+  }
+});
+
+// 앱 활성화 시 창이 없으면 새로 생성
+app.on('activate', () => {
+  if (mainWindow === null) {
+    createWindow();
+  } else if (!mainWindow.isVisible()) {
+    mainWindow.show();
   }
 }); 

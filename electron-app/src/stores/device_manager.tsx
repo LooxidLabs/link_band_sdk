@@ -35,6 +35,7 @@ export type DeviceManagerState = {
   isConnected: boolean;
   isStreaming: boolean;
   battery: number | null;
+  lastBattery: number | null;  // 이전 배터리 값 저장
   scannedDevices: DeviceInfo[];
   registeredDevices: DeviceInfo[];
   connectedDevice: DeviceInfo | null;
@@ -65,6 +66,7 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
   isConnected: false,
   isStreaming: false,
   battery: null,
+  lastBattery: null,  // 초기값 설정
   scannedDevices: [],
   registeredDevices: [],
   connectedDevice: null,
@@ -120,7 +122,7 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
               set({ isStreaming: false });
             } else if (data.event_type === 'device_info') {
               set({
-                battery: data.data?.battery ?? null,
+                battery: data.data?.battery ?? get().battery,
                 connectedDevice: data.data?.device_info || get().connectedDevice,
               });
             } else if (data.event_type === 'registered_devices') {
@@ -140,7 +142,7 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
                 const oldestTimestamp = samples[0].timestamp;
                 const timeDiffInSeconds = (newestTimestamp - oldestTimestamp) / 1000; // ms to seconds
                 if (timeDiffInSeconds <= 0) return 0;
-                return samples.length / timeDiffInSeconds;
+                return samples.length / (timeDiffInSeconds*1000);
               };
 
               const eegRate = getRate(newEEGSamples);

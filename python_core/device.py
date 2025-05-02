@@ -51,6 +51,7 @@ class DeviceManager:
         self.server_disconnect_callback = server_disconnect_callback
         self.battery_running: bool = False
         self.battery_level: Optional[int] = None
+        self.last_battery_level: Optional[int] = None  # 이전 배터리 값 저장
 
         # Use deque for simple, non-blocking buffering from BLE callbacks
         self.eeg_buffer = deque()
@@ -109,17 +110,17 @@ class DeviceManager:
                 self.device_name = str(raw_name) if raw_name is not None else self.device_address
                 self.logger.info(f"Successfully connected to {self.device_name} ({self.device_address})")
                 
+                # 배터리 모니터링 먼저 시작
+                battery_success = await self.start_battery_monitoring()
+                if not battery_success:
+                    self.logger.warning("Failed to start battery monitoring")
+                
                 # 연결 성공 후 자동으로 데이터 수집 시작
                 acquisition_success = await self.start_data_acquisition()
                 if not acquisition_success:
                     self.logger.error("Failed to start data acquisition")
                     await self._cleanup_connection()
                     return False
-                
-                # 배터리 모니터링 시작
-                battery_success = await self.start_battery_monitoring()
-                if not battery_success:
-                    self.logger.warning("Failed to start battery monitoring")
                 
                 return True
             else:
@@ -194,7 +195,7 @@ class DeviceManager:
         self.is_connected_flag = False
         self._notifications_started = False
         self.battery_running = False
-        self.battery_level = None
+        self.battery_level = None  # 현재 배터리 값만 초기화하고 이전 값은 유지
         
         # Store the device info temporarily for disconnect notification
         device_info = self.get_device_info()
@@ -441,6 +442,12 @@ class DeviceManager:
 
         try:
             self.logger.info("Starting battery monitoring...")
+            # 먼저 현재 배터리 수준을 읽어옴
+            battery_data = await self.client.read_gatt_char(BATTERY_CHAR_UUID)
+            self.battery_level = int.from_bytes(battery_data, 'little')
+            self.logger.info(f"Initial battery level: {self.battery_level}%")
+            
+            # 배터리 수준 변경 알림 시작
             await self.client.start_notify(BATTERY_CHAR_UUID, self._handle_battery)
             self.battery_running = True
             self.logger.info("Battery monitoring started successfully.")
@@ -473,8 +480,11 @@ class DeviceManager:
         """Handle incoming battery data."""
         try:
             if len(data) >= 1:
-                self.battery_level = int.from_bytes(data[0:1], 'little')
-                self.logger.debug(f"Battery level: {self.battery_level}%")
+                new_battery_level = int.from_bytes(data[0:1], 'little')
+                if new_battery_level is not None:
+                    self.last_battery_level = new_battery_level  # 이전 값 업데이트
+                    self.battery_level = new_battery_level
+                    self.logger.debug(f"Battery level updated: {self.battery_level}%")
         except Exception as e:
             self.logger.error(f"Error processing battery data: {e}", exc_info=True)
 
@@ -491,12 +501,15 @@ class DeviceManager:
             self.ppg_buffer.clear()
             self.acc_buffer.clear()
 
+        # 배터리 값이 없거나 None일 때 이전 값 사용
+        current_battery = self.battery_level if self.battery_level is not None else self.last_battery_level
+
         # Calculate averages for each sensor type
         result = {
             "eeg": eeg_data,
             "ppg": ppg_data,
             "acc": acc_data,
-            "battery": self.battery_level
+            "battery": current_battery
         }
 
         # 샘플링 속도 계산 및 로그 (1초마다)
@@ -504,7 +517,8 @@ class DeviceManager:
         if now - self.last_sample_log_time >= 0.2:
             print(f"[샘플링 속도] EEG: {self.eeg_sample_count} samples/sec, "
                   f"PPG: {self.ppg_sample_count} samples/sec, "
-                  f"ACC: {self.acc_sample_count} samples/sec")
+                  f"ACC: {self.acc_sample_count} samples/sec, "
+                  f"Battery: {current_battery}%")
             self.eeg_sample_count = 0
             self.ppg_sample_count = 0
             self.acc_sample_count = 0

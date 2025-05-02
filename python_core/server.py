@@ -398,17 +398,18 @@ class WebSocketServer:
                 data_batch = await self.device_manager.get_buffered_data()
 
                 # Only send if there's actually data in the batch
-                if data_batch["eeg"] or data_batch["ppg"] or data_batch["acc"]:
+                if data_batch["eeg"] or data_batch["ppg"] or data_batch["acc"] or data_batch["battery"] is not None:
                     message = {
                         "type": "sensor_data",
                         "timestamp": time.time(), # Timestamp when the batch is sent
                         "eeg": data_batch["eeg"],
                         "ppg": data_batch["ppg"],
-                        "acc": data_batch["acc"]
+                        "acc": data_batch["acc"],
+                        "battery": data_batch["battery"]  # 배터리 정보 추가
                     }
                     try:
                         await self.broadcast(json.dumps(message))
-                        logger.debug(f"Sent batch: {len(data_batch['eeg'])} EEG, {len(data_batch['ppg'])} PPG, {len(data_batch['acc'])} ACC")
+                        logger.debug(f"Sent batch: {len(data_batch['eeg'])} EEG, {len(data_batch['ppg'])} PPG, {len(data_batch['acc'])} ACC, Battery: {data_batch['battery']}%")
                     except Exception as e:
                         logger.error(f"Error broadcasting sensor data batch: {e}")
 

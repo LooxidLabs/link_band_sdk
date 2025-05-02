@@ -31,6 +31,7 @@ export const DeviceManagerPanel: React.FC = () => {
     connectedDevice,
     isStreaming,
     battery,
+    lastBattery,
     eegRate,
     ppgRate,
     accRate,
@@ -188,7 +189,7 @@ export const DeviceManagerPanel: React.FC = () => {
         Device Manager
       </Typography>
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-        <Button
+        {/* <Button
           variant="contained"
           onClick={connect}
           disabled={!!isConnected}
@@ -231,7 +232,7 @@ export const DeviceManagerPanel: React.FC = () => {
           disabled={!isConnected || !isStreaming}
         >
           스트리밍 정지
-        </Button>
+        </Button> */}
         <Box sx={{ flexGrow: 1 }} />
         <Button
           variant="contained"
@@ -249,9 +250,9 @@ export const DeviceManagerPanel: React.FC = () => {
           디바이스 관리 {registeredDevices.length > 0 ? `(${registeredDevices.length})` : ''}
         </Button>
       </Box>
-      {error && (
+      {/* {error && (
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-      )}
+      )} */}
       
       <Divider sx={{ my: 2 }} />
       <Typography variant="subtitle1" align="center">디바이스 연결 상태</Typography>
@@ -290,7 +291,9 @@ export const DeviceManagerPanel: React.FC = () => {
         )}
       </Box>
       <Typography variant="subtitle1" align="center">배터리 잔량</Typography>
-      <Typography mb={2} align="center">{battery !== null ? `${battery}%` : '정보 없음'}</Typography>
+      <Typography mb={2} align="center">
+        {battery !== null ? `${battery}%` : lastBattery !== null ? `${lastBattery}% (마지막 측정값)` : '정보 없음'}
+      </Typography>
       <Typography variant="subtitle1" align="center">데이터 전송 상태</Typography>
       <Box mb={2} display="flex" flexDirection="column" alignItems="center">
         <Box display="flex" alignItems="center" justifyContent="center" width="100%" mb={1}>
