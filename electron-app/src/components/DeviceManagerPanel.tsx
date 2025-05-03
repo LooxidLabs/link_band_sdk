@@ -18,6 +18,7 @@ import { useDeviceManager } from '../stores/device_manager';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { DeviceRegistrationModal } from './DeviceRegistrationModal';
 import { Device } from '../types/device';
+import { BatteryIndicator } from './BatteryIndicator';
 
 export const DeviceManagerPanel: React.FC = () => {
   const {
@@ -184,152 +185,107 @@ export const DeviceManagerPanel: React.FC = () => {
   );
 
   return (
-    <Paper elevation={3} sx={{ p: 3, my: 2 }}>
-      <Typography variant="h6" gutterBottom>
+    <>
+      <Typography variant="h6" gutterBottom sx={{ textAlign: 'left', mb: 1 }}>
         Device Manager
       </Typography>
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-        {/* <Button
-          variant="contained"
-          onClick={connect}
-          disabled={!!isConnected}
-          color="primary"
-        >
-          WebSocket 연결
-        </Button>
-        <Button
-          variant="outlined"
-          onClick={disconnect}
-          disabled={!isConnected}
-          color="secondary"
-        >
-          WebSocket 해제
-        </Button>
-        <Button
-          variant="contained"
-          onClick={scanDevices}
-          disabled={!isConnected}
-        >
-          {isConnected ? '디바이스 스캔' : '스캔 중지'}
-        </Button>
-        <Button
-          variant="contained"
-          onClick={checkDeviceConnection}
-          disabled={!isConnected}
-        >
-          연결 상태 확인
-        </Button>
-        <Button
-          variant="contained"
-          onClick={startStreaming}
-          disabled={!isConnected || !connectedDevice || isStreaming}
-        >
-          스트리밍 시작
-        </Button>
-        <Button
-          variant="outlined"
-          onClick={stopStreaming}
-          disabled={!isConnected || !isStreaming}
-        >
-          스트리밍 정지
-        </Button> */}
-        <Box sx={{ flexGrow: 1 }} />
-        <Button
-          variant="contained"
-          onClick={() => setIsModalOpen(true)}
-          color={registeredDevices.length > 0 ? "primary" : "error"}
-          sx={{
-            '&.MuiButton-containedPrimary': {
-              backgroundColor: '#1976d2'
-            },
-            '&.MuiButton-containedError': {
-              backgroundColor: '#d32f2f'
-            }
-          }}
-        >
-          디바이스 관리 {registeredDevices.length > 0 ? `(${registeredDevices.length})` : ''}
-        </Button>
-      </Box>
-      {/* {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-      )} */}
-      
-      <Divider sx={{ my: 2 }} />
-      <Typography variant="subtitle1" align="center">디바이스 연결 상태</Typography>
-      <Box mb={2}>
-        <Box 
-          display="flex" 
-          alignItems="center" 
-          justifyContent="center"
-          gap={1} 
-          mb={1}
-        >
-          <Chip
-            label={getConnectionStatusText()}
-            color={getConnectionStatusColor()}
-            size="small"
-          />
-          {lastUpdateTime && (
-            <Typography variant="body2" color="textSecondary">
-              마지막 업데이트: {lastUpdateTime.toLocaleTimeString()}
-            </Typography>
+      <Paper elevation={3} sx={{ p: 3, my: 2 }}>
+        <Box sx={{ width: '100%', display: 'flex', flexDirection: 'row', justifyContent: 'flex-end', mb: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <Button
+              variant="contained"
+              onClick={() => setIsModalOpen(true)}
+              sx={{
+                minWidth: 350,
+                mb: 0.3,
+                py: 0.5,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                '&.MuiButton-contained': {
+                  backgroundColor: !connectedDevice ? 'grey.500' :
+                    leadOffCh1Status === 'good' && leadOffCh2Status === 'good' ? '#1976d2' :
+                    '#d32f2f',
+                  '&:hover': {
+                    backgroundColor: !connectedDevice ? 'grey.600' :
+                      leadOffCh1Status === 'good' && leadOffCh2Status === 'good' ? '#1565c0' :
+                      '#b71c1c',
+                  }
+                }
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: 12 }}>
+                {registeredDevices.length === 0 ? '디바이스 등록' :
+                  connectedDevice ? connectedDevice.name :
+                  registeredDevices[0].name}
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>
+                {registeredDevices.length === 0
+                  ? '연결안됨'
+                  : !connectedDevice
+                    ? '연결안됨'
+                    : leadOffCh1Status !== 'good' || leadOffCh2Status !== 'good'
+                      ? '전극접촉불량'
+                      : '정상'}
+              </span>
+            </Button>
+            {lastUpdateTime && (
+              <Typography variant="body2" color="textSecondary" sx={{ fontSize: 12 }}>
+                마지막 업데이트: {lastUpdateTime.toLocaleTimeString()}
+              </Typography>
+            )}
+          </Box>
+        </Box>
+        {/* {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
+        )} */}
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle1" align="center">배터리 잔량</Typography>
+        <Box mb={2} display="flex" justifyContent="center">
+          {battery !== null ? (
+            <BatteryIndicator value={battery} />
+          ) : lastBattery !== null ? (
+            <BatteryIndicator value={lastBattery} />
+          ) : (
+            <Typography>정보 없음</Typography>
           )}
         </Box>
-        {connectedDevice && (
-          <Box textAlign="center">
-            <Typography>연결된 디바이스: {connectedDevice.name}</Typography>
-            <Button
-              size="small"
-              variant="outlined"
-              color="secondary"
-              onClick={disconnect}
-              sx={{ mt: 1 }}
-            >
-              연결 해제
-            </Button>
+        <Typography variant="subtitle1" align="center">데이터 전송 상태</Typography>
+        <Box mb={2} display="flex" flexDirection="column" alignItems="center">
+          <Box display="flex" alignItems="center" justifyContent="center" width="100%" mb={1}>
+            <StatusDot status={getDataUpdateStatus(lastDataUpdate.eeg)} />
+            <Typography>EEG: {getSamplingRate(eegRate)} samples/sec</Typography>
           </Box>
-        )}
-      </Box>
-      <Typography variant="subtitle1" align="center">배터리 잔량</Typography>
-      <Typography mb={2} align="center">
-        {battery !== null ? `${battery}%` : lastBattery !== null ? `${lastBattery}% (마지막 측정값)` : '정보 없음'}
-      </Typography>
-      <Typography variant="subtitle1" align="center">데이터 전송 상태</Typography>
-      <Box mb={2} display="flex" flexDirection="column" alignItems="center">
-        <Box display="flex" alignItems="center" justifyContent="center" width="100%" mb={1}>
-          <StatusDot status={getDataUpdateStatus(lastDataUpdate.eeg)} />
-          <Typography>EEG: {getSamplingRate(eegRate)} samples/sec</Typography>
+          <Box display="flex" alignItems="center" justifyContent="center" width="100%" mb={1}>
+            <StatusDot status={getDataUpdateStatus(lastDataUpdate.ppg)} />
+            <Typography>PPG: {getSamplingRate(ppgRate)} samples/sec</Typography>
+          </Box>
+          <Box display="flex" alignItems="center" justifyContent="center" width="100%">
+            <StatusDot status={getDataUpdateStatus(lastDataUpdate.acc)} />
+            <Typography>ACC: {getSamplingRate(accRate)} samples/sec</Typography>
+          </Box>
         </Box>
-        <Box display="flex" alignItems="center" justifyContent="center" width="100%" mb={1}>
-          <StatusDot status={getDataUpdateStatus(lastDataUpdate.ppg)} />
-          <Typography>PPG: {getSamplingRate(ppgRate)} samples/sec</Typography>
-        </Box>
-        <Box display="flex" alignItems="center" justifyContent="center" width="100%">
-          <StatusDot status={getDataUpdateStatus(lastDataUpdate.acc)} />
-          <Typography>ACC: {getSamplingRate(accRate)} samples/sec</Typography>
-        </Box>
-      </Box>
-      <Divider sx={{ my: 2 }} />
-      <Typography variant="subtitle1" align="center">전극 접촉 상태 (Lead-off)</Typography>
-      <Stack direction="row" spacing={1} mt={1} justifyContent="center" alignItems="center">
-        <Typography>CH1:</Typography>
-        <Chip
-          label={getLeadOffStatus(leadOffCh1Status).label}
-          color={getLeadOffStatus(leadOffCh1Status).color}
-          size="small"
+        <Typography variant="subtitle1" align="center">전극 접촉 상태 (Lead-off)</Typography>
+        <Stack direction="row" spacing={1} mt={1} justifyContent="center" alignItems="center">
+          <Typography>CH1:</Typography>
+          <Chip
+            label={getLeadOffStatus(leadOffCh1Status).label}
+            color={getLeadOffStatus(leadOffCh1Status).color}
+            size="small"
+          />
+          <Typography>CH2:</Typography>
+          <Chip
+            label={getLeadOffStatus(leadOffCh2Status).label}
+            color={getLeadOffStatus(leadOffCh2Status).color}
+            size="small"
+          />
+        </Stack>
+        <DeviceRegistrationModal
+          open={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          currentDevice={currentDevice}
         />
-        <Typography>CH2:</Typography>
-        <Chip
-          label={getLeadOffStatus(leadOffCh2Status).label}
-          color={getLeadOffStatus(leadOffCh2Status).color}
-          size="small"
-        />
-      </Stack>
-      <DeviceRegistrationModal
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        currentDevice={currentDevice}
-      />
-    </Paper>
+      </Paper>
+    </>
   );
 }; 

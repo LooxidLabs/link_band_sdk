@@ -18,6 +18,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import { Device } from '../types/device';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useDeviceManager } from '../stores/device_manager';
 
 interface DeviceRegistrationModalProps {
   open: boolean;
@@ -30,10 +31,10 @@ export const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = (
   onClose,
   currentDevice,
 }) => {
-  const [registeredDevices, setRegisteredDevices] = useState<Device[]>([]);
   const [scannedDevices, setScannedDevices] = useState<Device[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const { sendMessage, lastMessage } = useWebSocket();
+  const { registeredDevices, updateRegisteredDevices } = useDeviceManager();
 
   useEffect(() => {
     if (open) {
@@ -48,7 +49,7 @@ export const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = (
     if (lastMessage.type === 'event') {
       switch (lastMessage.event_type) {
         case 'registered_devices':
-          setRegisteredDevices(lastMessage.data.devices);
+          updateRegisteredDevices(lastMessage.data.devices);
           break;
         case 'scan_result':
           if (lastMessage.data.status === 'scanning') {
@@ -60,7 +61,7 @@ export const DeviceRegistrationModal: React.FC<DeviceRegistrationModalProps> = (
           break;
       }
     }
-  }, [lastMessage]);
+  }, [lastMessage, updateRegisteredDevices]);
 
   const handleScanDevices = () => {
     setScannedDevices([]);

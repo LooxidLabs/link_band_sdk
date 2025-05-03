@@ -3,23 +3,20 @@ import {
   Box, 
   Container, 
   Typography, 
-  Paper,
   AppBar,
   Toolbar,
   Button,
   CssBaseline,
   ThemeProvider,
   createTheme,
-  TextField,
-  Alert,
-  Chip,
-  Stack,
-  Divider
 } from '@mui/material';
-import { useElectron } from './hooks/useElectron';
-import { RunServerStatus } from './components/RunServerStatus';
 import { DeviceManagerPanel } from './components/DeviceManagerPanel';
 import { useDeviceManager } from './stores/device_manager';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import LoginPage from './pages/LoginPage';
+import { getAuth } from 'firebase/auth';
+import { AppBarWithAuth } from './components/AppBarWithAuth';
+import SignupPage from './pages/SignupPage';
 
 // Create a theme instance
 const theme = createTheme({
@@ -32,12 +29,51 @@ const theme = createTheme({
       main: '#dc004e',
     },
   },
+  typography: {
+    fontSize: 12,
+    h1: { fontSize: '2rem' },
+    h2: { fontSize: '1.75rem' },
+    h3: { fontSize: '1.5rem' },
+    h4: { fontSize: '1.25rem' },
+    h5: { fontSize: '1.1rem' },
+    h6: { fontSize: '1rem' },
+    body1: { fontSize: '0.875rem' },
+    body2: { fontSize: '0.75rem' },
+    button: { fontSize: '0.875rem' },
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          borderRadius: '999px',
+          padding: '8px 16px',
+        },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            borderRadius: '999px',
+          },
+        },
+      },
+    },
+  },
 });
 
 function App() {
-  const [message, setMessage] = useState('');
-  const { sendMessage, response, isElectronAvailable } = useElectron();
   const deviceManager = useDeviceManager();
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
+      setUser(firebaseUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // 앱 시작시 WebSocket 연결 시도 및 재연결 로직
   useEffect(() => {
@@ -59,29 +95,24 @@ function App() {
     return () => clearInterval(intervalId);
   }, [deviceManager]);
 
-  const handleSendMessage = () => {
-    sendMessage({ message });
-    setMessage('');
-  };
-
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Box sx={{ flexGrow: 1 }}>
-        <AppBar position="static">
-          <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Link Band SDK
-            </Typography>
-            <Button color="inherit">Login</Button>
-          </Toolbar>
-        </AppBar>
-        <Container maxWidth="lg" sx={{ mt: 4 }}>
-          <DeviceManagerPanel />
-          
-        </Container>
-      </Box>
-    </ThemeProvider>
+    <BrowserRouter>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box sx={{ flexGrow: 1 }}>
+          <AppBarWithAuth user={user} />
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/" element={
+              <Container maxWidth="lg" sx={{ mt: 4 }}>
+                <DeviceManagerPanel />
+              </Container>
+            } />
+          </Routes>
+        </Box>
+      </ThemeProvider>
+    </BrowserRouter>
   );
 }
 
