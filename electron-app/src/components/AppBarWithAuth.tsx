@@ -1,45 +1,28 @@
 import React from 'react';
 import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import { getAuth, signOut } from 'firebase/auth';
+import useAuthStore from '../stores/authStore';
 
-export function AppBarWithAuth({ user }: { user: any }) {
-  const navigate = useNavigate();
-
-  const handleLogout = async () => {
-    const auth = getAuth();
-    await signOut(auth);
-    navigate('/login');
-  };
-
-  const handleLogin = () => {
-    navigate('/login');
-  };
+export function AppBarWithAuth() {
+  const { user, signOutUser } = useAuthStore();
 
   return (
     <AppBar position="static">
       <Toolbar>
-        {user ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                {user.photoURL && (
-                <img src={user.photoURL} alt="profile" style={{ width: 32, height: 32, borderRadius: '50%' }} />
-                )}
-                <Typography variant="body1" sx={{ color: 'white', fontSize: 12 }}>{user.email}</Typography>
-            </Box>
-            ) : (
-            <Typography fontSize={12} variant="h6" component="div" sx={{ flexGrow: 1 }}>
-                
-            </Typography>
-            )}
-
-        <Typography fontSize={16} variant="h6" component="div" sx={{ flexGrow: 1 }}>
+        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
           Link Band SDK
         </Typography>
-        {user ? (
-          <Button color="inherit" onClick={handleLogout}>Logout</Button>
-        ) : (
-          <Button color="inherit" onClick={handleLogin}>Login</Button>
-        )}
+        <Box>
+          {user ? (
+            <>
+              <Typography variant="body1" component="span" sx={{ mr: 2 }}>
+                {user.email}
+              </Typography>
+              <Button color="inherit" onClick={signOutUser}>
+                로그아웃
+              </Button>
+            </>
+          ) : null}
+        </Box>
       </Toolbar>
     </AppBar>
   );

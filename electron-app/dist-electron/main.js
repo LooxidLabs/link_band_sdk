@@ -1,169 +1,164 @@
-"use strict";
-const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
-const path = require('path');
-const isDev = require('electron-is-dev');
-const { exec } = require('child_process');
-const SERVICE_LABEL = 'com.linkband.runserver';
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var import_electron = require("electron");
+var path = __toESM(require("path"));
+var import_child_process = require("child_process");
+const SERVICE_LABEL = "com.linkband.runserver";
 let mainWindow = null;
 let tray = null;
+const gotTheLock = import_electron.app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  import_electron.app.quit();
+} else {
+  import_electron.app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+  import_electron.app.whenReady().then(() => {
+    createWindow();
+    setupTray();
+  });
+}
 function checkServiceStatus() {
-    return new Promise((resolve) => {
-        exec(`launchctl list | grep ${SERVICE_LABEL}`, (error, stdout) => {
-            if (error || !stdout) {
-                resolve({ running: false });
-            }
-            else {
-                resolve({ running: true });
-            }
-        });
+  return new Promise((resolve) => {
+    (0, import_child_process.exec)(`launchctl list | grep ${SERVICE_LABEL}`, (error, stdout) => {
+      if (error || !stdout) {
+        resolve({ running: false });
+      } else {
+        resolve({ running: true });
+      }
     });
+  });
 }
 function startService() {
-    return new Promise((resolve) => {
-        exec(`launchctl start ${SERVICE_LABEL}`, (error, stdout, stderr) => {
-            if (error) {
-                resolve({ started: false, error: stderr || error.message });
-            }
-            else {
-                resolve({ started: true });
-            }
-        });
+  return new Promise((resolve) => {
+    (0, import_child_process.exec)(`launchctl start ${SERVICE_LABEL}`, (error, stdout, stderr) => {
+      if (error) {
+        resolve({ started: false, error: stderr || error.message });
+      } else {
+        resolve({ started: true });
+      }
     });
+  });
 }
 function isServiceRegistered() {
-    return new Promise((resolve) => {
-        exec(`launchctl list | grep ${SERVICE_LABEL}`, (error, stdout) => {
-            resolve(!!stdout);
-        });
+  return new Promise((resolve) => {
+    (0, import_child_process.exec)(`launchctl list | grep ${SERVICE_LABEL}`, (error, stdout) => {
+      resolve(!!stdout);
     });
+  });
 }
 function createWindow() {
-    mainWindow = new BrowserWindow({
-        width: 450,
-        height: 700,
-        show: true,
-        webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js'),
-        },
-    });
-    // Load the index.html from a url in development or the local file in production
-    mainWindow.loadURL(isDev
-        ? 'http://localhost:5173'
-        : `file://${path.join(__dirname, '../dist/index.html')}`);
-    // Open the DevTools in development mode
-    if (isDev) {
-        mainWindow.webContents.openDevTools();
-    }
-    // X 버튼 클릭 시 hide, Quit 메뉴 선택 시 종료
-    mainWindow.on('close', (event) => {
-        if (!app.isQuitting) {
-            event.preventDefault();
-            mainWindow?.hide(); // hide로 변경
-            if (process.platform === 'darwin') {
-                app.dock.hide(); // macOS에서는 dock에서도 숨김
-            }
-            return false;
-        }
-    });
-    // 창이 최소화되어도 dock에서 숨기지 않음
-    if (process.platform === 'darwin') {
-        mainWindow.on('show', () => {
-            app.dock.show(); // 창이 다시 보일 때 dock에도 표시
-        });
-        mainWindow.on('minimize', () => {
-            mainWindow?.show(); // 최소화 시도시 다시 보이게 함
-        });
-    }
-    // Handle IPC messages from renderer
-    ipcMain.on('toMain', (event, data) => {
-        console.log('Received from renderer:', data);
-        // Process the data and send response back
-        mainWindow?.webContents.send('fromMain', { response: 'Message received!' });
-    });
-    // IPC for service status
-    ipcMain.handle('check-runserver-status', async () => {
-        const registered = await isServiceRegistered();
-        if (!registered)
-            return { running: false, error: '서비스가 등록되어 있지 않습니다.' };
-        return await checkServiceStatus();
-    });
-    ipcMain.handle('start-runserver-service', async () => {
-        const registered = await isServiceRegistered();
-        if (!registered)
-            return { running: false, started: false, error: '서비스가 등록되어 있지 않습니다. 등록 후 다시 시도하세요.' };
-        const result = (await startService()) || {};
-        const status = (await checkServiceStatus()) || {};
-        return { ...status, ...result };
-    });
+  mainWindow = new import_electron.BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    },
+    show: false
+    // 초기에는 숨김 상태로 시작
+  });
+  if (process.env.NODE_ENV === "development") {
+    mainWindow.loadURL("http://localhost:5173");
+    mainWindow.webContents.openDevTools();
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+  }
+  mainWindow.once("ready-to-show", () => {
+    mainWindow == null ? void 0 : mainWindow.show();
+  });
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+  if (process.platform === "darwin") {
+    const icon = import_electron.nativeImage.createFromPath(path.join(__dirname, "../assets/icon.png"));
+    import_electron.app.dock.setIcon(icon);
+  }
+  import_electron.ipcMain.on("toMain", (event, data) => {
+    console.log("Received from renderer:", data);
+    mainWindow == null ? void 0 : mainWindow.webContents.send("fromMain", { response: "Message received!" });
+  });
+  import_electron.ipcMain.handle("check-runserver-status", async () => {
+    const registered = await isServiceRegistered();
+    if (!registered) return { running: false, error: "\uC11C\uBE44\uC2A4\uAC00 \uB4F1\uB85D\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4." };
+    return await checkServiceStatus();
+  });
+  import_electron.ipcMain.handle("start-runserver-service", async () => {
+    const registered = await isServiceRegistered();
+    if (!registered) return { running: false, started: false, error: "\uC11C\uBE44\uC2A4\uAC00 \uB4F1\uB85D\uB418\uC5B4 \uC788\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uB4F1\uB85D \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694." };
+    const result = await startService() || {};
+    const status = await checkServiceStatus() || {};
+    return { ...status, ...result };
+  });
 }
-function createTray() {
-    tray = new Tray(path.join(__dirname, 'assets', 'trayIcon.png'));
-    const contextMenu = Menu.buildFromTemplate([
-        {
-            label: 'Show App',
-            click: () => {
-                mainWindow?.show();
-                if (process.platform === 'darwin') {
-                    app.dock.show();
-                }
-                mainWindow?.focus();
-            }
-        },
-        { type: 'separator' },
-        {
-            label: 'Quit',
-            click: () => {
-                app.isQuitting = true;
-                app.quit();
-            }
-        }
-    ]);
-    tray.setToolTip('Link Band SDK');
-    tray.setContextMenu(contextMenu);
-    // 트레이 아이콘 클릭으로 창 열기
-    tray.on('click', () => {
-        mainWindow?.show();
-        if (process.platform === 'darwin') {
-            app.dock.show();
-        }
-        mainWindow?.focus();
+function setupTray() {
+  const icon = import_electron.nativeImage.createFromPath(path.join(__dirname, "../assets/icon.png")).resize({ width: 16, height: 16 });
+  tray = new import_electron.Tray(icon);
+  const contextMenu = import_electron.Menu.buildFromTemplate([
+    {
+      label: "Show App",
+      click: () => {
+        mainWindow == null ? void 0 : mainWindow.show();
+      }
+    },
+    {
+      label: "Quit",
+      click: () => {
+        import_electron.app.quit();
+      }
+    }
+  ]);
+  tray.setToolTip("Link Band SDK");
+  tray.setContextMenu(contextMenu);
+  if (process.platform === "darwin") {
+    tray.on("click", () => {
+      tray == null ? void 0 : tray.popUpContextMenu();
     });
-    // Double click도 동일하게 처리
-    tray.on('double-click', () => {
-        mainWindow?.show();
-        if (process.platform === 'darwin') {
-            app.dock.show();
-        }
-        mainWindow?.focus();
-    });
+  }
 }
-// Initialize isQuitting property
-app.isQuitting = false;
-// 앱이 실행될 때 dock에 표시
-app.whenReady().then(() => {
+import_electron.app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    import_electron.app.quit();
+  }
+});
+import_electron.app.on("activate", () => {
+  if (mainWindow === null) {
     createWindow();
-    createTray();
-    if (process.platform === 'darwin') {
-        app.dock.show(); // dock에 항상 표시
-        app.dock.setIcon(path.join(__dirname, 'assets', 'dockIcon.png'));
-    }
+  }
 });
-// 모든 창이 닫혔을 때의 동작
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.isQuitting = true;
-        app.quit();
-    }
+import_electron.app.on("before-quit", async () => {
+  if (mainWindow) {
+    await mainWindow.webContents.session.clearStorageData({
+      storages: ["indexdb"]
+    });
+    mainWindow.destroy();
+    mainWindow = null;
+  }
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
 });
-// 앱 활성화 시 창이 없으면 새로 생성
-app.on('activate', () => {
-    if (mainWindow === null) {
-        createWindow();
-    }
-    else if (!mainWindow.isVisible()) {
-        mainWindow.show();
-    }
-});
-//# sourceMappingURL=main.js.map

@@ -1,12 +1,32 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
-const path = require('path');
-const isDev = require('electron-is-dev');
-const { exec } = require('child_process');
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import * as path from 'path';
+import { exec } from 'child_process';
 
 const SERVICE_LABEL = 'com.linkband.runserver';
 
-let mainWindow: typeof BrowserWindow | null = null;
-let tray: typeof Tray | null = null;
+let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+
+// 단일 인스턴스 실행 보장
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // 두 번째 인스턴스가 실행되면 기존 창을 활성화
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+
+  // 앱 초기화
+  app.whenReady().then(() => {
+    createWindow();
+    setupTray();
+  });
+}
 
 function checkServiceStatus() {
   return new Promise((resolve) => {
@@ -42,48 +62,37 @@ function isServiceRegistered() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 450,
-    height: 700,
-    show: true,
+    width: 1200,
+    height: 800,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: true,
+      contextIsolation: false,
     },
+    show: false, // 초기에는 숨김 상태로 시작
   });
 
-  // Load the index.html from a url in development or the local file in production
-  mainWindow.loadURL(
-    isDev
-      ? 'http://localhost:5173'
-      : `file://${path.join(__dirname, '../dist/index.html')}`
-  );
-
-  // Open the DevTools in development mode
-  if (isDev) {
+  // 개발 모드에서는 로컬 서버, 프로덕션에서는 빌드된 파일 로드
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // X 버튼 클릭 시 hide, Quit 메뉴 선택 시 종료
-  mainWindow.on('close', (event) => {
-    if (!app.isQuitting) {
-      event.preventDefault();
-      mainWindow?.hide();  // hide로 변경
-      if (process.platform === 'darwin') {
-        app.dock.hide();  // macOS에서는 dock에서도 숨김
-      }
-      return false;
-    }
+  // 창이 준비되면 보여주기
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
   });
 
-  // 창이 최소화되어도 dock에서 숨기지 않음
+  // 창이 닫힐 때 이벤트
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  // macOS에서 dock 아이콘 설정
   if (process.platform === 'darwin') {
-    mainWindow.on('show', () => {
-      app.dock.show();  // 창이 다시 보일 때 dock에도 표시
-    });
-    mainWindow.on('minimize', () => {
-      mainWindow?.show();  // 최소화 시도시 다시 보이게 함
-    });
+    const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'));
+    app.dock.setIcon(icon);
   }
 
   // Handle IPC messages from renderer
@@ -108,25 +117,22 @@ function createWindow() {
   });
 }
 
-function createTray() {
-  tray = new Tray(path.join(__dirname, 'assets', 'trayIcon.png'));
-  
+function setupTray() {
+  // 트레이 아이콘 생성
+  const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'))
+    .resize({ width: 16, height: 16 }); // macOS에서는 16x16이 권장됨
+  tray = new Tray(icon);
+
   const contextMenu = Menu.buildFromTemplate([
-    { 
-      label: 'Show App', 
+    {
+      label: 'Show App',
       click: () => {
         mainWindow?.show();
-        if (process.platform === 'darwin') {
-          app.dock.show();
-        }
-        mainWindow?.focus();
       }
     },
-    { type: 'separator' },
-    { 
-      label: 'Quit', 
+    {
+      label: 'Quit',
       click: () => {
-        app.isQuitting = true;
         app.quit();
       }
     }
@@ -135,52 +141,43 @@ function createTray() {
   tray.setToolTip('Link Band SDK');
   tray.setContextMenu(contextMenu);
 
-  // 트레이 아이콘 클릭으로 창 열기
-  tray.on('click', () => {
-    mainWindow?.show();
-    if (process.platform === 'darwin') {
-      app.dock.show();
-    }
-    mainWindow?.focus();
-  });
-
-  // Double click도 동일하게 처리
-  tray.on('double-click', () => {
-    mainWindow?.show();
-    if (process.platform === 'darwin') {
-      app.dock.show();
-    }
-    mainWindow?.focus();
-  });
+  // macOS에서 트레이 아이콘 클릭 시 메뉴 표시
+  if (process.platform === 'darwin') {
+    tray.on('click', () => {
+      tray?.popUpContextMenu();
+    });
+  }
 }
 
-// Initialize isQuitting property
-app.isQuitting = false;
-
-// 앱이 실행될 때 dock에 표시
-app.whenReady().then(() => {
-  createWindow();
-  createTray();
-
-  if (process.platform === 'darwin') {
-    app.dock.show();  // dock에 항상 표시
-    app.dock.setIcon(path.join(__dirname, 'assets', 'dockIcon.png'));
-  }
-});
-
-// 모든 창이 닫혔을 때의 동작
+// 모든 창이 닫혔을 때
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.isQuitting = true;
     app.quit();
   }
 });
 
-// 앱 활성화 시 창이 없으면 새로 생성
 app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
-  } else if (!mainWindow.isVisible()) {
-    mainWindow.show();
+  }
+});
+
+// 앱 종료 전 정리 작업
+app.on('before-quit', async () => {
+  if (mainWindow) {
+    // IndexedDB 정리
+    await mainWindow.webContents.session.clearStorageData({
+      storages: ['indexdb']
+    });
+    
+    // 창 닫기
+    mainWindow.destroy();
+    mainWindow = null;
+  }
+  
+  // 트레이 아이콘 제거
+  if (tray) {
+    tray.destroy();
+    tray = null;
   }
 }); 

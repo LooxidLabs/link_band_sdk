@@ -96,7 +96,7 @@ class DeviceManager:
             self.client = BleakClient(device, disconnected_callback=self._handle_disconnect)
             
             try:
-            await self.client.connect(timeout=10.0)
+                await self.client.connect(timeout=10.0)
             except Exception as connect_error:
                 self.logger.error(f"Failed to connect to device: {connect_error}")
                 await self._cleanup_connection()

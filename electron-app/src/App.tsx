@@ -1,22 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { 
   Box, 
   Container, 
-  Typography, 
-  AppBar,
-  Toolbar,
-  Button,
   CssBaseline,
   ThemeProvider,
   createTheme,
+  CircularProgress,
 } from '@mui/material';
-import { DeviceManagerPanel } from './components/DeviceManagerPanel';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useDeviceManager } from './stores/device_manager';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import useAuthStore from './stores/authStore';
 import LoginPage from './pages/LoginPage';
-import { getAuth } from 'firebase/auth';
-import { AppBarWithAuth } from './components/AppBarWithAuth';
 import SignupPage from './pages/SignupPage';
+import MainPage from './pages/MainPage';
 
 // Create a theme instance
 const theme = createTheme({
@@ -65,17 +61,15 @@ const theme = createTheme({
 
 function App() {
   const deviceManager = useDeviceManager();
-  const [user, setUser] = useState<any>(null);
+  const { user, loading, subscribeToAuthState } = useAuthStore();
 
+  // Firebase 인증 상태 구독 설정
   useEffect(() => {
-    const auth = getAuth();
-    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
-      setUser(firebaseUser);
-    });
+    const unsubscribe = subscribeToAuthState();
     return () => unsubscribe();
-  }, []);
+  }, [subscribeToAuthState]);
 
-  // 앱 시작시 WebSocket 연결 시도 및 재연결 로직
+  // WebSocket 연결 설정
   useEffect(() => {
     const attemptConnection = () => {
       if (!deviceManager.isConnected) {
@@ -95,24 +89,39 @@ function App() {
     return () => clearInterval(intervalId);
   }, [deviceManager]);
 
+  if (loading) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: '100vh',
+          bgcolor: 'background.default',
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
-    <BrowserRouter>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <Box sx={{ flexGrow: 1 }}>
-          <AppBarWithAuth user={user} />
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/signup" element={<SignupPage />} />
-            <Route path="/" element={
-              <Container maxWidth="lg" sx={{ mt: 4 }}>
-                <DeviceManagerPanel />
-              </Container>
-            } />
-          </Routes>
-        </Box>
-      </ThemeProvider>
-    </BrowserRouter>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Router>
+        <Routes>
+          <Route
+            path="/"
+            element={user ? <MainPage /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/login"
+            element={!user ? <LoginPage /> : <Navigate to="/" replace />}
+          />
+          <Route path="/signup" element={<SignupPage />} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 }
 

@@ -11,6 +11,8 @@ import {
   browserSessionPersistence,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase/config';
+import { linkCloudAPI } from '../api/linkCloud';
+import { useDeviceManager } from './device_manager';
 
 // Define the shape of the user object stored in the state
 interface User {
@@ -41,10 +43,33 @@ const useAuthStore = create<AuthState>((set) => ({
 
   // Method to subscribe to auth state changes
   subscribeToAuthState: () => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => { // Type the user from Firebase
-      set({ user: firebaseUser ? { uid: firebaseUser.uid, email: firebaseUser.email, displayName: firebaseUser.displayName } : null, loading: false, error: null });
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
+        set({ 
+          user: { 
+            uid: firebaseUser.uid, 
+            email: firebaseUser.email, 
+            displayName: firebaseUser.displayName 
+          }, 
+          loading: false, 
+          error: null 
+        });
+        
+        // Link Cloud API 토큰 설정
+        const token = await firebaseUser.getIdToken();
+        linkCloudAPI.setToken(token);
+
+        // 디바이스 정보 동기화 (약간의 지연을 두어 토큰이 설정된 후 실행)
+        setTimeout(async () => {
+          const deviceManager = useDeviceManager.getState();
+          await deviceManager.syncWithServer();
+        }, 500);
+      } else {
+        set({ user: null, loading: false, error: null });
+        linkCloudAPI.setToken(null);
+      }
     });
-    return unsubscribe; // Return the unsubscribe function for cleanup
+    return unsubscribe;
   },
 
   // Google Sign-In

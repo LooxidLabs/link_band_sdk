@@ -19,6 +19,8 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { DeviceRegistrationModal } from './DeviceRegistrationModal';
 import { Device } from '../types/device';
 import { BatteryIndicator } from './BatteryIndicator';
+import BluetoothIcon from '@mui/icons-material/Bluetooth';
+import BluetoothDisabledIcon from '@mui/icons-material/BluetoothDisabled';
 
 export const DeviceManagerPanel: React.FC = () => {
   const {
@@ -40,6 +42,10 @@ export const DeviceManagerPanel: React.FC = () => {
     leadOffCh2Status,
     error,
     registeredDevices,
+    clients_connected,
+    isBluetoothAvailable,
+    bluetoothError,
+    checkBluetoothStatus,
   } = useDeviceManager();
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -186,6 +192,28 @@ export const DeviceManagerPanel: React.FC = () => {
 
   return (
     <>
+      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Typography variant="h6">디바이스 관리</Typography>
+        <Chip
+          icon={isBluetoothAvailable ? <BluetoothIcon /> : <BluetoothDisabledIcon />}
+          label={isBluetoothAvailable ? "블루투스 사용 가능" : "블루투스 꺼짐"}
+          color={isBluetoothAvailable ? "success" : "error"}
+          onClick={checkBluetoothStatus}
+        />
+      </Box>
+
+      {bluetoothError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {bluetoothError}
+        </Alert>
+      )}
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
       <Typography variant="h6" gutterBottom sx={{ textAlign: 'left', mb: 1 }}>
         Device Manager
       </Typography>
@@ -236,9 +264,6 @@ export const DeviceManagerPanel: React.FC = () => {
             )}
           </Box>
         </Box>
-        {/* {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
-        )} */}
         <Divider sx={{ my: 2 }} />
         <Typography variant="subtitle1" align="center">배터리 잔량</Typography>
         <Box mb={2} display="flex" justifyContent="center">
@@ -280,11 +305,49 @@ export const DeviceManagerPanel: React.FC = () => {
             size="small"
           />
         </Stack>
+        <Divider sx={{ my: 2 }} />
+        <Box>
+          <Typography variant="subtitle1" align="center">디바이스 관리용 로컬 서버 정보</Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography>서버 상태:</Typography>
+              <Chip 
+                label={isConnected ? "연결됨" : "연결 안됨"} 
+                color={isConnected ? "success" : "error"} 
+                size="small"
+              />
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography>스트리밍 상태:</Typography>
+              <Chip 
+                label={isStreaming ? "스트리밍 중" : "정지"} 
+                color={isStreaming ? "success" : "default"} 
+                size="small"
+              />
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography>연결된 클라이언트:</Typography>
+              <Typography>{clients_connected}개</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography>등록된 디바이스:</Typography>
+              <Typography>{registeredDevices.length}개</Typography>
+            </Box>
+            {connectedDevice && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography>현재 연결된 디바이스:</Typography>
+                <Typography>{connectedDevice.name} ({connectedDevice.address})</Typography>
+              </Box>
+            )}
+          </Box>
+        </Box>
         <DeviceRegistrationModal
           open={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           currentDevice={currentDevice}
         />
+        <Divider sx={{ my: 2 }} />
+        
       </Paper>
     </>
   );

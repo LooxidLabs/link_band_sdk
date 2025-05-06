@@ -1,5 +1,8 @@
 import create from 'zustand';
 import { EEGSample, PPGSample, ACCSample, SensorData } from '../types/sensor_data';
+import { linkCloudAPI } from '../api/linkCloud';
+import { Device as CloudDevice } from '../api/linkCloud';
+import useAuthStore from './authStore';
 
 // 고정 길이 큐 유틸
 function pushWithLimit<T>(arr: T[], items: T[], limit: number): T[] {
@@ -48,6 +51,9 @@ export type DeviceManagerState = {
   leadOffCh1Status: LeadOffStatus;
   leadOffCh2Status: LeadOffStatus;
   error: string | null;
+  clients_connected: number;
+  cloudDevices: CloudDevice[];
+  syncWithServer: () => Promise<void>;
   connect: () => void;
   disconnect: () => void;
   sendCommand: (command: string, payload?: any) => void;
@@ -59,6 +65,11 @@ export type DeviceManagerState = {
   stopStreaming: () => void;
   clearData: () => void;
   updateRegisteredDevices: (devices: DeviceInfo[]) => void;
+  updateDeviceInCloud: (device: DeviceInfo) => Promise<void>;
+  deleteDeviceInCloud: (address: string) => Promise<void>;
+  isBluetoothAvailable: boolean;
+  bluetoothError: string | null;
+  checkBluetoothStatus: () => void;
 };
 
 export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
@@ -66,7 +77,7 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
   isConnected: false,
   isStreaming: false,
   battery: null,
-  lastBattery: null,  // 초기값 설정
+  lastBattery: null,
   scannedDevices: [],
   registeredDevices: [],
   connectedDevice: null,
@@ -79,10 +90,68 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
   leadOffCh1Status: 'unknown',
   leadOffCh2Status: 'unknown',
   error: null,
+  clients_connected: 0,
+  cloudDevices: [],
+  isBluetoothAvailable: false,
+  bluetoothError: null,
+
+  syncWithServer: async () => {
+    try {
+      // 서버 상태 요청
+      const ws = get().ws;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ command: 'get_server_status' }));
+      }
+
+      // Link Cloud 동기화는 인증된 상태에서만 시도
+      const { user } = useAuthStore.getState();
+      if (!user) {
+        console.log('Skipping cloud sync: No authenticated user');
+        return;
+      }
+
+      try {
+        const cloudDevices = await linkCloudAPI.getDevices();
+        set({ cloudDevices });
+
+        // 로컬 디바이스와 클라우드 디바이스 비교 및 동기화
+        const localDevices = get().registeredDevices;
+        const localAddresses = new Set(localDevices.map(d => d.address));
+        const cloudAddresses = new Set(cloudDevices.map(d => d.address));
+
+        // 클라우드에만 있는 디바이스 추가
+        const updatedDevices = [...localDevices];
+        for (const cloudDevice of cloudDevices) {
+          if (!localAddresses.has(cloudDevice.address)) {
+            updatedDevices.push({
+              name: cloudDevice.name,
+              address: cloudDevice.address
+            });
+          }
+        }
+
+        // 로컬에만 있는 디바이스 클라우드에 등록
+        for (const localDevice of localDevices) {
+          if (!cloudAddresses.has(localDevice.address)) {
+            await linkCloudAPI.registerDevice({
+              name: localDevice.name,
+              address: localDevice.address
+            });
+          }
+        }
+
+        set({ registeredDevices: updatedDevices });
+      } catch (error) {
+        console.error('Failed to sync with Link Cloud:', error);
+      }
+    } catch (error) {
+      console.error('Failed to sync with server:', error);
+    }
+  },
 
   connect: () => {
-    console.log("Attempting to connect WebSocket...");
-    if (get().ws) {
+    const state = get();
+    if (state.ws) {
       console.log("WebSocket already exists.");
       return;
     }
@@ -93,22 +162,36 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
       ws.onopen = () => {
         console.log("WebSocket connection opened.");
         set({ isConnected: true, error: null });
+        // 연결 즉시 블루투스 상태 확인
+        state.checkBluetoothStatus();
+        state.syncWithServer();
       }
+
       ws.onclose = () => {
         console.log("WebSocket connection closed.");
-        set({ isConnected: false, isStreaming: false, ws: null });
+        set({ 
+          isConnected: false, 
+          isStreaming: false, 
+          ws: null,
+          isBluetoothAvailable: false 
+        });
       }
+
       ws.onerror = (e) => {
         console.error("WebSocket error:", e);
         set({ error: 'WebSocket error' });
       }
+
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // console.log("Received WebSocket message:", data);
-
           if (data.type === 'event') {
-            if (data.event_type === 'scan_result') {
+            if (data.event_type === 'bluetooth_status') {
+              set({ 
+                isBluetoothAvailable: data.data.available,
+                bluetoothError: data.data.available ? null : data.data.message
+              });
+            } else if (data.event_type === 'scan_result') {
               set({ scannedDevices: data.data.devices || [] });
             } else if (data.event_type === 'device_connected') {
               set({ connectedDevice: data.data.device_info || null });
@@ -124,9 +207,9 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
               set({
                 battery: data.data?.battery ?? get().battery,
                 connectedDevice: data.data?.device_info || get().connectedDevice,
+                clients_connected: data.data?.clients_connected || 0,
+                registeredDevices: data.data?.registered_devices || get().registeredDevices,
               });
-            } else if (data.event_type === 'registered_devices') {
-              set({ registeredDevices: data.data.devices || [] });
             }
           } else if (data.type === 'sensor_data') {
             console.log("Received sensor_data:", data);
@@ -174,12 +257,11 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
             });
           }
         } catch (e) {
-          // console.error("Error processing WebSocket message:", e);
+          console.error("Error processing WebSocket message:", e);
           set({ error: 'Invalid message from server' });
         }
       };
       set({ ws });
-      console.log("WebSocket event listeners attached and ws set in state.");
     } catch (error) {
       console.error("Failed to create WebSocket instance:", error);
       set({ error: 'Failed to create WebSocket' });
@@ -253,7 +335,62 @@ export const useDeviceManager = create<DeviceManagerState>((set, get) => ({
     eegRate: 0, ppgRate: 0, accRate: 0,
     leadOffCh1Status: 'unknown', leadOffCh2Status: 'unknown'
   }),
-  updateRegisteredDevices: (devices: DeviceInfo[]) => {
+  updateRegisteredDevices: async (devices: DeviceInfo[]) => {
     set({ registeredDevices: devices });
+    const { user } = useAuthStore.getState();
+    if (user) {
+      // 각 디바이스를 클라우드에 등록/업데이트
+      for (const device of devices) {
+        await get().updateDeviceInCloud(device);
+      }
+    }
+  },
+  updateDeviceInCloud: async (device: DeviceInfo) => {
+    const { user } = useAuthStore.getState();
+    if (!user) return;
+
+    try {
+      const cloudDevice = get().cloudDevices.find(d => d.address === device.address);
+      if (cloudDevice) {
+        await linkCloudAPI.updateDevice(cloudDevice.id, {
+          name: device.name,
+          address: device.address
+        });
+      } else {
+        await linkCloudAPI.registerDevice({
+          name: device.name,
+          address: device.address
+        });
+      }
+      // 클라우드 디바이스 목록 갱신
+      const cloudDevices = await linkCloudAPI.getDevices();
+      set({ cloudDevices });
+    } catch (error) {
+      console.error('Failed to update device in cloud:', error);
+    }
+  },
+  deleteDeviceInCloud: async (address: string) => {
+    const { user } = useAuthStore.getState();
+    if (!user) return;
+
+    try {
+      const cloudDevice = get().cloudDevices.find(d => d.address === address);
+      if (cloudDevice) {
+        await linkCloudAPI.deleteDevice(cloudDevice.id);
+        // 클라우드 디바이스 목록 갱신
+        const cloudDevices = await linkCloudAPI.getDevices();
+        set({ cloudDevices });
+      }
+    } catch (error) {
+      console.error('Failed to delete device from cloud:', error);
+    }
+  },
+  checkBluetoothStatus: () => {
+    const ws = get().ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      set({ error: 'WebSocket이 연결되어 있지 않습니다.' });
+      return;
+    }
+    get().sendCommand('check_bluetooth_status');
   },
 })); 

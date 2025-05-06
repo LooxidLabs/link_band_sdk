@@ -8,6 +8,7 @@ from enum import Enum, auto
 from datetime import datetime
 from device import DeviceManager, DeviceStatus
 from device_registry import DeviceRegistry
+from bleak import BleakScanner
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +33,7 @@ class EventType(Enum):
     DATA_ACQUISITION_STARTED = "data_acquisition_started"
     DATA_ACQUISITION_STOPPED = "data_acquisition_stopped"
     REGISTERED_DEVICES = "registered_devices"
+    BLUETOOTH_STATUS = "bluetooth_status"
 
 class WebSocketServer:
     def __init__(self, host: str = "localhost", port: int = 8765):
@@ -52,14 +54,52 @@ class WebSocketServer:
             self.host,
             self.port
         )
+        # 주기적으로 상태 업데이트를 시작
+        asyncio.create_task(self._periodic_status_update())
         logger.info(f"WebSocket server initialized on {self.host}:{self.port}")
 
+    async def _periodic_status_update(self):
+        """주기적으로 모든 클라이언트에게 상태를 업데이트합니다."""
+        while True:
+            try:
+                if self.clients:  # 연결된 클라이언트가 있을 때만 실행
+                    is_connected = self.device_manager.is_connected()
+                    device_info = self.device_manager.get_device_info() if is_connected else None
+                    registered_devices = self.device_registry.get_registered_devices()
+                    
+                    status_data = {
+                        "connected": is_connected,
+                        "device_info": device_info,
+                        "is_streaming": self.is_streaming if is_connected else False,
+                        "registered_devices": registered_devices,
+                        "clients_connected": len(self.clients)
+                    }
+                    await self.broadcast_event(EventType.DEVICE_INFO, status_data)
+            except Exception as e:
+                logger.error(f"Error in periodic status update: {e}")
+            await asyncio.sleep(1)  # 1초마다 업데이트
+
     async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
-        """Handle new client connections (Instance Method)"""
+        """Handle new client connections"""
+        # 같은 주소의 이전 연결을 제거
+        for client in list(self.clients):
+            if client.remote_address == websocket.remote_address:
+                self.clients.remove(client)
+                try:
+                    await client.close()
+                except:
+                    pass
+                logger.info(f"Removed existing connection from {client.remote_address}")
+
+        # 새 연결 추가
         self.clients.add(websocket)
         logger.info(f"Client connected from {websocket.remote_address}. Total clients: {len(self.clients)}")
 
         try:
+            # 연결 즉시 블루투스 상태 확인 및 전송
+            is_bluetooth_available = await self._check_bluetooth_status()
+            await self._broadcast_bluetooth_status(is_bluetooth_available)
+            
             await self._send_current_device_status(websocket)
 
             async for message in websocket:
@@ -71,17 +111,24 @@ class WebSocketServer:
         finally:
             if websocket in self.clients:
                 self.clients.remove(websocket)
+                try:
+                    await websocket.close()
+                except:
+                    pass
                 logger.info(f"Client disconnected from {websocket.remote_address}. Total clients: {len(self.clients)}")
 
     async def _send_current_device_status(self, websocket: websockets.WebSocketServerProtocol):
         """Send the current device connection status to a specific client."""
         is_connected = self.device_manager.is_connected()
         device_info = self.device_manager.get_device_info() if is_connected else None
+        registered_devices = self.device_registry.get_registered_devices()
         
         status_data = {
             "connected": is_connected,
             "device_info": device_info,
-            "is_streaming": self.is_streaming if is_connected else False
+            "is_streaming": self.is_streaming if is_connected else False,
+            "registered_devices": registered_devices,
+            "clients_connected": len(self.clients)
         }
         await self.send_event_to_client(websocket, EventType.DEVICE_INFO, status_data)
 
@@ -120,17 +167,30 @@ class WebSocketServer:
     async def stop(self):
         """Stop the WebSocket server and disconnect BLE device if connected."""
         logger.info("Stopping WebSocket server...")
+        
+        # 모든 클라이언트 연결 종료
+        for client in list(self.clients):
+            try:
+                await client.close()
+            except:
+                pass
+        self.clients.clear()
+
         if self.auto_connect_task:
             self.auto_connect_task.cancel()
             try:
                 await self.auto_connect_task
             except asyncio.CancelledError:
                 pass
-        if self.stream_task: # Stop streaming task first
+
+        if self.stream_task:
             self.stream_task.cancel()
-            try: await self.stream_task
-            except asyncio.CancelledError: pass
+            try:
+                await self.stream_task
+            except asyncio.CancelledError:
+                pass
             self.stream_task = None
+
         if self.device_manager.is_connected():
             logger.info("Disconnecting BLE device during server shutdown...")
             await self.device_manager.disconnect()
@@ -176,10 +236,24 @@ class WebSocketServer:
             if command == "check_device_connection":
                 await self._send_current_device_status(websocket)
 
+            elif command == "check_bluetooth_status":
+                is_bluetooth_available = await self._check_bluetooth_status()
+                await self._broadcast_bluetooth_status(is_bluetooth_available)
+
             elif command == "scan_devices":
+                # 스캔 전에 블루투스 상태 확인
+                is_bluetooth_available = await self._check_bluetooth_status()
+                if not is_bluetooth_available:
+                    await self.send_error_to_client(websocket, "Bluetooth is turned off")
+                    return
                 asyncio.create_task(self._run_scan_and_notify(websocket))
 
             elif command == "connect_device":
+                # 연결 전에 블루투스 상태 확인
+                is_bluetooth_available = await self._check_bluetooth_status()
+                if not is_bluetooth_available:
+                    await self.send_error_to_client(websocket, "Bluetooth is turned off")
+                    return
                 address = payload.get("address")
                 if address:
                     asyncio.create_task(self._run_connect_and_notify(address))
@@ -237,6 +311,25 @@ class WebSocketServer:
                     logger.info(f"Successfully unregistered device: {address}")
                 else:
                     await self.send_error_to_client(websocket, "Failed to unregister device")
+
+            elif command == "get_server_status":
+                # 현재 디바이스 연결 상태
+                is_connected = self.device_manager.is_connected()
+                device_info = self.device_manager.get_device_info() if is_connected else None
+                
+                # 등록된 디바이스 정보
+                registered_devices = self.device_registry.get_registered_devices()
+                
+                # 서버 상태 정보 구성
+                status_data = {
+                    "connected": is_connected,
+                    "device_info": device_info,
+                    "registered_devices": registered_devices,
+                    "is_streaming": self.is_streaming,
+                    "clients_connected": len(self.clients)
+                }
+                
+                await self.send_event_to_client(websocket, EventType.DEVICE_INFO, status_data)
 
             else:
                 logger.warning(f"Unknown command received: {command}")
@@ -461,22 +554,50 @@ class WebSocketServer:
         if not self.clients:
             return
 
-        client_list = list(self.clients)
-        tasks = [client.send(message) for client in client_list]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
+        # 연결이 끊어진 클라이언트를 추적
         disconnected_clients = set()
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                client = client_list[i]
-                logger.warning(f"Failed to send message to client {client.remote_address}: {result}")
-                if isinstance(result, websockets.exceptions.ConnectionClosed):
-                    disconnected_clients.add(client)
 
-        self.clients.difference_update(disconnected_clients)
+        # 각 클라이언트에 메시지 전송 시도
+        for client in list(self.clients):
+            try:
+                await client.send(message)
+            except websockets.exceptions.ConnectionClosed:
+                logger.warning(f"Connection closed for client {client.remote_address}")
+                disconnected_clients.add(client)
+            except Exception as e:
+                logger.error(f"Error sending message to client {client.remote_address}: {e}")
+                disconnected_clients.add(client)
+
+        # 연결이 끊어진 클라이언트 정리
+        for client in disconnected_clients:
+            if client in self.clients:
+                self.clients.remove(client)
+                try:
+                    await client.close()
+                except:
+                    pass
+
         if disconnected_clients:
-            logger.info(f"Removed {len(disconnected_clients)} disconnected clients during broadcast.")
+            logger.info(f"Removed {len(disconnected_clients)} disconnected clients. Total clients: {len(self.clients)}")
 
     def get_connected_clients(self) -> int:
         """Get the number of currently connected clients"""
         return len(self.clients)
+
+    async def _check_bluetooth_status(self) -> bool:
+        """블루투스 상태를 확인합니다."""
+        try:
+            await BleakScanner.discover(timeout=1.0)
+            return True
+        except Exception as e:
+            if "Bluetooth device is turned off" in str(e):
+                return False
+            logger.error(f"Error checking Bluetooth status: {e}")
+            return False
+
+    async def _broadcast_bluetooth_status(self, is_available: bool):
+        """블루투스 상태를 모든 클라이언트에게 전달합니다."""
+        await self.broadcast_event(EventType.BLUETOOTH_STATUS, {
+            "available": is_available,
+            "message": "Bluetooth is available" if is_available else "Bluetooth is turned off"
+        })
