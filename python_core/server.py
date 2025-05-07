@@ -36,13 +36,18 @@ class EventType(Enum):
     BLUETOOTH_STATUS = "bluetooth_status"
 
 class WebSocketServer:
-    def __init__(self, host: str = "localhost", port: int = 8765):
+    def __init__(self, host: str = "localhost", port: int = 18765):
         self.host = host
         self.port = port
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
         self.is_streaming = False
         self.server: Optional[websockets.WebSocketServer] = None
-        self.stream_task: Optional[asyncio.Task] = None # Task for stream_data loop
+        self.stream_tasks: Dict[str, Optional[asyncio.Task]] = {
+            'eeg': None,
+            'ppg': None,
+            'acc': None,
+            'battery': None  # 배터리 스트리밍 태스크 추가
+        }
         self.device_manager = DeviceManager(server_disconnect_callback=self.handle_unexpected_disconnect)
         self.device_registry = DeviceRegistry()
         self.auto_connect_task: Optional[asyncio.Task] = None
@@ -81,21 +86,24 @@ class WebSocketServer:
 
     async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
         """Handle new client connections"""
+        client_address = websocket.remote_address
+        logger.info(f"New connection attempt from {client_address}")
+
         # 같은 주소의 이전 연결을 제거
         for client in list(self.clients):
             if client.remote_address == websocket.remote_address:
-                self.clients.remove(client)
                 try:
-                    await client.close()
-                except:
-                    pass
-                logger.info(f"Removed existing connection from {client.remote_address}")
-
-        # 새 연결 추가
-        self.clients.add(websocket)
-        logger.info(f"Client connected from {websocket.remote_address}. Total clients: {len(self.clients)}")
+                    await client.close(1000, "New connection from same address")
+                    self.clients.remove(client)
+                    logger.info(f"Removed existing connection from {client.remote_address}")
+                except Exception as e:
+                    logger.error(f"Error closing existing connection: {e}")
 
         try:
+            # 새 연결 추가
+            self.clients.add(websocket)
+            logger.info(f"Client connected from {client_address}. Total clients: {len(self.clients)}")
+
             # 연결 즉시 블루투스 상태 확인 및 전송
             is_bluetooth_available = await self._check_bluetooth_status()
             await self._broadcast_bluetooth_status(is_bluetooth_available)
@@ -104,31 +112,38 @@ class WebSocketServer:
 
             async for message in websocket:
                 await self.handle_client_message(websocket, message)
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Client connection closed from {websocket.remote_address}.")
+
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.info(f"Client connection closed from {client_address}: {e}")
         except Exception as e:
-            logger.error(f"Error handling client {websocket.remote_address}: {e}", exc_info=True)
+            logger.error(f"Error handling client {client_address}: {e}", exc_info=True)
         finally:
             if websocket in self.clients:
                 self.clients.remove(websocket)
                 try:
-                    await websocket.close()
-                except:
-                    pass
-                logger.info(f"Client disconnected from {websocket.remote_address}. Total clients: {len(self.clients)}")
+                    await websocket.close(1000, "Normal closure")
+                except Exception as e:
+                    logger.error(f"Error closing websocket: {e}")
+                logger.info(f"Client disconnected from {client_address}. Total clients: {len(self.clients)}")
 
     async def _send_current_device_status(self, websocket: websockets.WebSocketServerProtocol):
         """Send the current device connection status to a specific client."""
         is_connected = self.device_manager.is_connected()
         device_info = self.device_manager.get_device_info() if is_connected else None
         registered_devices = self.device_registry.get_registered_devices()
+
+        # 배터리 정보 가져오기
+        battery_data = []
+        if is_connected and self.device_manager.battery_buffer:
+            battery_data = [{"timestamp": time.time(), "level": self.device_manager.battery_level}] if self.device_manager.battery_level is not None else []
         
         status_data = {
             "connected": is_connected,
             "device_info": device_info,
             "is_streaming": self.is_streaming if is_connected else False,
             "registered_devices": registered_devices,
-            "clients_connected": len(self.clients)
+            "clients_connected": len(self.clients),
+            "battery": battery_data[-1] if battery_data else None
         }
         await self.send_event_to_client(websocket, EventType.DEVICE_INFO, status_data)
 
@@ -153,7 +168,9 @@ class WebSocketServer:
         # Send updated device status to all clients
         await self.broadcast_event(EventType.DEVICE_INFO, {
             "connected": False,
-            "device_info": None
+            "device_info": None,
+            "is_streaming": False,
+            # "battery": None
         })
 
     async def start(self):
@@ -171,9 +188,9 @@ class WebSocketServer:
         # 모든 클라이언트 연결 종료
         for client in list(self.clients):
             try:
-                await client.close()
-            except:
-                pass
+                await client.close(1000, "Server shutdown")
+            except Exception as e:
+                logger.error(f"Error closing client connection: {e}")
         self.clients.clear()
 
         if self.auto_connect_task:
@@ -183,13 +200,15 @@ class WebSocketServer:
             except asyncio.CancelledError:
                 pass
 
-        if self.stream_task:
-            self.stream_task.cancel()
-            try:
-                await self.stream_task
-            except asyncio.CancelledError:
-                pass
-            self.stream_task = None
+        # Cancel all streaming tasks
+        for sensor_type, task in self.stream_tasks.items():
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                self.stream_tasks[sensor_type] = None
 
         if self.device_manager.is_connected():
             logger.info("Disconnecting BLE device during server shutdown...")
@@ -379,6 +398,9 @@ class WebSocketServer:
                 }
                 await self.broadcast_event(EventType.DEVICE_CONNECTED, safe_device_info)
                 logger.info(f"Device connected: {safe_device_info}")
+                
+                # Automatically start streaming after successful connection
+                await self.start_streaming()
             else:
                 logger.error("Failed to get device info after connection")
 
@@ -434,26 +456,47 @@ class WebSocketServer:
             await self.send_error_to_client(websocket, f"Error during disconnect: {str(e)}")
 
     async def start_streaming(self, websocket: Optional[websockets.WebSocketServerProtocol] = None):
-        """Start the streaming task if conditions are met."""
+        """Start the streaming tasks if conditions are met."""
         if not self.device_manager.is_connected():
             msg = "Cannot start streaming: Device not connected."
             logger.warning(msg)
             if websocket: await self.send_error_to_client(websocket, msg)
             return
+
+        # Check if data acquisition is started
         if not self.device_manager._notifications_started:
-            msg = "Cannot start streaming: Data acquisition not started or failed."
-            logger.warning(msg)
-            if websocket: await self.send_error_to_client(websocket, msg)
-            return
+            logger.info("Data acquisition not started, attempting to start...")
+            if not await self.device_manager.start_data_acquisition():
+                msg = "Cannot start streaming: Failed to start data acquisition."
+                logger.warning(msg)
+                if websocket: await self.send_error_to_client(websocket, msg)
+                return
+
+        # Start battery monitoring if not already running
+        if not self.device_manager.battery_running:
+            logger.info("Battery monitoring not started, attempting to start...")
+            if not await self.device_manager.start_battery_monitoring():
+                logger.warning("Failed to start battery monitoring, but continuing with other streams")
 
         if not self.is_streaming:
             self.is_streaming = True
-            # Start the stream_data task if not already running
-            if self.stream_task is None or self.stream_task.done():
-                self.stream_task = asyncio.create_task(self.stream_data())
-                logger.info("Created and started stream_data task.")
-            else:
-                logger.warning("stream_data task already exists.") # Should not happen if logic is correct
+            
+            # Start individual streaming tasks for each sensor type
+            if self.stream_tasks['eeg'] is None or self.stream_tasks['eeg'].done():
+                self.stream_tasks['eeg'] = asyncio.create_task(self.stream_eeg_data())
+                logger.info("Created and started EEG stream task.")
+            
+            if self.stream_tasks['ppg'] is None or self.stream_tasks['ppg'].done():
+                self.stream_tasks['ppg'] = asyncio.create_task(self.stream_ppg_data())
+                logger.info("Created and started PPG stream task.")
+            
+            if self.stream_tasks['acc'] is None or self.stream_tasks['acc'].done():
+                self.stream_tasks['acc'] = asyncio.create_task(self.stream_acc_data())
+                logger.info("Created and started ACC stream task.")
+
+            if self.stream_tasks['battery'] is None or self.stream_tasks['battery'].done():
+                self.stream_tasks['battery'] = asyncio.create_task(self.stream_battery_data())
+                logger.info("Created and started battery stream task.")
 
             await self.broadcast_event(EventType.STREAM_STARTED, {"status": "streaming_started"})
             logger.info("Streaming started flag set.")
@@ -461,62 +504,283 @@ class WebSocketServer:
             logger.info("Streaming is already active.")
 
     async def stop_streaming(self):
-        """Stop the streaming task."""
+        """Stop all streaming tasks."""
         if self.is_streaming:
             self.is_streaming = False
-            if self.stream_task:
-                self.stream_task.cancel()
-                try:
-                    await self.stream_task # Wait for task to finish cancellation
-                except asyncio.CancelledError:
-                    logger.info("Streaming task successfully cancelled.")
-                except Exception as e:
-                    logger.error(f"Error during stream_task cancellation: {e}")
-                self.stream_task = None # Clear the task reference
+            
+            # Cancel all streaming tasks
+            for sensor_type, task in self.stream_tasks.items():
+                if task:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        logger.info(f"{sensor_type.upper()} streaming task successfully cancelled.")
+                    except Exception as e:
+                        logger.error(f"Error during {sensor_type} stream_task cancellation: {e}")
+                    self.stream_tasks[sensor_type] = None
+
             await self.broadcast_event(EventType.STREAM_STOPPED, {"status": "streaming_stopped"})
             logger.info("Streaming stopped flag set.")
         else:
             logger.info("Streaming is not currently active.")
 
-    async def stream_data(self):
-        """Periodically fetches buffered data and broadcasts it."""
-        logger.info("Stream data task started.")
-        SEND_INTERVAL = 0.1 # Send data every 1 second
+    async def stream_eeg_data(self):
+        """Stream EEG data independently."""
+        logger.info("EEG stream task started.")
+        SEND_INTERVAL = 0.04  # 25Hz (40ms)
+        NO_DATA_TIMEOUT = 5.0
+        last_data_time = time.time()
+        total_samples_sent = 0
+        last_log_time = time.time()
+        samples_since_last_log = 0
+
         try:
             while self.is_streaming:
                 await asyncio.sleep(SEND_INTERVAL)
-                if not self.is_streaming: break # Check flag again after sleep
+                if not self.is_streaming: break
 
-                # Fetch buffered data from DeviceManager
-                data_batch = await self.device_manager.get_buffered_data()
+                eeg_data = await self.device_manager.get_and_clear_eeg_buffer()
+                if eeg_data:
+                    last_data_time = time.time()
+                    
+                    # 데이터 구조 변환
+                    processed_data = []
+                    for sample in eeg_data:
+                        processed_sample = {
+                            "timestamp": sample["timestamp"],
+                            "ch1": sample["ch1_raw"],  # 이미 uV로 변환된 값
+                            "ch2": sample["ch2_raw"],  # 이미 uV로 변환된 값
+                            "leadoff_ch1": sample["leadoff_ch1"],
+                            "leadoff_ch2": sample["leadoff_ch2"]
+                        }
+                        processed_data.append(processed_sample)
 
-                # Only send if there's actually data in the batch
-                if data_batch["eeg"] or data_batch["ppg"] or data_batch["acc"] or data_batch["battery"] is not None:
                     message = {
                         "type": "sensor_data",
-                        "timestamp": time.time(), # Timestamp when the batch is sent
-                        "eeg": data_batch["eeg"],
-                        "ppg": data_batch["ppg"],
-                        "acc": data_batch["acc"],
-                        "battery": data_batch["battery"]  # 배터리 정보 추가
+                        "sensor_type": "eeg",
+                        "timestamp": time.time(),
+                        "data": processed_data
                     }
                     try:
                         await self.broadcast(json.dumps(message))
-                        logger.debug(f"Sent batch: {len(data_batch['eeg'])} EEG, {len(data_batch['ppg'])} PPG, {len(data_batch['acc'])} ACC, Battery: {data_batch['battery']}%")
-                    except Exception as e:
-                        logger.error(f"Error broadcasting sensor data batch: {e}")
+                        total_samples_sent += len(eeg_data)
+                        samples_since_last_log += len(eeg_data)
 
-                # Add a small yield to prevent tight loop if interval is very small
-                await asyncio.sleep(0.01)
+                        # 1초마다 스트리밍 상태 로깅
+                        current_time = time.time()
+                        if current_time - last_log_time >= 1.0:
+                            logger.info(f"[EEG] Samples/sec: {samples_since_last_log:4d} | "
+                                      f"Total: {total_samples_sent:6d} | "
+                                      f"Buffer: {len(eeg_data):4d} samples")
+                            samples_since_last_log = 0
+                            last_log_time = current_time
+                            
+                    except Exception as e:
+                        logger.error(f"Error broadcasting EEG data: {e}")
+                elif time.time() - last_data_time > NO_DATA_TIMEOUT:
+                    logger.warning("No EEG data received for too long")
+                    break
 
         except asyncio.CancelledError:
-            logger.info("Stream data task received cancellation.")
+            logger.info("EEG stream task received cancellation.")
         except Exception as e:
-            logger.error(f"Error in stream_data loop: {e}", exc_info=True)
-            # Optionally stop streaming on error
-            await self.stop_streaming()
+            logger.error(f"Error in EEG stream loop: {e}", exc_info=True)
         finally:
-            logger.info("Stream data task finished.")
+            logger.info(f"EEG stream task finished. Total samples sent: {total_samples_sent}")
+
+    async def stream_ppg_data(self):
+        """Stream PPG data independently."""
+        logger.info("PPG stream task started.")
+        SEND_INTERVAL = 0.016  # ~60Hz (16.7ms)
+        NO_DATA_TIMEOUT = 5.0
+        last_data_time = time.time()
+        total_samples_sent = 0
+        last_log_time = time.time()
+        samples_since_last_log = 0
+
+        try:
+            while self.is_streaming:
+                await asyncio.sleep(SEND_INTERVAL)
+                if not self.is_streaming: break
+
+                ppg_data = await self.device_manager.get_and_clear_ppg_buffer()
+                if ppg_data:
+                    last_data_time = time.time()
+                    message = {
+                        "type": "sensor_data",
+                        "sensor_type": "ppg",
+                        "timestamp": time.time(),
+                        "data": ppg_data
+                    }
+                    try:
+                        await self.broadcast(json.dumps(message))
+                        total_samples_sent += len(ppg_data)
+                        samples_since_last_log += len(ppg_data)
+                        
+                        # 1초마다 스트리밍 상태 로깅
+                        current_time = time.time()
+                        if current_time - last_log_time >= 1.0:
+                            logger.info(f"[PPG] Samples/sec: {samples_since_last_log:4d} | "
+                                      f"Total: {total_samples_sent:6d} | "
+                                      f"Buffer: {len(ppg_data):4d} samples")
+                            samples_since_last_log = 0
+                            last_log_time = current_time
+                            
+                    except Exception as e:
+                        logger.error(f"Error broadcasting PPG data: {e}")
+                elif time.time() - last_data_time > NO_DATA_TIMEOUT:
+                    logger.warning("No PPG data received for too long")
+                    break
+
+        except asyncio.CancelledError:
+            logger.info("PPG stream task received cancellation.")
+        except Exception as e:
+            logger.error(f"Error in PPG stream loop: {e}", exc_info=True)
+        finally:
+            logger.info(f"PPG stream task finished. Total samples sent: {total_samples_sent}")
+
+    async def stream_acc_data(self):
+        """Stream accelerometer data independently."""
+        logger.info("ACC stream task started.")
+        SEND_INTERVAL = 0.033  # ~30Hz (33.3ms)
+        NO_DATA_TIMEOUT = 5.0
+        last_data_time = time.time()
+        total_samples_sent = 0
+        last_log_time = time.time()
+        samples_since_last_log = 0
+
+        try:
+            while self.is_streaming:
+                await asyncio.sleep(SEND_INTERVAL)
+                if not self.is_streaming: break
+
+                acc_data = await self.device_manager.get_and_clear_acc_buffer()
+                if acc_data:
+                    last_data_time = time.time()
+                    message = {
+                        "type": "sensor_data",
+                        "sensor_type": "acc",
+                        "timestamp": time.time(),
+                        "data": acc_data
+                    }
+                    try:
+                        await self.broadcast(json.dumps(message))
+                        total_samples_sent += len(acc_data)
+                        samples_since_last_log += len(acc_data)
+                        
+                        # 1초마다 스트리밍 상태 로깅
+                        current_time = time.time()
+                        if current_time - last_log_time >= 1.0:
+                            logger.info(f"[ACC] Samples/sec: {samples_since_last_log:4d} | "
+                                      f"Total: {total_samples_sent:6d} | "
+                                      f"Buffer: {len(acc_data):4d} samples")
+                            samples_since_last_log = 0
+                            last_log_time = current_time
+                            
+                    except Exception as e:
+                        logger.error(f"Error broadcasting ACC data: {e}")
+                elif time.time() - last_data_time > NO_DATA_TIMEOUT:
+                    logger.warning("No ACC data received for too long")
+                    break
+
+        except asyncio.CancelledError:
+            logger.info("ACC stream task received cancellation.")
+        except Exception as e:
+            logger.error(f"Error in ACC stream loop: {e}", exc_info=True)
+        finally:
+            logger.info(f"ACC stream task finished. Total samples sent: {total_samples_sent}")
+
+    async def stream_battery_data(self):
+        """Stream battery data independently."""
+        logger.info("Battery stream task started.")
+        SEND_INTERVAL = 0.1  # 100ms마다 체크 (10Hz)
+        last_data_time = time.time()
+        total_samples_sent = 0
+        last_log_time = time.time()
+        samples_since_last_log = 0
+        last_battery_level = None
+        
+        # 타임스탬프 기반 샘플링 레이트 계산을 위한 변수들
+        timestamp_buffer = []  # 최근 1분간의 타임스탬프 저장
+        WINDOW_SIZE = 60  # 1분 윈도우
+        last_rate_log_time = time.time()
+        RATE_LOG_INTERVAL = 5  # 5초마다 샘플링 레이트 로깅
+
+        try:
+            while self.is_streaming:
+                await asyncio.sleep(SEND_INTERVAL)
+                if not self.is_streaming: break
+
+                current_time = time.time()
+                
+                # 배터리 버퍼에서 데이터 가져오기
+                battery_data = await self.device_manager.get_and_clear_battery_buffer()
+                
+                # 배터리 데이터가 없고, 마지막 배터리 레벨이 있는 경우
+                if not battery_data and last_battery_level is not None:
+                    # 마지막 알려진 배터리 레벨로 데이터 생성
+                    battery_data = [{
+                        "timestamp": current_time,
+                        "level": last_battery_level
+                    }]
+                
+                if battery_data:
+                    last_data_time = current_time
+                    last_battery_level = battery_data[-1]['level']  # 마지막 배터리 레벨 저장
+                    
+                    # 타임스탬프 버퍼 업데이트
+                    for sample in battery_data:
+                        timestamp_buffer.append(sample['timestamp'])
+                    
+                    # 1분보다 오래된 타임스탬프 제거
+                    cutoff_time = current_time - WINDOW_SIZE
+                    timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                    
+                    message = {
+                        "type": "sensor_data",
+                        "sensor_type": "battery",
+                        "timestamp": current_time,
+                        "data": battery_data
+                    }
+                    try:
+                        await self.broadcast(json.dumps(message))
+                        total_samples_sent += len(battery_data)
+                        samples_since_last_log += len(battery_data)
+                        
+                        # 1초마다 스트리밍 상태 로깅
+                        if current_time - last_log_time >= 1.0:
+                            logger.info(f"[BAT] Updates/sec: {samples_since_last_log:4d} | "
+                                      f"Total: {total_samples_sent:6d} | "
+                                      f"Level: {last_battery_level}%")
+                            samples_since_last_log = 0
+                            last_log_time = current_time
+                            
+                        # 5초마다 실제 샘플링 레이트 로깅
+                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                            if timestamp_buffer:
+                                # 타임스탬프 간격의 평균 계산
+                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] 
+                                           for i in range(len(timestamp_buffer)-1)]
+                                if intervals:
+                                    avg_interval = sum(intervals) / len(intervals)
+                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                    logger.info(f"[BAT] Actual sampling rate: {actual_rate:.2f} Hz "
+                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                            last_rate_log_time = current_time
+                            
+                    except Exception as e:
+                        logger.error(f"Error broadcasting battery data: {e}")
+                else:
+                    # 배터리 데이터가 없는 경우 로그만 출력
+                    logger.debug("No new battery data available")
+
+        except asyncio.CancelledError:
+            logger.info("Battery stream task received cancellation.")
+        except Exception as e:
+            logger.error(f"Error in battery stream loop: {e}", exc_info=True)
+        finally:
+            logger.info(f"Battery stream task finished. Total updates sent: {total_samples_sent}")
 
     async def send_event_to_client(self, websocket: websockets.WebSocketServerProtocol, event_type: EventType, data: Dict[str, Any]):
         """Send an event message to a specific client."""

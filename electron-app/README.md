@@ -52,27 +52,3 @@ export default tseslint.config({
   },
 })
 ```
-
-# Link Band SDK Electron App
-
-## python_core 백그라운드 서버 launchd 등록 방법 (macOS)
-
-1. 터미널에서 아래 명령어를 실행하세요:
-
-```sh
-cd electron-app/scripts
-chmod +x register_runserver_service.sh
-./register_runserver_service.sh
-```
-
-2. 정상 등록 여부 확인:
-
-```sh
-launchctl list | grep com.linkband.runserver
-```
-
-- 서비스가 정상 등록되면 Electron 앱에서 자동으로 상태 확인 및 실행이 가능합니다.
-
----
-
-# 이하 기존 README 내용...

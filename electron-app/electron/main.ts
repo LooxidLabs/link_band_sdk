@@ -1,183 +1,194 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } from 'electron';
 import * as path from 'path';
-import { exec } from 'child_process';
+import * as fs from 'fs';
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 
-const SERVICE_LABEL = 'com.linkband.runserver';
-
-let mainWindow: BrowserWindow | null = null;
+let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let quitting = false;
+let pythonProcess: ChildProcessWithoutNullStreams | null = null;
 
-// 단일 인스턴스 실행 보장
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    // 두 번째 인스턴스가 실행되면 기존 창을 활성화
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-
-  // 앱 초기화
-  app.whenReady().then(() => {
-    createWindow();
-    setupTray();
-  });
-}
-
-function checkServiceStatus() {
-  return new Promise((resolve) => {
-    exec(`launchctl list | grep ${SERVICE_LABEL}`, (error, stdout) => {
-      if (error || !stdout) {
-        resolve({ running: false });
-      } else {
-        resolve({ running: true });
-      }
-    });
-  });
-}
-
-function startService() {
-  return new Promise((resolve) => {
-    exec(`launchctl start ${SERVICE_LABEL}`, (error, stdout, stderr) => {
-      if (error) {
-        resolve({ started: false, error: stderr || error.message });
-      } else {
-        resolve({ started: true });
-      }
-    });
-  });
-}
-
-function isServiceRegistered() {
-  return new Promise((resolve) => {
-    exec(`launchctl list | grep ${SERVICE_LABEL}`, (error, stdout) => {
-      resolve(!!stdout);
-    });
-  });
+function showWindow() {
+  if (win && !win.isVisible()) {
+    win.show();
+    win.focus();
+  }
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  win = new BrowserWindow({
     width: 1200,
     height: 800,
+    title: 'LINK BAND SDK',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
+      webSecurity: false,
     },
-    show: false, // 초기에는 숨김 상태로 시작
   });
 
-  // 개발 모드에서는 로컬 서버, 프로덕션에서는 빌드된 파일 로드
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    win.loadURL('http://localhost:5173');
+    win.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // 수정된 경로: dist 폴더의 index.html
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    console.log('Loading index from:', indexPath);
+    win.loadFile(indexPath);
+    // 프로덕션 환경에서도 디버깅을 위해 개발자 도구 활성화
+    win.webContents.openDevTools();
   }
 
-  // 창이 준비되면 보여주기
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+  // 창을 닫아도 종료하지 않고 숨김 처리
+  win.on('close', (event) => {
+    if (quitting) {
+      win = null;
+    } else {
+      event.preventDefault();
+      win?.hide();
+    }
   });
 
-  // 창이 닫힐 때 이벤트
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
-
-  // macOS에서 dock 아이콘 설정
-  if (process.platform === 'darwin') {
-    const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'));
-    app.dock.setIcon(icon);
-  }
-
-  // Handle IPC messages from renderer
-  ipcMain.on('toMain', (event, data) => {
-    console.log('Received from renderer:', data);
-    // Process the data and send response back
-    mainWindow?.webContents.send('fromMain', { response: 'Message received!' });
-  });
-
-  // IPC for service status
-  ipcMain.handle('check-runserver-status', async () => {
-    const registered = await isServiceRegistered();
-    if (!registered) return { running: false, error: '서비스가 등록되어 있지 않습니다.' };
-    return await checkServiceStatus();
-  });
-  ipcMain.handle('start-runserver-service', async () => {
-    const registered = await isServiceRegistered();
-    if (!registered) return { running: false, started: false, error: '서비스가 등록되어 있지 않습니다. 등록 후 다시 시도하세요.' };
-    const result = (await startService()) || {};
-    const status = (await checkServiceStatus()) || {};
-    return { ...status, ...result };
+  // IPC 이벤트 리스너 등록
+  ipcMain.on('show-window', () => {
+    showWindow();
   });
 }
 
-function setupTray() {
-  // 트레이 아이콘 생성
-  const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png'))
-    .resize({ width: 16, height: 16 }); // macOS에서는 16x16이 권장됨
-  tray = new Tray(icon);
+function createTray() {
+  let iconPath;
+  if (process.env.NODE_ENV === 'development') {
+    iconPath = path.join(__dirname, '../resources/trayIcon.png');
+  } else {
+    iconPath = path.join(__dirname, 'trayIcon.png');
+  }
 
+  // 아이콘 파일이 없으면 기본 아이콘 생성
+  if (!fs.existsSync(iconPath)) {
+    console.warn('Tray icon not found at:', iconPath, 'Using default icon');
+    const defaultIcon = nativeImage.createEmpty();
+    defaultIcon.resize({
+      width: 16,
+      height: 16
+    });
+    tray = new Tray(defaultIcon);
+  } else {
+    const trayIcon = nativeImage.createFromPath(iconPath);
+    // macOS에서는 템플릿 이미지 사용
+    if (process.platform === 'darwin') {
+      trayIcon.setTemplateImage(true);
+    }
+    tray = new Tray(trayIcon);
+  }
+
+  tray.setToolTip('Link Band SDK');
+  
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show App',
+      label: 'Show/Hide Window',
       click: () => {
-        mainWindow?.show();
-      }
+        if (win) {
+          if (win.isVisible()) {
+            win.hide();
+          } else {
+            win.show();
+            win.focus();
+          }
+        }
+      },
     },
+    { type: 'separator' },
     {
       label: 'Quit',
       click: () => {
+        quitting = true;
+        stopPythonServer();
         app.quit();
-      }
-    }
+      },
+    },
   ]);
 
-  tray.setToolTip('Link Band SDK');
   tray.setContextMenu(contextMenu);
 
-  // macOS에서 트레이 아이콘 클릭 시 메뉴 표시
+  // macOS에서는 더블클릭으로 윈도우 표시/숨김
   if (process.platform === 'darwin') {
+    tray.on('double-click', () => {
+      if (win) {
+        if (win.isVisible()) {
+          win.hide();
+        } else {
+          win.show();
+          win.focus();
+        }
+      }
+    });
+  } else {
+    // 다른 플랫폼에서는 싱글 클릭으로 처리
     tray.on('click', () => {
-      tray?.popUpContextMenu();
+      if (win) {
+        if (win.isVisible()) {
+          win.hide();
+        } else {
+          win.show();
+          win.focus();
+        }
+      }
     });
   }
 }
 
-// 모든 창이 닫혔을 때
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
+function startPythonServer() {
+  if (pythonProcess) {
+    return; // 이미 실행 중이면 중복 실행 방지
   }
+  const scriptPath = path.join(__dirname, '../../python_core/run_server.py');
+  if (!fs.existsSync(scriptPath)) {
+    console.error('Python server script not found:', scriptPath);
+    return;
+  }
+  pythonProcess = spawn('python3', [scriptPath], {
+    cwd: path.dirname(scriptPath),
+    env: process.env,
+  });
+
+  pythonProcess.stdout.on('data', (data) => {
+    const msg = data.toString();
+    console.log('[PYTHON]', msg);
+    win?.webContents.send('python-log', msg);
+  });
+  pythonProcess.stderr.on('data', (data) => {
+    const msg = data.toString();
+    console.error('[PYTHON]', msg);
+    win?.webContents.send('python-log', msg);
+  });
+  pythonProcess.on('close', (code) => {
+    console.log(`[PYTHON] exited with code ${code}`);
+    win?.webContents.send('python-log', `[PYTHON] exited with code ${code}`);
+    pythonProcess = null;
+  });
+}
+
+function stopPythonServer() {
+  if (pythonProcess) {
+    pythonProcess.kill();
+    pythonProcess = null;
+  }
+}
+
+// 서비스 시작 시 Python 서버 실행 (예: 앱 시작 시 자동 실행)
+app.whenReady().then(() => {
+  createWindow();
+  createTray();
+  startPythonServer();
+});
+
+app.on('window-all-closed', () => {
+  // 창이 모두 닫혀도 앱을 종료하지 않음 (macOS 스타일)
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
-  }
+  if (win === null) createWindow();
 });
 
-// 앱 종료 전 정리 작업
-app.on('before-quit', async () => {
-  if (mainWindow) {
-    // IndexedDB 정리
-    await mainWindow.webContents.session.clearStorageData({
-      storages: ['indexdb']
-    });
-    
-    // 창 닫기
-    mainWindow.destroy();
-    mainWindow = null;
-  }
-  
-  // 트레이 아이콘 제거
-  if (tray) {
-    tray.destroy();
-    tray = null;
-  }
-}); 
+// 개발자 도구에서 로그 확인을 위해 ipcMain 이벤트도 추가 가능
+// win.webContents.on('ipc-message', (event, channel, ...args) => { ... });
