@@ -35,7 +35,7 @@ class EventType(Enum):
     DATA_ACQUISITION_STOPPED = "data_acquisition_stopped"
 
 class WebSocketTestClient:
-    def __init__(self, uri: str = "ws://localhost:8765"):
+    def __init__(self, uri: str = "ws://localhost:18765"):
         self.uri = uri
         self.websocket: websockets.WebSocketClientProtocol = None
         self.received_messages = []

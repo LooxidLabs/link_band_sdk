@@ -53,11 +53,17 @@ class DeviceManager:
         self.battery_level: Optional[int] = None
         self.last_battery_level: Optional[int] = None  # 이전 배터리 값 저장
 
-        # Use deque for simple, non-blocking buffering from BLE callbacks
-        self.eeg_buffer = deque()
-        self.ppg_buffer = deque()
-        self.acc_buffer = deque()
-        self._buffer_lock = asyncio.Lock() # Lock for thread-safe buffer access
+        # 각 센서별 독립적인 버퍼 (FIFO 큐로 사용)
+        self.eeg_buffer = []
+        self.ppg_buffer = []
+        self.acc_buffer = []
+        self.battery_buffer = []
+        
+        # 각 센서별 버퍼 크기 제한
+        self.EEG_BUFFER_SIZE = 2500  # 250Hz * 10s
+        self.PPG_BUFFER_SIZE = 600   # 60Hz * 10s
+        self.ACC_BUFFER_SIZE = 300   # 30Hz * 10s
+        self.BATTERY_BUFFER_SIZE = 10  # 배터리 값 10개 저장
 
         self.eeg_sample_count = 0
         self.ppg_sample_count = 0
@@ -185,6 +191,7 @@ class DeviceManager:
         self.eeg_buffer.clear()
         self.ppg_buffer.clear()
         self.acc_buffer.clear()
+        self.battery_buffer.clear()
         
         # Reset sample counters
         self.eeg_sample_count = 0
@@ -266,80 +273,111 @@ class DeviceManager:
              return True # Already stopped is considered success
 
         self.logger.info("Stopping data acquisition...")
+        success = True
+
+        # 서비스가 초기화되어 있는지 확인
+        if self.client.services is None:
+            self.logger.warning("Services not initialized, skipping stop_notify calls.")
+            self._notifications_started = False
+            return True
+
         try:
             await self.client.stop_notify(EEG_NOTIFY_CHAR_UUID)
         except Exception as e:
-             self.logger.error(f"Error stopping EEG notify: {e}")
+            self.logger.error(f"Error stopping EEG notify: {e}")
+            success = False
+
         try:
             await self.client.stop_notify(PPG_CHAR_UUID)
         except Exception as e:
-             self.logger.error(f"Error stopping PPG notify: {e}")
+            self.logger.error(f"Error stopping PPG notify: {e}")
+            success = False
+
         try:
             await self.client.stop_notify(ACCELEROMETER_CHAR_UUID)
         except Exception as e:
-             self.logger.error(f"Error stopping ACC notify: {e}")
+            self.logger.error(f"Error stopping ACC notify: {e}")
+            success = False
 
+        # 상태 플래그는 항상 초기화
         self._notifications_started = False
-        self.logger.info("Data acquisition stopped.")
-        return True
+        
+        if success:
+            self.logger.info("Data acquisition stopped successfully.")
+        else:
+            self.logger.warning("Data acquisition stop completed with some errors.")
+        
+        return success
 
     # --- Data Handling Callbacks --- (Simplified data structure for callback)
 
+    def _add_to_buffer(self, buffer: List, data: Any, max_size: int):
+        """Add data to a buffer with size limit."""
+        buffer.append(data)
+        if len(buffer) > max_size:
+            buffer.pop(0)
+
     def _handle_eeg(self, sender, data: bytearray):
-        """Handle incoming EEG data, parsing logic aligned with main.py."""
+        """Handle incoming EEG data, storing in buffer."""
         try:
+            self.logger.debug(f"Received EEG data: {len(data)} bytes")
+            if len(data) < 8:  # Minimum expected data length (4 bytes timestamp + 4 bytes EEG)
+                self.logger.warning(f"EEG data too short: {len(data)} bytes")
+                return
+
             time_raw = int.from_bytes(data[0:4], 'little')
-            base_timestamp = time_raw / TIMESTAMP_CLOCK # Base timestamp in seconds for the packet
-            num_samples = (len(data) - 4) // 7 # Calculate number of samples dynamically
+            base_timestamp = time_raw / TIMESTAMP_CLOCK
+            
+            # 데이터 구조: 7바이트 단위로 반복 (1바이트 leadoff + 3바이트 ch1 + 3바이트 ch2)
+            # 총 25개의 샘플이면 25 * 7 = 175바이트 + 앞 4바이트 헤더 = 179 바이트
+            num_samples = (len(data) - 4) // 7
+
+            self.logger.debug(f"EEG data: base_timestamp={base_timestamp}, num_samples={num_samples}")
 
             samples_to_add = []
             for i in range(num_samples):
                 offset = 4 + i * 7
-                # Ensure we don't read past the end of the data buffer
                 if offset + 7 > len(data):
                     self.logger.warning(f"EEG data shorter than expected for sample {i}. Skipping remaining.")
                     break
 
-                # 1. Lead-off status (bit 3: ch2 p, bit 2: ch2 n, bit 1: ch1 p, bit 0: ch1 n)
-                leadOff_raw = data[offset]
-                # Extract lead-off status for each channel
-                # If any of the positive or negative electrodes are disconnected (bit is 1), the channel is considered disconnected
-                lead_off_ch1 = 1 if (leadOff_raw & 0x01) or (leadOff_raw & 0x02) else 0  # ch1 n or ch1 p
-                lead_off_ch2 = 1 if (leadOff_raw & 0x04) or (leadOff_raw & 0x08) else 0  # ch2 n or ch2 p
+                # Lead-off 상태 처리 (1바이트)
+                leadoff_raw = data[offset]
+                # bit 3: ch2 p, bit 2: ch2 n, bit 1: ch1 p, bit 0: ch1 n
+                # 1이면 떨어짐, 0이면 접촉
+                leadoff_ch1 = bool(leadoff_raw & 0x01)  # ch1 n
+                leadoff_ch2 = bool(leadoff_raw & 0x04)  # ch2 n
 
-                # 2. CH1 Raw (Read as unsigned, then apply manual 24-bit signed conversion)
-                ch1_unsigned_raw = int.from_bytes(data[offset+1:offset+4], 'little', signed=False)
-                if ch1_unsigned_raw & 0x800000: # Check MSB (bit 23)
-                    ch1_raw = ch1_unsigned_raw - 0x1000000 # Apply two's complement adjustment
-                else:
-                    ch1_raw = ch1_unsigned_raw
+                # 채널 1 (3바이트 → 24bit → 정수로 변환)
+                ch1_raw = (data[offset+1] << 16 | data[offset+2] << 8 | data[offset+3])
+                ch2_raw = (data[offset+4] << 16 | data[offset+5] << 8 | data[offset+6])
 
-                # 3. CH2 Raw (Read as unsigned, then apply manual 24-bit signed conversion)
-                ch2_unsigned_raw = int.from_bytes(data[offset+4:offset+7], 'little', signed=False)
-                if ch2_unsigned_raw & 0x800000: # Check MSB (bit 23)
-                    ch2_raw = ch2_unsigned_raw - 0x1000000 # Apply two's complement adjustment
-                else:
-                    ch2_raw = ch2_unsigned_raw
+                # 24bit signed 처리 (MSB 기준 음수 보정)
+                if ch1_raw & 0x800000:
+                    ch1_raw -= 0x1000000
+                if ch2_raw & 0x800000:
+                    ch2_raw -= 0x1000000
 
-                # 4. Voltage Conversion (uV) - Formula matches main.py
+                # 전압값(uV)로 변환
                 ch1_uv = ch1_raw * 4.033 / 12 / (2**23 - 1) * 1e6
                 ch2_uv = ch2_raw * 4.033 / 12 / (2**23 - 1) * 1e6
 
-                # 5. Calculate timestamp for this specific sample
                 sample_timestamp = base_timestamp + i / EEG_SAMPLE_RATE
-
-                # 6. Add sample to list with separated lead-off status
-                samples_to_add.append({
+                
+                sample = {
                     "timestamp": sample_timestamp,
-                    "ch1": ch1_uv,
-                    "ch2": ch2_uv,
-                    "leadoff_ch1": lead_off_ch1,
-                    "leadoff_ch2": lead_off_ch2
-                })
+                    "ch1_raw": ch1_uv,
+                    "ch2_raw": ch2_uv,
+                    "leadoff_ch1": leadoff_ch1,
+                    "leadoff_ch2": leadoff_ch2
+                }
+                samples_to_add.append(sample)
+                self.logger.debug(f"EEG sample {i}: {sample}")
 
-            # Add all samples to the buffer
             if samples_to_add:
-                self.eeg_buffer.extend(samples_to_add)
+                for sample in samples_to_add:
+                    self._add_to_buffer(self.eeg_buffer, sample, self.EEG_BUFFER_SIZE)
+                self.logger.debug(f"Added {len(samples_to_add)} EEG samples to buffer")
                 self.eeg_sample_count += len(samples_to_add)
 
         except Exception as e:
@@ -378,18 +416,18 @@ class DeviceManager:
                 self.logger.debug(f"PPG sample {i}: {sample}")
 
             if samples_to_add:
-                self.ppg_buffer.extend(samples_to_add)
-                self.ppg_sample_count += len(samples_to_add)
+                for sample in samples_to_add:
+                    self._add_to_buffer(self.ppg_buffer, sample, self.PPG_BUFFER_SIZE)
                 self.logger.debug(f"Added {len(samples_to_add)} PPG samples to buffer")
 
         except Exception as e:
             self.logger.error(f"Error processing PPG data: {e}", exc_info=True)
 
     def _handle_acc(self, sender, data: bytearray):
-        """Handle incoming Accelerometer data, storing in buffer."""
+        """Handle incoming accelerometer data, storing in buffer."""
         try:
             self.logger.debug(f"Received ACC data: {len(data)} bytes")
-            if len(data) < 10:  # Minimum expected data length
+            if len(data) < 10:  # Minimum expected data length (4 bytes timestamp + 6 bytes ACC)
                 self.logger.warning(f"ACC data too short: {len(data)} bytes")
                 return
 
@@ -407,25 +445,23 @@ class DeviceManager:
                     break
 
                 # Read 16-bit signed values for each axis
-                acc_x = int.from_bytes(data[offset:offset+2], 'little', signed=True)
-                acc_y = int.from_bytes(data[offset+2:offset+4], 'little', signed=True)
-                acc_z = int.from_bytes(data[offset+4:offset+6], 'little', signed=True)
-
-                # Calculate timestamp for this specific sample
+                x_raw = int.from_bytes(data[offset:offset+2], 'little', signed=True)
+                y_raw = int.from_bytes(data[offset+2:offset+4], 'little', signed=True)
+                z_raw = int.from_bytes(data[offset+4:offset+6], 'little', signed=True)
                 sample_timestamp = base_timestamp + i / ACC_SAMPLE_RATE
 
                 sample = {
                     "timestamp": sample_timestamp,
-                    "x": acc_x,
-                    "y": acc_y,
-                    "z": acc_z
+                    "x": x_raw,
+                    "y": y_raw,
+                    "z": z_raw
                 }
                 samples_to_add.append(sample)
                 self.logger.debug(f"ACC sample {i}: {sample}")
 
             if samples_to_add:
-                self.acc_buffer.extend(samples_to_add)
-                self.acc_sample_count += len(samples_to_add)
+                for sample in samples_to_add:
+                    self._add_to_buffer(self.acc_buffer, sample, self.ACC_BUFFER_SIZE)
                 self.logger.debug(f"Added {len(samples_to_add)} ACC samples to buffer")
 
         except Exception as e:
@@ -444,8 +480,16 @@ class DeviceManager:
             self.logger.info("Starting battery monitoring...")
             # 먼저 현재 배터리 수준을 읽어옴
             battery_data = await self.client.read_gatt_char(BATTERY_CHAR_UUID)
-            self.battery_level = int.from_bytes(battery_data, 'little')
-            self.logger.info(f"Initial battery level: {self.battery_level}%")
+            initial_battery_level = int.from_bytes(battery_data, 'little')
+            
+            # 초기 배터리 값을 버퍼에 추가
+            timestamp = time.time()
+            battery_data = {
+                "timestamp": timestamp,
+                "level": initial_battery_level
+            }
+            self._add_to_buffer(self.battery_buffer, battery_data, self.BATTERY_BUFFER_SIZE)
+            self.logger.info(f"Initial battery level: {initial_battery_level}%")
             
             # 배터리 수준 변경 알림 시작
             await self.client.start_notify(BATTERY_CHAR_UUID, self._handle_battery)
@@ -467,6 +511,13 @@ class DeviceManager:
 
         try:
             self.logger.info("Stopping battery monitoring...")
+            # 서비스가 초기화되어 있는지 확인
+            if self.client.services is None:
+                self.logger.warning("Services not initialized, skipping stop_notify.")
+                self.battery_running = False
+                self.battery_level = None
+                return True
+
             await self.client.stop_notify(BATTERY_CHAR_UUID)
             self.battery_running = False
             self.battery_level = None
@@ -474,6 +525,9 @@ class DeviceManager:
             return True
         except Exception as e:
             self.logger.error(f"Error stopping battery monitoring: {e}", exc_info=True)
+            # 에러가 발생해도 배터리 모니터링 상태는 초기화
+            self.battery_running = False
+            self.battery_level = None
             return False
 
     def _handle_battery(self, sender, data: bytearray):
@@ -482,46 +536,71 @@ class DeviceManager:
             if len(data) >= 1:
                 new_battery_level = int.from_bytes(data[0:1], 'little')
                 if new_battery_level is not None:
-                    self.last_battery_level = new_battery_level  # 이전 값 업데이트
-                    self.battery_level = new_battery_level
-                    self.logger.debug(f"Battery level updated: {self.battery_level}%")
+                    timestamp = time.time()
+                    battery_data = {
+                        "timestamp": timestamp,
+                        "level": new_battery_level
+                    }
+                    self._add_to_buffer(self.battery_buffer, battery_data, self.BATTERY_BUFFER_SIZE)
+                    self.logger.info(f"Battery level updated: {new_battery_level}% (Buffer size: {len(self.battery_buffer)})")
         except Exception as e:
             self.logger.error(f"Error processing battery data: {e}", exc_info=True)
 
+    async def get_and_clear_eeg_buffer(self) -> List[Any]:
+        """Get a copy of the EEG buffer and clear it."""
+        buffer_copy = self.eeg_buffer.copy()
+        self.eeg_buffer.clear()
+        self.logger.debug(f"Getting and clearing EEG buffer: {len(buffer_copy)} samples")
+        return buffer_copy
+
+    async def get_and_clear_ppg_buffer(self) -> List[Any]:
+        """Get a copy of the PPG buffer and clear it."""
+        buffer_copy = self.ppg_buffer.copy()
+        self.ppg_buffer.clear()
+        self.logger.debug(f"Getting and clearing PPG buffer: {len(buffer_copy)} samples")
+        return buffer_copy
+
+    async def get_and_clear_acc_buffer(self) -> List[Any]:
+        """Get a copy of the accelerometer buffer and clear it."""
+        buffer_copy = self.acc_buffer.copy()
+        self.acc_buffer.clear()
+        self.logger.debug(f"Getting and clearing ACC buffer: {len(buffer_copy)} samples")
+        return buffer_copy
+
+    async def get_and_clear_battery_buffer(self) -> List[Any]:
+        """Get a copy of the battery buffer and clear it."""
+        buffer_copy = self.battery_buffer.copy()
+        self.battery_buffer.clear()
+        self.logger.debug(f"Getting and clearing battery buffer: {len(buffer_copy)} samples")
+        return buffer_copy
+
+    # Legacy method - use specific getters instead
     async def get_buffered_data(self) -> Dict[str, Any]:
-        """Atomically retrieve all data currently in the buffers and calculate averages."""
-        async with self._buffer_lock:
-            # Get all buffered data
-            eeg_data = list(self.eeg_buffer)
-            ppg_data = list(self.ppg_buffer)
-            acc_data = list(self.acc_buffer)
-            
-            # Clear buffers
-            self.eeg_buffer.clear()
-            self.ppg_buffer.clear()
-            self.acc_buffer.clear()
-
-        # 배터리 값이 없거나 None일 때 이전 값 사용
-        current_battery = self.battery_level if self.battery_level is not None else self.last_battery_level
-
-        # Calculate averages for each sensor type
-        result = {
-            "eeg": eeg_data,
-            "ppg": ppg_data,
-            "acc": acc_data,
-            "battery": current_battery
+        """Get all buffered data and clear buffers."""
+        return {
+            "eeg": await self.get_and_clear_eeg_buffer(),
+            "ppg": await self.get_and_clear_ppg_buffer(),
+            "acc": await self.get_and_clear_acc_buffer(),
+            "battery": await self.get_and_clear_battery_buffer()
         }
 
-        # 샘플링 속도 계산 및 로그 (1초마다)
+    def clear_buffers(self):
+        """Clear all data buffers."""
+        self.eeg_buffer.clear()
+        self.ppg_buffer.clear()
+        self.acc_buffer.clear()
+        self.battery_buffer.clear()
+        self.logger.info("All data buffers cleared")
+
+    # 샘플링 속도 계산 및 로그 (1초마다)
+    def _calculate_sampling_rate(self):
         now = time.time()
         if now - self.last_sample_log_time >= 0.2:
             print(f"[샘플링 속도] EEG: {self.eeg_sample_count} samples/sec, "
                   f"PPG: {self.ppg_sample_count} samples/sec, "
                   f"ACC: {self.acc_sample_count} samples/sec, "
-                  f"Battery: {current_battery}%")
+                  f"Battery: {self.battery_level}%")
             self.eeg_sample_count = 0
             self.ppg_sample_count = 0
             self.acc_sample_count = 0
             self.last_sample_log_time = now
-
-        return result

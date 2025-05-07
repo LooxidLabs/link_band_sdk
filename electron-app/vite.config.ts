@@ -1,25 +1,23 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import electron from 'vite-electron-plugin';
-import { resolve } from 'path';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path'
 
-// https://vitejs.dev/config/
+// https://vite.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    electron({
-      include: ['electron']
-    })
-  ],
+  plugins: [react()],
   base: './',
   build: {
     outDir: 'dist',
+    assetsDir: 'assets',
     emptyOutDir: true,
-  },
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, './src'),
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+      },
     },
   },
-  envPrefix: 'VITE_'
-}); 
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
+})
