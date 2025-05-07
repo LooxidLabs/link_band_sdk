@@ -205,6 +205,7 @@ type DeviceStateData = {
   lastRateUpdate: number;
   lastDataUpdate: number;
   connectedClients: number;
+  autoShowWindow: boolean;
 };
 
 type DeviceStateMethods = {
@@ -219,6 +220,7 @@ type DeviceStateMethods = {
   addAccData: (data: AccData[]) => void;
   updateBatteryLevel: (level: number) => void;
   updateConnectionQuality: (quality: Partial<ConnectionQuality>) => void;
+  setAutoShowWindow: (enabled: boolean) => void;
 };
 
 type DeviceState = DeviceStateData & DeviceStateMethods;
@@ -247,6 +249,7 @@ const initialState: DeviceStateData = {
   lastRateUpdate: Date.now(),
   lastDataUpdate: Date.now(),
   connectedClients: 0,
+  autoShowWindow: true,
 };
 
 // 샘플링 레이트 계산 및 업데이트 함수
@@ -283,16 +286,31 @@ const updateSamplingRates = (state: DeviceStateData): DeviceStateData => {
   return state;
 };
 
-declare const window: Window & {
-  electron: {
-    ipcRenderer: {
-      send(channel: string, ...args: any[]): void;
+declare global {
+  interface Window {
+    electron: {
+      ipcRenderer: {
+        send(channel: string, ...args: any[]): void;
+        on(channel: string, func: (...args: any[]) => void): void;
+        once(channel: string, func: (...args: any[]) => void): void;
+        removeListener(channel: string, func: (...args: any[]) => void): void;
+      };
     };
-  };
-};
+  }
+}
 
 export const useDeviceManager = create<DeviceState>((set, get) => {
-  // WebSocket 매니저 인스턴스 생성
+  // 초기화 시 저장된 설정 불러오기
+  let initialAutoShow = true;
+  try {
+    const savedAutoShow = localStorage.getItem('autoShowWindow');
+    if (savedAutoShow !== null) {
+      initialAutoShow = JSON.parse(savedAutoShow);
+    }
+  } catch (error) {
+    console.error('Failed to load autoShowWindow setting:', error);
+  }
+
   const wsManager = new WebSocketManager(WS_URL, (message) => {
     handleWebSocketMessage(message);
   });
@@ -308,6 +326,7 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
       // 연결이 끊어지면 모든 상태를 초기화
       set({
         ...initialState,
+        autoShowWindow: get().autoShowWindow, // autoShowWindow 설정은 유지
         eventEmitter: get().eventEmitter, // eventEmitter는 유지
       });
     } else {
@@ -320,6 +339,7 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
 
   return {
     ...initialState,
+    autoShowWindow: initialAutoShow, // 저장된 설정으로 초기화
     eventEmitter: new EventEmitter(),
 
     connect: async (address: string) => {
@@ -437,6 +457,16 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
         }
       }));
       get().eventEmitter.emit('connectionQualityUpdated');
+    },
+
+    setAutoShowWindow: (enabled: boolean) => {
+      set({ autoShowWindow: enabled });
+      // localStorage에 설정 저장
+      try {
+        localStorage.setItem('autoShowWindow', JSON.stringify(enabled));
+      } catch (error) {
+        console.error('Failed to save autoShowWindow setting:', error);
+      }
     }
   };
 });
@@ -463,11 +493,11 @@ export const handleWebSocketMessage = (message: any) => {
         break;
     }
   } else if (message.type === 'health_check_response') {
-    const wasConnected = useDeviceManager.getState().isConnected;
+    const wasConnected = store.isConnected;
     const isNowConnected = message.device_connected;
 
-    // 디바이스 연결 상태가 변경되었고, 연결된 상태가 되었을 때 창 표시
-    if (!wasConnected && isNowConnected) {
+    // 디바이스가 새로 연결되었고, 자동 표시 설정이 활성화된 경우에만 창 표시
+    if (!wasConnected && isNowConnected && store.autoShowWindow) {
       window.electron?.ipcRenderer?.send('show-window');
     }
 
@@ -490,8 +520,10 @@ export const handleWebSocketMessage = (message: any) => {
             },
             isConnected: true
           });
-          // 디바이스가 연결되면 창 표시
-          window.electron?.ipcRenderer?.send('show-window');
+          // 자동 표시 설정이 활성화된 경우에만 창 표시
+          if (store.autoShowWindow) {
+            window.electron?.ipcRenderer?.send('show-window');
+          }
         }
         break;
       case 'device_disconnected':
@@ -515,8 +547,8 @@ export const handleWebSocketMessage = (message: any) => {
             } : null,
             isStreaming: is_streaming
           });
-          // 디바이스가 연결되어 있으면 창 표시
-          if (connected) {
+          // 자동 표시 설정이 활성화된 경우에만 창 표시
+          if (connected && store.autoShowWindow) {
             window.electron?.ipcRenderer?.send('show-window');
           }
         }
