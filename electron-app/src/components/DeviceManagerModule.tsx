@@ -9,6 +9,7 @@ import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
+import BluetoothIcon from '@mui/icons-material/Bluetooth';
 import { useDeviceManager } from '../stores/deviceManager';
 
 const SERVER_ADDR = 'localhost';
@@ -76,6 +77,7 @@ const DeviceManagerModule: React.FC = () => {
     connectedClients,
     autoShowWindow,
     setAutoShowWindow,
+    deviceInfo,
   } = useDeviceManager();
 
   // 시간 포맷팅 함수
@@ -92,8 +94,33 @@ const DeviceManagerModule: React.FC = () => {
   const leadoffCh1 = latestEEG ? (latestEEG.leadoff_ch1 ? '떨어짐' : '접촉') : '--';
   const leadoffCh2 = latestEEG ? (latestEEG.leadoff_ch2 ? '떨어짐' : '접촉') : '--';
 
+  // 디바이스 버튼 라벨 결정
+  const deviceButtonLabel = deviceInfo && deviceInfo.name ? deviceInfo.name : '디바이스 등록';
+
   return (
-    <Card sx={{ background: 'rgba(40,44,52,0.95)', borderRadius: 4, boxShadow: 6 }}>
+    <Card sx={{ background: 'rgba(40,44,52,0.95)', borderRadius: 4, boxShadow: 6, position: 'relative' }}>
+      {/* 오른쪽 상단 디바이스 버튼 */}
+      <Button
+        variant="contained"
+        color="secondary"
+        startIcon={<BluetoothIcon />}
+        sx={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          minWidth: 120,
+          height: 36,
+          fontSize: 13,
+          fontWeight: 500,
+          borderRadius: 2,
+          boxShadow: 2,
+          zIndex: 10,
+          textTransform: 'none',
+        }}
+        // onClick 핸들러는 필요에 따라 추가
+      >
+        {deviceButtonLabel}
+      </Button>
       <CardContent sx={{ '&:last-child': { paddingBottom: 2 } }}>
         <Typography sx={commonStyles.sectionTitle}>Network Info</Typography>
         <Stack direction="row" spacing={1} mb={1}>
