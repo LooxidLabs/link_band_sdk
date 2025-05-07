@@ -6,6 +6,11 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   base: './',
+  resolve: {
+    alias: {
+      '@mui/styled-engine': '@mui/styled-engine-sc',
+    },
+  },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
