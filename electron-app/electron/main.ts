@@ -21,9 +21,9 @@ function createWindow() {
     height: 800,
     title: 'LINK BAND SDK',
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     },
   });
 
@@ -51,6 +51,7 @@ function createWindow() {
 
   // IPC 이벤트 리스너 등록
   ipcMain.on('show-window', () => {
+    console.log('Received show-window event');  // 디버깅용 로그 추가
     showWindow();
   });
 }

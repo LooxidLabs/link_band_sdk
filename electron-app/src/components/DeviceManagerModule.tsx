@@ -5,6 +5,10 @@ import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Button from '@mui/material/Button';
+import Box from '@mui/material/Box';
 import { useDeviceManager } from '../stores/deviceManager';
 
 const SERVER_ADDR = 'localhost';
@@ -18,6 +22,48 @@ function streamingColor(isStreaming: boolean) {
   return isStreaming ? 'primary' : 'default';
 }
 
+// 공통 스타일 정의
+const commonStyles = {
+  typography: {
+    fontSize: 12,
+    fontWeight: 'normal',
+  },
+  chip: {
+    height: 24,
+    fontSize: 12,
+  },
+  divider: {
+    margin: '8px 0',
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginBottom: '4px',
+  },
+  formControl: {
+    margin: 0,
+    '& .MuiFormControlLabel-label': {
+      fontSize: 12,
+    },
+    '& .MuiSwitch-root': {
+      marginRight: 4,
+    },
+  },
+  updateButton: {
+    fontSize: 12,
+    padding: '4px 8px',
+    minWidth: 'unset',
+    height: 24,
+  },
+  updateTime: {
+    fontSize: 12,
+    color: '#888',
+    marginLeft: 8,
+    display: 'inline-flex',
+    alignItems: 'center',
+  },
+};
+
 const DeviceManagerModule: React.FC = () => {
   const {
     isConnected,
@@ -28,6 +74,8 @@ const DeviceManagerModule: React.FC = () => {
     eegData,
     lastDataUpdate,
     connectedClients,
+    autoShowWindow,
+    setAutoShowWindow,
   } = useDeviceManager();
 
   // 시간 포맷팅 함수
@@ -39,11 +87,6 @@ const DeviceManagerModule: React.FC = () => {
     return `${hours}시 ${minutes}분 ${seconds}초`;
   };
 
-  // 5초 이상 경과 여부 확인
-  const isStale = () => {
-    return (Date.now() - lastDataUpdate) >= 5000;
-  };
-
   // 최신 EEG 데이터에서 leadoff 상태 확인
   const latestEEG = eegData[eegData.length - 1];
   const leadoffCh1 = latestEEG ? (latestEEG.leadoff_ch1 ? '떨어짐' : '접촉') : '--';
@@ -51,49 +94,130 @@ const DeviceManagerModule: React.FC = () => {
 
   return (
     <Card sx={{ background: 'rgba(40,44,52,0.95)', borderRadius: 4, boxShadow: 6 }}>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>Network Info</Typography>
-        <Stack direction="row" spacing={2} mb={2}>
-          <Chip label={`Server: ${SERVER_ADDR}`} color="info" />
-          <Chip label={`Port: ${SERVER_PORT}`} color="info" />
+      <CardContent sx={{ '&:last-child': { paddingBottom: 2 } }}>
+        <Typography sx={commonStyles.sectionTitle}>Network Info</Typography>
+        <Stack direction="row" spacing={1} mb={1}>
+          <Chip 
+            label={`Server: ${SERVER_ADDR}`} 
+            color="info" 
+            size="small"
+            sx={commonStyles.chip}
+          />
+          <Chip 
+            label={`Port: ${SERVER_PORT}`} 
+            color="info" 
+            size="small"
+            sx={commonStyles.chip}
+          />
         </Stack>
-        <Divider sx={{ my: 2 }} />
-        <Typography variant="h6" gutterBottom>Status</Typography>
-        <Stack direction="row" spacing={2} mb={2} flexWrap="wrap" useFlexGap>
+
+        <Divider sx={commonStyles.divider} />
+        
+        <Typography sx={commonStyles.sectionTitle}>Status</Typography>
+        <Stack direction="row" spacing={1} mb={1} flexWrap="wrap" useFlexGap>
           <Chip
             label={isServerConnected ? 'DSM 연결됨' : 'DSM 연결끊김'}
             color={statusColor(isServerConnected)}
+            size="small"
+            sx={commonStyles.chip}
           />
           <Chip
             label={isConnected ? '디바이스 연결됨' : '디바이스 연결끊김'}
             color={statusColor(isConnected)}
-          />
-          <Chip
-            label={`마지막 업데이트: ${formatTime(lastDataUpdate)}`}
-            color={isStale() ? 'warning' : 'success'}
+            size="small"
+            sx={commonStyles.chip}
           />
           <Chip
             label={`연결된 클라이언트 수: ${connectedClients}개`}
             color="info"
+            size="small"
+            sx={commonStyles.chip}
           />
           <Chip
             label={isStreaming ? '스트리밍 진행중' : '스트리밍 중단됨'}
             color={isStreaming ? 'success' : 'error'}
+            size="small"
+            sx={commonStyles.chip}
           />
         </Stack>
-        <Divider sx={{ my: 2 }} />
-        <Typography variant="h6" gutterBottom>Streaming</Typography>
-        <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-          <Chip label={`EEG: ${connectionQuality.eegRate.toFixed(1)} Hz`} color={streamingColor(isStreaming)} />
-          <Chip label={`PPG: ${connectionQuality.ppgRate.toFixed(1)} Hz`} color={streamingColor(isStreaming)} />
-          <Chip label={`ACC: ${connectionQuality.accRate.toFixed(1)} Hz`} color={streamingColor(isStreaming)} />
+
+        <Divider sx={commonStyles.divider} />
+        
+        <Typography sx={commonStyles.sectionTitle}>Streaming</Typography>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          <Chip 
+            label={`EEG: ${connectionQuality.eegRate.toFixed(1)} Hz`} 
+            color={streamingColor(isStreaming)}
+            size="small"
+            sx={commonStyles.chip}
+          />
+          <Chip 
+            label={`PPG: ${connectionQuality.ppgRate.toFixed(1)} Hz`} 
+            color={streamingColor(isStreaming)}
+            size="small"
+            sx={commonStyles.chip}
+          />
+          <Chip 
+            label={`ACC: ${connectionQuality.accRate.toFixed(1)} Hz`} 
+            color={streamingColor(isStreaming)}
+            size="small"
+            sx={commonStyles.chip}
+          />
         </Stack>
-        <Divider sx={{ my: 2 }} />
-        <Typography variant="h6" gutterBottom>Device Status</Typography>
-        <Stack direction="row" spacing={2}>
-          <Chip label={`배터리: ${batteryLevel} %`} color="secondary" />
-          <Chip label={`센서 접촉 ch1: ${leadoffCh1}`} color={leadoffCh1 === '접촉' ? 'success' : 'error'} />
-          <Chip label={`센서 접촉 ch2: ${leadoffCh2}`} color={leadoffCh2 === '접촉' ? 'success' : 'error'} />
+
+        <Divider sx={commonStyles.divider} />
+        
+        <Typography sx={commonStyles.sectionTitle}>Device Status</Typography>
+        <Stack direction="row" spacing={1}>
+          <Chip 
+            label={`배터리: ${batteryLevel} %`} 
+            color="secondary"
+            size="small"
+            sx={commonStyles.chip}
+          />
+          <Chip 
+            label={`센서 접촉 ch1: ${leadoffCh1}`} 
+            color={leadoffCh1 === '접촉' ? 'success' : 'error'}
+            size="small"
+            sx={commonStyles.chip}
+          />
+          <Chip 
+            label={`센서 접촉 ch2: ${leadoffCh2}`} 
+            color={leadoffCh2 === '접촉' ? 'success' : 'error'}
+            size="small"
+            sx={commonStyles.chip}
+          />
+        </Stack>
+
+        <Divider sx={commonStyles.divider} />
+        
+        <Typography sx={commonStyles.sectionTitle}>Settings</Typography>
+        <Stack spacing={1}>
+          <FormControlLabel
+            sx={commonStyles.formControl}
+            control={
+              <Switch
+                checked={autoShowWindow}
+                onChange={(e) => setAutoShowWindow(e.target.checked)}
+                color="primary"
+                size="small"
+              />
+            }
+            label="디바이스 연결 시 화면 자동 켜짐"
+          />
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Button
+              variant="outlined"
+              size="small"
+              sx={commonStyles.updateButton}
+              onClick={() => window.electron?.ipcRenderer?.send('show-window')}
+            >
+              수동 업데이트
+            </Button>
+            <Typography component="span" sx={commonStyles.updateTime}>
+              마지막 업데이트: {formatTime(lastDataUpdate)}
+            </Typography>
+          </Box>
         </Stack>
       </CardContent>
     </Card>

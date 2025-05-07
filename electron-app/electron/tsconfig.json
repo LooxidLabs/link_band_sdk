@@ -6,7 +6,9 @@
     "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["./main.ts"]
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules"]
 }
