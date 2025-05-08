@@ -19,6 +19,17 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
       },
+      external: [
+        'electron-store',
+        'electron',
+        'node:fs',
+        'node:path',
+        'node:process',
+        'node:util',
+        'node:os',
+        'node:crypto',
+        'node:assert',
+      ],
     },
   },
   server: {
