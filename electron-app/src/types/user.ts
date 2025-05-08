@@ -11,6 +11,8 @@ export interface UserCreate extends UserBase {
 export interface UserUpdate {
   name?: string;
   picture?: string;
+  email?: string;
+  password?: string;
 }
 
 export interface UserInDB extends UserBase {
@@ -24,9 +26,9 @@ export interface UserInDB extends UserBase {
 export interface UserResponse {
   id: string;
   email: string;
-  name: string | null;
-  picture: string | null;
-  token?: string;
+  last_login: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface FirebaseAuthRequest {

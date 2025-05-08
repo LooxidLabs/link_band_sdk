@@ -299,11 +299,16 @@ const updateSamplingRates = (state: DeviceStateData): DeviceStateData => {
 declare global {
   interface Window {
     electron: {
+      store: {
+        getSavedCredentials: () => Promise<any>;
+        setSavedCredentials: (credentials: any) => Promise<boolean>;
+        clearSavedCredentials: () => Promise<boolean>;
+      };
       ipcRenderer: {
-        send(channel: string, ...args: any[]): void;
-        on(channel: string, func: (...args: any[]) => void): void;
-        once(channel: string, func: (...args: any[]) => void): void;
-        removeListener(channel: string, func: (...args: any[]) => void): void;
+        send: (channel: string, ...args: any[]) => void;
+        on: (channel: string, func: (...args: any[]) => void) => void;
+        once: (channel: string, func: (...args: any[]) => void) => void;
+        removeListener: (channel: string, func: (...args: any[]) => void) => void;
       };
     };
   }
