@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
@@ -9,8 +9,9 @@ import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
-import BluetoothIcon from '@mui/icons-material/Bluetooth';
+// import BluetoothIcon from '@mui/icons-material/Bluetooth';
 import { useDeviceManager } from '../stores/deviceManager';
+import DeviceRegisterModal from './DeviceRegisterModal';
 
 const SERVER_ADDR = 'localhost';
 const SERVER_PORT = 18765;
@@ -77,8 +78,38 @@ const DeviceManagerModule: React.FC = () => {
     connectedClients,
     autoShowWindow,
     setAutoShowWindow,
-    deviceInfo,
+    // deviceInfo,
+    registeredDevices,
+    handleUnregister,
+    handleScan,
+    scannedDevices,
+    handleRegister,
+    scanLoading,
   } = useDeviceManager();
+
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [autoScan, setAutoScan] = useState(false);
+  const autoScanRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  React.useEffect(() => {
+    if (autoScan) {
+      handleScan(); // 즉시 한 번 실행
+      autoScanRef.current = setInterval(() => {
+        handleScan();
+      }, 5000);
+    } else {
+      if (autoScanRef.current) {
+        clearInterval(autoScanRef.current);
+        autoScanRef.current = null;
+      }
+    }
+    return () => {
+      if (autoScanRef.current) {
+        clearInterval(autoScanRef.current);
+        autoScanRef.current = null;
+      }
+    };
+  }, [autoScan, handleScan]);
 
   // 시간 포맷팅 함수
   const formatTime = (timestamp: number) => {
@@ -95,12 +126,12 @@ const DeviceManagerModule: React.FC = () => {
   const leadoffCh2 = latestEEG ? (latestEEG.leadoff_ch2 ? '떨어짐' : '접촉') : '--';
 
   // 디바이스 버튼 라벨 결정
-  const deviceButtonLabel = deviceInfo && deviceInfo.name ? deviceInfo.name : '디바이스 등록';
+  // const deviceButtonLabel = deviceInfo && deviceInfo.name ? deviceInfo.name : '디바이스 등록';
 
   return (
     <Card sx={{ background: 'rgba(40,44,52,0.95)', borderRadius: 4, boxShadow: 6, position: 'relative' }}>
       {/* 오른쪽 상단 디바이스 버튼 */}
-      <Button
+      {/* <Button
         variant="contained"
         color="secondary"
         startIcon={<BluetoothIcon />}
@@ -117,10 +148,16 @@ const DeviceManagerModule: React.FC = () => {
           zIndex: 10,
           textTransform: 'none',
         }}
-        // onClick 핸들러는 필요에 따라 추가
+        onClick={() => setRegisterModalOpen(true)}
       >
         {deviceButtonLabel}
-      </Button>
+      </Button> */}
+      <DeviceRegisterModal
+        open={registerModalOpen}
+        onClose={() => setRegisterModalOpen(false)}
+        onRegister={handleRegister}
+        onUnregister={handleUnregister}
+      />
       <CardContent sx={{ '&:last-child': { paddingBottom: 2 } }}>
         <Typography sx={commonStyles.sectionTitle}>Network Info</Typography>
         <Stack direction="row" spacing={1} mb={1}>
@@ -232,19 +269,103 @@ const DeviceManagerModule: React.FC = () => {
             }
             label="디바이스 연결 시 화면 자동 켜짐"
           />
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <FormControlLabel
+            sx={commonStyles.formControl}
+            control={
+              <Switch
+                checked={autoScan}
+                onChange={(e) => setAutoScan(e.target.checked)}
+                color="primary"
+                size="small"
+              />
+            }
+            label="5초에 한번 자동 디바이스 검색"
+          />
+          <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
             <Button
               variant="outlined"
               size="small"
               sx={commonStyles.updateButton}
-              onClick={() => window.electron?.ipcRenderer?.send('show-window')}
+              onClick={handleScan}
             >
-              수동 업데이트
+              수동 디바이스 검색
             </Button>
             <Typography component="span" sx={commonStyles.updateTime}>
               마지막 업데이트: {formatTime(lastDataUpdate)}
             </Typography>
           </Box>
+        </Stack>
+        {/* 등록된 디바이스 리스트 출력 */}
+        <Divider sx={commonStyles.divider} />
+        <Typography sx={commonStyles.sectionTitle}>등록된 디바이스</Typography>
+        <Stack spacing={0.5} sx={{ mt: 1 }}>
+          {registeredDevices.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+              등록된 디바이스가 없습니다.
+            </Typography>
+          ) : (
+            registeredDevices.map((device) => (
+              <Box key={device.address} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                <Typography variant="body2" sx={{ fontSize: 12, flex: 1 }}>
+                  {device.name} <span style={{ color: '#888' }}>({device.address})</span>
+                </Typography>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  sx={{ ml: 1, minWidth: 48, fontSize: 12, height: 24 }}
+                  onClick={() => handleUnregister(device.address)}
+                >
+                  등록 해제
+                </Button>
+              </Box>
+            ))
+          )}
+        </Stack>
+        {/* 등록/등록 해제 버튼 */}
+        {/* <Box sx={{ mt: 1, display: 'flex', justifyContent: 'flex-end' }}>
+          {registeredDevices.length === 0 && (
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              onClick={handleScan}
+            >
+              디바이스 스캔
+            </Button>
+          )}
+        </Box> */}
+        {/* 스캔된 디바이스 리스트 출력 */}
+        <Divider sx={commonStyles.divider} />
+        <Typography sx={commonStyles.sectionTitle}>스캔된 디바이스</Typography>
+        <Stack spacing={0.5} sx={{ mt: 1 }}>
+          {scanLoading ? (
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+              현재 디바이스를 검색중입니다...
+            </Typography>
+          ) : scannedDevices.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: 12 }}>
+              스캔된 디바이스가 없습니다.
+            </Typography>
+          ) : (
+            scannedDevices.map((device) => (
+              <Box key={device.address} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                <Typography variant="body2" sx={{ fontSize: 12, flex: 1 }}>
+                  {device.name} <span style={{ color: '#888' }}>({device.address})</span>
+                </Typography>
+                {registeredDevices.length === 0 && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    sx={{ ml: 1, minWidth: 48, fontSize: 12, height: 24 }}
+                    onClick={() => handleRegister(device)}
+                  >
+                    등록
+                  </Button>
+                )}
+              </Box>
+            ))
+          )}
         </Stack>
       </CardContent>
     </Card>
