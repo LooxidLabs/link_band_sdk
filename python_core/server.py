@@ -302,6 +302,7 @@ class WebSocketServer:
                 await self.send_event_to_client(websocket, EventType.REGISTERED_DEVICES, {"devices": devices})
 
             elif command == "register_device":
+                logger.info(f"Registering device: {payload}")
                 if self.device_registry.register_device(payload):
                     devices = self.device_registry.get_registered_devices()
                     await self.broadcast_event(EventType.REGISTERED_DEVICES, {"devices": devices})

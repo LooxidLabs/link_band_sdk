@@ -206,6 +206,9 @@ type DeviceStateData = {
   lastDataUpdate: number;
   connectedClients: number;
   autoShowWindow: boolean;
+  registeredDevices: DeviceInfo[];
+  scannedDevices: DeviceInfo[];
+  scanLoading: boolean;
 };
 
 type DeviceStateMethods = {
@@ -221,6 +224,10 @@ type DeviceStateMethods = {
   updateBatteryLevel: (level: number) => void;
   updateConnectionQuality: (quality: Partial<ConnectionQuality>) => void;
   setAutoShowWindow: (enabled: boolean) => void;
+  fetchRegisteredDevices: () => void;
+  handleRegister: (device: DeviceInfo) => void;
+  handleUnregister: (address: string) => void;
+  handleScan: () => void;
 };
 
 type DeviceState = DeviceStateData & DeviceStateMethods;
@@ -250,6 +257,9 @@ const initialState: DeviceStateData = {
   lastDataUpdate: Date.now(),
   connectedClients: 0,
   autoShowWindow: true,
+  registeredDevices: [],
+  scannedDevices: [],
+  scanLoading: false,
 };
 
 // 샘플링 레이트 계산 및 업데이트 함수
@@ -311,37 +321,24 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
     console.error('Failed to load autoShowWindow setting:', error);
   }
 
-  const wsManager = new WebSocketManager(WS_URL, (message) => {
-    handleWebSocketMessage(message);
-  });
+  // EventEmitter 초기화
+  const eventEmitter = new EventEmitter();
 
-  // 컴포넌트 언마운트 시 정리
-  window.addEventListener('beforeunload', () => {
-    wsManager.disconnect();
-  });
-
-  // WebSocket 이벤트 핸들러 추가
-  wsManager.onConnectionChange = (connected: boolean) => {
-    if (!connected) {
-      // 연결이 끊어지면 모든 상태를 초기화
-      set({
-        ...initialState,
-        autoShowWindow: get().autoShowWindow, // autoShowWindow 설정은 유지
-        eventEmitter: get().eventEmitter, // eventEmitter는 유지
-      });
-    } else {
-      set({ isServerConnected: true });
-    }
+  // 초기 상태 설정
+  const currentState = {
+    ...initialState,
+    autoShowWindow: initialAutoShow,
+    eventEmitter: eventEmitter,
   };
 
-  // 초기 연결 시도
-  wsManager.connect();
+  // 디바이스 등록 이벤트 리스너 설정
+  const setupDeviceListeners = () => {
+    // 최초 등록 디바이스 목록 요청만 WebSocket으로 보냄
+    wsManager.send({ command: 'get_registered_devices' });
+  };
 
-  return {
-    ...initialState,
-    autoShowWindow: initialAutoShow, // 저장된 설정으로 초기화
-    eventEmitter: new EventEmitter(),
-
+  // Store methods 정의
+  const methods = {
     connect: async (address: string) => {
       try {
         wsManager.send({
@@ -361,8 +358,8 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
         });
         set({ 
           ...initialState,
-          isServerConnected: get().isServerConnected, // 서버 연결 상태는 유지
-          eventEmitter: get().eventEmitter, // eventEmitter는 유지
+          isServerConnected: get().isServerConnected,
+          eventEmitter: eventEmitter,
         });
       } catch (error) {
         console.error('Failed to disconnect:', error);
@@ -396,15 +393,16 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
       if (newData.length > 0) {
         const now = Date.now();
         set((state) => {
+          const currentData = state.eegData || [];
           const newState = {
             ...state,
-            eegData: [...state.eegData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            eegData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
             lastDataUpdate: now,
             isConnected: true
           };
           return updateSamplingRates(newState);
         });
-        get().eventEmitter.emit('eegDataUpdated');
+        eventEmitter.emit('eegDataUpdated');
       }
     },
 
@@ -412,15 +410,16 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
       if (newData.length > 0) {
         const now = Date.now();
         set((state) => {
+          const currentData = state.ppgData || [];
           const newState = {
             ...state,
-            ppgData: [...state.ppgData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            ppgData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
             lastDataUpdate: now,
             isConnected: true
           };
           return updateSamplingRates(newState);
         });
-        get().eventEmitter.emit('ppgDataUpdated');
+        eventEmitter.emit('ppgDataUpdated');
       }
     },
 
@@ -428,15 +427,16 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
       if (newData.length > 0) {
         const now = Date.now();
         set((state) => {
+          const currentData = state.accData || [];
           const newState = {
             ...state,
-            accData: [...state.accData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            accData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
             lastDataUpdate: now,
             isConnected: true
           };
           return updateSamplingRates(newState);
         });
-        get().eventEmitter.emit('accDataUpdated');
+        eventEmitter.emit('accDataUpdated');
       }
     },
 
@@ -446,7 +446,7 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
         lastDataUpdate: Date.now(),
         isConnected: true
       });
-      get().eventEmitter.emit('batteryUpdated');
+      eventEmitter.emit('batteryUpdated');
     },
 
     updateConnectionQuality: (quality: Partial<ConnectionQuality>) => {
@@ -456,103 +456,154 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
           ...quality
         }
       }));
-      get().eventEmitter.emit('connectionQualityUpdated');
+      eventEmitter.emit('connectionQualityUpdated');
     },
 
     setAutoShowWindow: (enabled: boolean) => {
       set({ autoShowWindow: enabled });
-      // localStorage에 설정 저장
       try {
         localStorage.setItem('autoShowWindow', JSON.stringify(enabled));
       } catch (error) {
         console.error('Failed to save autoShowWindow setting:', error);
       }
+    },
+
+    fetchRegisteredDevices: () => {
+      wsManager.send({ command: 'get_registered_devices' });
+    },
+
+    handleRegister: (device: DeviceInfo) => {
+      wsManager.send({ command: 'register_device', payload: device });
+    },
+
+    handleUnregister: (address: string) => {
+      wsManager.send({ command: 'unregister_device', payload: { address } });
+    },
+
+    handleScan: () => {
+      set({ scanLoading: true });
+      wsManager.send({ command: 'scan_devices' });
     }
   };
-});
 
-// WebSocket 메시지 핸들러
-export const handleWebSocketMessage = (message: any) => {
-  const store = useDeviceManager.getState();
-
-  if (message.type === 'sensor_data') {
-    switch (message.sensor_type) {
-      case 'eeg':
-        store.addEEGData(message.data);
-        break;
-      case 'ppg':
-        store.addPPGData(message.data);
-        break;
-      case 'acc':
-        store.addAccData(message.data);
-        break;
-      case 'battery':
-        if (message.data && message.data.length > 0) {
-          store.updateBatteryLevel(message.data[message.data.length - 1].level);
-        }
-        break;
-    }
-  } else if (message.type === 'health_check_response') {
-    const wasConnected = store.isConnected;
-    const isNowConnected = message.device_connected;
-
-    // 디바이스가 새로 연결되었고, 자동 표시 설정이 활성화된 경우에만 창 표시
-    if (!wasConnected && isNowConnected && store.autoShowWindow) {
-      window.electron?.ipcRenderer?.send('show-window');
-    }
-
-    useDeviceManager.setState({
-      isConnected: isNowConnected,
-      isStreaming: message.is_streaming,
-      lastDataUpdate: Date.now(),
-      connectedClients: message.clients_connected
-    });
-  } else if (message.type === 'event') {
-    switch (message.event_type) {
-      case 'device_connected':
-        if (message.data) {
-          store.connect(message.data.address);
-          // 디바이스 정보 업데이트
-          useDeviceManager.setState({
-            deviceInfo: {
-              name: message.data.name,
-              address: message.data.address
-            },
-            isConnected: true
-          });
-          // 자동 표시 설정이 활성화된 경우에만 창 표시
-          if (store.autoShowWindow) {
-            window.electron?.ipcRenderer?.send('show-window');
+  // WebSocket 메시지 핸들러
+  const handleWebSocketMessage = (message: any) => {
+    if (message.type === 'sensor_data') {
+      switch (message.sensor_type) {
+        case 'eeg':
+          methods.addEEGData(message.data);
+          break;
+        case 'ppg':
+          methods.addPPGData(message.data);
+          break;
+        case 'acc':
+          methods.addAccData(message.data);
+          break;
+        case 'battery':
+          if (message.data && message.data.length > 0) {
+            methods.updateBatteryLevel(message.data[message.data.length - 1].level);
           }
-        }
-        break;
-      case 'device_disconnected':
-        store.disconnect();
-        break;
-      case 'stream_started':
-        store.startStreaming();
-        break;
-      case 'stream_stopped':
-        store.stopStreaming();
-        break;
-      case 'device_info':
-        if (message.data) {
-          const { connected, device_info, is_streaming } = message.data;
-          // 연결 상태와 디바이스 정보 업데이트
-          useDeviceManager.setState({
-            isConnected: connected,
-            deviceInfo: device_info ? {
-              name: device_info.name,
-              address: device_info.address
-            } : null,
-            isStreaming: is_streaming
-          });
-          // 자동 표시 설정이 활성화된 경우에만 창 표시
-          if (connected && store.autoShowWindow) {
-            window.electron?.ipcRenderer?.send('show-window');
+          break;
+      }
+    } else if (message.type === 'health_check_response') {
+      const wasConnected = get().isConnected;
+      const isNowConnected = message.device_connected;
+      if (!wasConnected && isNowConnected && get().autoShowWindow) {
+        window.electron?.ipcRenderer?.send('show-window');
+      }
+      set({
+        isConnected: isNowConnected,
+        isStreaming: message.is_streaming,
+        lastDataUpdate: Date.now(),
+        connectedClients: message.clients_connected
+      });
+    } else if (message.type === 'event') {
+      switch (message.event_type) {
+        case 'device_connected':
+          if (message.data) {
+            methods.connect(message.data.address);
+            set({
+              deviceInfo: {
+                name: message.data.name,
+                address: message.data.address
+              },
+              isConnected: true
+            });
+            if (get().autoShowWindow) {
+              window.electron?.ipcRenderer?.send('show-window');
+            }
           }
-        }
-        break;
+          break;
+        case 'device_disconnected':
+          methods.disconnect();
+          break;
+        case 'stream_started':
+          methods.startStreaming();
+          break;
+        case 'stream_stopped':
+          methods.stopStreaming();
+          break;
+        case 'device_info':
+          if (message.data) {
+            const { connected, device_info, is_streaming, registered_devices } = message.data;
+            set({
+              isConnected: connected,
+              deviceInfo: device_info ? {
+                name: device_info.name,
+                address: device_info.address
+              } : null,
+              isStreaming: is_streaming,
+              ...(registered_devices ? { registeredDevices: registered_devices } : {})
+            });
+            if (connected && get().autoShowWindow) {
+              window.electron?.ipcRenderer?.send('show-window');
+            }
+          }
+          break;
+        case 'registered_devices':
+          set({ registeredDevices: message.data.devices || [] });
+          break;
+        case 'scanned_devices':
+          set({ scannedDevices: message.data.devices || [], scanLoading: false });
+          break;
+        case 'scan_result':
+          if (message.data && message.data.devices) {
+            set({ scannedDevices: message.data.devices, scanLoading: false });
+          }
+          break;
+      }
     }
-  }
-}; 
+  };
+
+  // WebSocket 매니저 초기화
+  const wsManager = new WebSocketManager(WS_URL, handleWebSocketMessage);
+
+  // 컴포넌트 언마운트 시 정리
+  window.addEventListener('beforeunload', () => {
+    wsManager.disconnect();
+  });
+
+  // WebSocket 이벤트 핸들러 추가
+  wsManager.onConnectionChange = (connected: boolean) => {
+    if (!connected) {
+      set({
+        ...initialState,
+        autoShowWindow: get().autoShowWindow,
+        eventEmitter: eventEmitter,
+      });
+    } else {
+      set({ isServerConnected: true });
+    }
+  };
+
+  // 초기 연결 시도
+  wsManager.connect();
+
+  // 디바이스 등록 리스너 설정
+  setupDeviceListeners();
+
+  return {
+    ...currentState,
+    ...methods
+  };
+}); 
