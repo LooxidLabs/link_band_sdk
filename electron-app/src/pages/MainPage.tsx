@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Box, Container, CssBaseline, ThemeProvider, Typography } from '@mui/material';
+import { Box, Container, CssBaseline, ThemeProvider, } from '@mui/material';
 import { useAuthStore } from '../stores/authStore';
 import { LoginModal } from '../components/LoginModal';
 import DeviceManagerModule from '../components/DeviceManagerModule';
@@ -32,11 +32,11 @@ const MainPage: React.FC = () => {
       <CssBaseline />
       <Box sx={{ minHeight: '50vh', background: 'linear-gradient(135deg, #181a20 0%, #23263a 100%)' }}>
         <Container maxWidth="md" sx={{ pt: 2 }}>
-          <Typography variant="h2" align="center" gutterBottom>
+          {/* <Typography variant="h2" align="center" gutterBottom>
             LINK BAND SDK
-          </Typography>
+          </Typography> */}
 
-          <Box sx={{ mt: 2, mb: 2 }}>
+          <Box sx={{ mt: 0, mb: 2 }}>
             {user ? (
               <>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
