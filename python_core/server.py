@@ -550,8 +550,8 @@ class WebSocketServer:
                     for sample in eeg_data:
                         processed_sample = {
                             "timestamp": sample["timestamp"],
-                            "ch1": sample["ch1_raw"],  # 이미 uV로 변환된 값
-                            "ch2": sample["ch2_raw"],  # 이미 uV로 변환된 값
+                            "ch1": sample["ch1"],  # 이미 uV로 변환된 값
+                            "ch2": sample["ch2"],  # 이미 uV로 변환된 값
                             "leadoff_ch1": sample["leadoff_ch1"],
                             "leadoff_ch2": sample["leadoff_ch2"]
                         }

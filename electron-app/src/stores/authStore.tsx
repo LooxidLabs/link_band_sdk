@@ -110,7 +110,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       const idToken = await userCredential.user.getIdToken();
       const { token } = await authApi.signInWithFirebaseToken(email, idToken);
       localStorage.setItem('token', token);
-      
       set({ user: userCredential.user, error: null });
     } catch (error: any) {
       set({ error: error.message });
@@ -123,6 +122,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const auth = getAuth(app);
       await firebaseSignOut(auth);
       await authApi.signOut();
+      localStorage.removeItem('user_id');
       set({ user: null, error: null });
     } catch (error: any) {
       set({ error: error.message });
@@ -135,6 +135,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const auth = getAuth(app);
       await firebaseSignOut(auth);
       await authApi.signOut();
+      localStorage.removeItem('user_id');
       set({ user: null, error: null });
     } catch (error: any) {
       set({ error: error.message });

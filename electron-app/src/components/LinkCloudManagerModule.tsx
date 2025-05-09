@@ -6,6 +6,7 @@ import Divider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
 import CircularProgress from '@mui/material/CircularProgress';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import { userApi } from '../api/user';
 import { deviceApi } from '../api/device';
 import { useDeviceManager } from '../stores/deviceManager';
@@ -65,13 +66,17 @@ const LinkCloudManagerModule: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  const { registeredDevices } = useDeviceManager();
+  const { registeredDevices, cloudEegRate, cloudPpgRate, cloudAccRate } = useDeviceManager();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
         const data = await userApi.getCurrentUser();
         setUserInfo(data);
+        // Store user_id in localStorage for sensor data
+        if (data.id) {
+          localStorage.setItem('user_id', data.id);
+        }
       } catch (err) {
         setError('사용자 정보를 불러오는데 실패했습니다.');
       } finally {
@@ -206,6 +211,36 @@ const LinkCloudManagerModule: React.FC = () => {
               ))}
             </Stack>
           )}
+          <Divider sx={commonStyles.divider} />
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="body2" sx={{ color: '#8b8fa3', minWidth: '120px' }}>
+              UUID:
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#fff' }}>
+              {userInfo?.id}
+            </Typography>
+          </Stack>
+          {/* Cloud 전송률 표시 */}
+          <Stack direction="row" spacing={1} mt={1} mb={2} flexWrap="wrap" useFlexGap>
+            <Chip 
+              label={`EEG: ${cloudEegRate.toFixed(1)} Hz`}
+              color="primary"
+              size="small"
+              sx={commonStyles.chip}
+            />
+            <Chip 
+              label={`PPG: ${cloudPpgRate.toFixed(1)} Hz`}
+              color="primary"
+              size="small"
+              sx={commonStyles.chip}
+            />
+            <Chip 
+              label={`ACC: ${cloudAccRate.toFixed(1)} Hz`}
+              color="primary"
+              size="small"
+              sx={commonStyles.chip}
+            />
+          </Stack>
         </Stack>
       </CardContent>
     </Card>
