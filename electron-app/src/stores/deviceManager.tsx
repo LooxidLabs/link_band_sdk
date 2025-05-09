@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { connectLinkCloudWS, sendSensorDataToCloud } from '../utils/linkCloudSocket';
+import { userApi } from '../api/user';
 
 // 브라우저 호환 EventEmitter 구현
 class EventEmitter {
@@ -262,6 +264,12 @@ const initialState: DeviceStateData = {
   scanLoading: false,
 };
 
+const initialCloudRates = {
+  cloudEegRate: 0,
+  cloudPpgRate: 0,
+  cloudAccRate: 0,
+};
+
 // 샘플링 레이트 계산 및 업데이트 함수
 const updateSamplingRates = (state: DeviceStateData): DeviceStateData => {
   const now = Date.now();
@@ -296,6 +304,11 @@ const updateSamplingRates = (state: DeviceStateData): DeviceStateData => {
   return state;
 };
 
+// 클라우드 전송 샘플 카운터
+let cloudEegSent = 0;
+let cloudPpgSent = 0;
+let cloudAccSent = 0;
+
 declare global {
   interface Window {
     electron: {
@@ -314,7 +327,11 @@ declare global {
   }
 }
 
-export const useDeviceManager = create<DeviceState>((set, get) => {
+export const useDeviceManager = create<DeviceState & {
+  cloudEegRate: number;
+  cloudPpgRate: number;
+  cloudAccRate: number;
+}>((set, get) => {
   // 초기화 시 저장된 설정 불러오기
   let initialAutoShow = true;
   try {
@@ -408,6 +425,18 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
           return updateSamplingRates(newState);
         });
         eventEmitter.emit('eegDataUpdated');
+        newData.forEach(d => {
+          sendSensorDataToCloud({
+            type: 'eeg',
+            timestamp: d.timestamp,
+            ch1: d.ch1,
+            ch2: d.ch2,
+            leadoff_ch1: d.leadoff_ch1,
+            leadoff_ch2: d.leadoff_ch2,
+            user_id: localStorage.getItem('user_id') || '',
+          });
+        });
+        cloudEegSent += newData.length;
       }
     },
 
@@ -425,6 +454,16 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
           return updateSamplingRates(newState);
         });
         eventEmitter.emit('ppgDataUpdated');
+        newData.forEach(d => {
+          sendSensorDataToCloud({
+            type: 'ppg',
+            timestamp: d.timestamp,
+            red: d.red,
+            ir: d.ir,
+            user_id: localStorage.getItem('user_id') || '',
+          });
+        });
+        cloudPpgSent += newData.length;
       }
     },
 
@@ -442,6 +481,17 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
           return updateSamplingRates(newState);
         });
         eventEmitter.emit('accDataUpdated');
+        newData.forEach(d => {
+          sendSensorDataToCloud({
+            type: 'acc',
+            timestamp: d.timestamp,
+            x: d.x,
+            y: d.y,
+            z: d.z,
+            user_id: localStorage.getItem('user_id') || '',
+          });
+        });
+        cloudAccSent += newData.length;
       }
     },
 
@@ -452,6 +502,11 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
         isConnected: true
       });
       eventEmitter.emit('batteryUpdated');
+      // sendSensorDataToCloud({
+      //   type: 'battery',
+      //   timestamp: Date.now(),
+      //   level: level,
+      // });
     },
 
     updateConnectionQuality: (quality: Partial<ConnectionQuality>) => {
@@ -607,8 +662,32 @@ export const useDeviceManager = create<DeviceState>((set, get) => {
   // 디바이스 등록 리스너 설정
   setupDeviceListeners();
 
+  (async () => {
+    try {
+      const user = await userApi.getCurrentUser();
+      if (user?.id) {
+        connectLinkCloudWS(user.id);
+      }
+    } catch (e) {
+      console.error('Failed to connect Link Cloud WebSocket:', e);
+    }
+  })();
+
+  // 클라우드 전송 샘플 수를 1초마다 상태로 반영
+  setInterval(() => {
+    set({
+      cloudEegRate: cloudEegSent,
+      cloudPpgRate: cloudPpgSent,
+      cloudAccRate: cloudAccSent,
+    });
+    cloudEegSent = 0;
+    cloudPpgSent = 0;
+    cloudAccSent = 0;
+  }, 1000);
+
   return {
     ...currentState,
-    ...methods
+    ...methods,
+    ...initialCloudRates,
   };
 }); 

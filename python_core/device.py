@@ -366,8 +366,8 @@ class DeviceManager:
                 
                 sample = {
                     "timestamp": sample_timestamp,
-                    "ch1_raw": ch1_uv,
-                    "ch2_raw": ch2_uv,
+                    "ch1": ch1_uv,
+                    "ch2": ch2_uv,
                     "leadoff_ch1": leadoff_ch1,
                     "leadoff_ch2": leadoff_ch2
                 }
@@ -410,7 +410,8 @@ class DeviceManager:
 
                 sample = {
                     "timestamp": sample_timestamp,
-                    "raw": ppg_raw
+                    "red": ppg_raw,
+                    "ir": ppg_raw
                 }
                 samples_to_add.append(sample)
                 self.logger.debug(f"PPG sample {i}: {sample}")
