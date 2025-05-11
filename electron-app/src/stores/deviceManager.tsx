@@ -180,6 +180,10 @@ interface AccData extends SensorData {
   z: number;
 }
 
+interface BatData extends SensorData {
+  level: number;
+}
+
 interface DeviceInfo {
   name: string;
   address: string;
@@ -192,6 +196,7 @@ type ConnectionQuality = {
   eegRate: number;
   ppgRate: number;
   accRate: number;
+  batRate: number;
 };
 
 type DeviceStateData = {
@@ -204,6 +209,7 @@ type DeviceStateData = {
   eegData: EEGData[];
   ppgData: PPGData[];
   accData: AccData[];
+  batData: BatData[];
   lastRateUpdate: number;
   lastDataUpdate: number;
   connectedClients: number;
@@ -223,7 +229,7 @@ type DeviceStateMethods = {
   addEEGData: (data: EEGData[]) => void;
   addPPGData: (data: PPGData[]) => void;
   addAccData: (data: AccData[]) => void;
-  updateBatteryLevel: (level: number) => void;
+  addBatData: (data: BatData[]) => void;
   updateConnectionQuality: (quality: Partial<ConnectionQuality>) => void;
   setAutoShowWindow: (enabled: boolean) => void;
   fetchRegisteredDevices: () => void;
@@ -243,6 +249,7 @@ const initialConnectionQuality: ConnectionQuality = {
   eegRate: 0,
   ppgRate: 0,
   accRate: 0,
+  batRate: 0,
 };
 
 const initialState: DeviceStateData = {
@@ -255,6 +262,7 @@ const initialState: DeviceStateData = {
   eegData: [],
   ppgData: [],
   accData: [],
+  batData: [],
   lastRateUpdate: Date.now(),
   lastDataUpdate: Date.now(),
   connectedClients: 0,
@@ -268,6 +276,7 @@ const initialCloudRates = {
   cloudEegRate: 0,
   cloudPpgRate: 0,
   cloudAccRate: 0,
+  cloudBatRate: 0,
 };
 
 // 샘플링 레이트 계산 및 업데이트 함수
@@ -288,6 +297,7 @@ const updateSamplingRates = (state: DeviceStateData): DeviceStateData => {
     const eegRate = calculateRate(state.eegData);
     const ppgRate = calculateRate(state.ppgData);
     const accRate = calculateRate(state.accData);
+    const batRate = calculateRate(state.batData);
 
     return {
       ...state,
@@ -297,7 +307,8 @@ const updateSamplingRates = (state: DeviceStateData): DeviceStateData => {
         eegRate,
         ppgRate,
         accRate,
-        dataRate: eegRate + ppgRate + accRate
+        batRate,
+        dataRate: eegRate + ppgRate + accRate + batRate
       }
     };
   }
@@ -308,6 +319,7 @@ const updateSamplingRates = (state: DeviceStateData): DeviceStateData => {
 let cloudEegSent = 0;
 let cloudPpgSent = 0;
 let cloudAccSent = 0;
+let cloudBatSent = 0;
 
 declare global {
   interface Window {
@@ -331,6 +343,7 @@ export const useDeviceManager = create<DeviceState & {
   cloudEegRate: number;
   cloudPpgRate: number;
   cloudAccRate: number;
+  cloudBatRate: number;
 }>((set, get) => {
   // 초기화 시 저장된 설정 불러오기
   let initialAutoShow = true;
@@ -407,7 +420,8 @@ export const useDeviceManager = create<DeviceState & {
       set({ 
         eegData: [],
         ppgData: [],
-        accData: []
+        accData: [],
+        batData: []
       });
     },
 
@@ -495,19 +509,32 @@ export const useDeviceManager = create<DeviceState & {
       }
     },
 
-    updateBatteryLevel: (level: number) => {
-      set({
-        batteryLevel: level,
-        lastDataUpdate: Date.now(),
-        isConnected: true
-      });
-      eventEmitter.emit('batteryUpdated');
-      // sendSensorDataToCloud({
-      //   type: 'battery',
-      //   timestamp: Date.now(),
-      //   level: level,
-      // });
+    addBatData: (newData: BatData[]) => {
+      if (newData.length > 0) {
+        const now = Date.now();
+        set((state) => {
+          const currentData = state.batData || [];
+          const newState = {
+            ...state,
+            batData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            lastDataUpdate: now,
+            isConnected: true
+          };
+          return updateSamplingRates(newState);
+        });
+        eventEmitter.emit('batDataUpdated');
+        newData.forEach(d => {
+          sendSensorDataToCloud({
+            type: 'bat',
+            timestamp: d.timestamp,
+            level: d.level,
+            user_id: localStorage.getItem('user_id') || '',
+          });
+        });
+        cloudBatSent += newData.length;
+      }
     },
+    
 
     updateConnectionQuality: (quality: Partial<ConnectionQuality>) => {
       set((state) => ({
@@ -559,10 +586,8 @@ export const useDeviceManager = create<DeviceState & {
         case 'acc':
           methods.addAccData(message.data);
           break;
-        case 'battery':
-          if (message.data && message.data.length > 0) {
-            methods.updateBatteryLevel(message.data[message.data.length - 1].level);
-          }
+        case 'bat':
+          methods.addBatData(message.data);
           break;
       }
     } else if (message.type === 'health_check_response') {
@@ -679,10 +704,12 @@ export const useDeviceManager = create<DeviceState & {
       cloudEegRate: cloudEegSent,
       cloudPpgRate: cloudPpgSent,
       cloudAccRate: cloudAccSent,
+      cloudBatRate: cloudBatSent,
     });
     cloudEegSent = 0;
     cloudPpgSent = 0;
     cloudAccSent = 0;
+    cloudBatSent = 0;
   }, 1000);
 
   return {

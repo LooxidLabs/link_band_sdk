@@ -740,7 +740,7 @@ class WebSocketServer:
                     
                     message = {
                         "type": "sensor_data",
-                        "sensor_type": "battery",
+                        "sensor_type": "bat",
                         "timestamp": current_time,
                         "data": battery_data
                     }

@@ -66,7 +66,7 @@ const LinkCloudManagerModule: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  const { registeredDevices, cloudEegRate, cloudPpgRate, cloudAccRate } = useDeviceManager();
+  const { registeredDevices, cloudEegRate, cloudPpgRate, cloudAccRate, cloudBatRate } = useDeviceManager();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -236,6 +236,12 @@ const LinkCloudManagerModule: React.FC = () => {
             />
             <Chip 
               label={`ACC: ${cloudAccRate.toFixed(1)} Hz`}
+              color="primary"
+              size="small"
+              sx={commonStyles.chip}
+            />
+            <Chip 
+              label={`BAT: ${cloudBatRate.toFixed(1)} Hz`}
               color="primary"
               size="small"
               sx={commonStyles.chip}

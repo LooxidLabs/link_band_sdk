@@ -816,10 +816,10 @@ class App:
             recent_ppg = np.array(data_buffer["ppg"][-600:])  # 10초치 (60Hz)
             print("recent_ppg length:", len(recent_ppg))
             if len(recent_ppg) >= 300:  # 최소한 5초 이상 확보
-                wd, m = hp.process(recent_ppg, sample_rate=60)
+                # wd, m = hp.process(recent_ppg, sample_rate=60)
                 # 1️⃣ 필터 적용 (0.7 ~ 3.5Hz → 약 42 ~ 210 bpm)
-                # filtered_ppg = hp.filter_signal(recent_ppg, cutoff=[0.7, 3.5], sample_rate=50, order=3, filtertype='bandpass')
-                # wd, m = hp.process(filtered_ppg, sample_rate=50)
+                filtered_ppg = hp.filter_signal(recent_ppg, cutoff=[0.7, 3.5], sample_rate=50, order=3, filtertype='bandpass')
+                wd, m = hp.process(filtered_ppg, sample_rate=50)
                 # wd, m = hp.process(filtered_ppg, sample_rate=50, peakwindow=0.5, ma_perc=15)
                 bpm_val = m['bpm']
                 # self.bpm_label.config(text=f"BPM: {bpm_val:.1f}")
