@@ -13,6 +13,7 @@ import {
 } from 'firebase/auth';
 import { app } from '../firebase/config';
 import { authApi } from '../api/auth';
+import { userApi } from '../api/user';
 
 // AuthState 인터페이스에 window.electronIPC 타입 정의 추가 (선택적이지만 권장)
 declare global {
@@ -75,6 +76,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { token } = await authApi.signInWithFirebaseToken(email, idToken);
       localStorage.setItem('token', token);
       
+      const user = await userApi.getCurrentUser();
+      if (user?.id) {
+        localStorage.setItem('user_id', user.id);
+      }
+      
       set({ user: userCredential.user, error: null });
     } catch (error: any) {
       set({ error: error.message });
@@ -94,6 +100,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { token } = await authApi.signInWithGoogle(idToken);
       localStorage.setItem('token', token);
       
+      const user = await userApi.getCurrentUser();
+      if (user?.id) {
+        localStorage.setItem('user_id', user.id);
+      }
+      
       set({ user: result.user, error: null });
     } catch (error: any) {
       set({ error: error.message });
@@ -110,6 +121,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       const idToken = await userCredential.user.getIdToken();
       const { token } = await authApi.signInWithFirebaseToken(email, idToken);
       localStorage.setItem('token', token);
+      
+      const user = await userApi.getCurrentUser();
+      if (user?.id) {
+        localStorage.setItem('user_id', user.id);
+      }
+      
       set({ user: userCredential.user, error: null });
     } catch (error: any) {
       set({ error: error.message });

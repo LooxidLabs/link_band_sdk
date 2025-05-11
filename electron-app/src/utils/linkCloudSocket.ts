@@ -1,34 +1,38 @@
 let ws: WebSocket | null = null;
 let wsUserId: string | null = null;
 
-type SensorType = 'eeg' | 'ppg' | 'acc';
+type SensorType = 'eeg' | 'ppg' | 'acc' | 'bat';
 
 // 버퍼 설정 (디바이스 전송 크기 기반)
 const BUFFER_SIZES: Record<SensorType, number> = {
   eeg: 50,  // 디바이스에서 50개씩 전송
   ppg: 60,  // 디바이스에서 60개씩 전송
-  acc: 30   // 디바이스에서 30개씩 전송
+  acc: 30,  // 디바이스에서 30개씩 전송
+  bat: 10 // 1초에 10개씩 전송
 };
 
 // 데이터 버퍼
 const dataBuffers: Record<SensorType, any[]> = {
   eeg: [],
   ppg: [],
-  acc: []
+  acc: [],
+  bat: []
 };
 
 // 버퍼 전송 타이머
 let bufferTimers: Record<SensorType, NodeJS.Timeout | null> = {
   eeg: null,
   ppg: null,
-  acc: null
+  acc: null,
+  bat: null
 };
 
 // 전송 주기 (ms)
 const TRANSMISSION_INTERVALS: Record<SensorType, number> = {
-  eeg: 200,  // 0.2초마다 전송
-  ppg: 250,  // 0.25초마다 전송
-  acc: 330   // 0.33초마다 전송
+  eeg: 200,    // 0.2초마다 전송
+  ppg: 250,    // 0.25초마다 전송
+  acc: 330,    // 0.33초마다 전송
+  bat: 500 // 0.5초마다 전송
 };
 
 // 버퍼 전송 함수
@@ -62,7 +66,12 @@ export function connectLinkCloudWS(userId: string) {
 
 export function sendSensorDataToCloud(data: { type: SensorType } & Record<string, any>) {
   const type = data.type;
-  if (!type || !['eeg', 'ppg', 'acc'].includes(type)) return;
+  if (!type || !['eeg', 'ppg', 'acc', 'bat', 'battery'].includes(type)) return;
+
+  // 로그 추가: user_id 확인
+  if (data.user_id) {
+    console.log('[CloudSend] type:', type, 'user_id:', data.user_id);
+  }
 
   // 데이터를 버퍼에 추가
   dataBuffers[type].push(data);
