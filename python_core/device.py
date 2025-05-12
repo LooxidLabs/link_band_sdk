@@ -391,7 +391,7 @@ class DeviceManager:
                 self.logger.warning(f"PPG data too short: {len(data)} bytes")
                 return
 
-            time_raw = int.from_bytes(data[0:4], 'little')
+            time_raw = int.from_bytes(data[0:4], 'big')
             base_timestamp = time_raw / TIMESTAMP_CLOCK
             num_samples = (len(data) - 4) // 3  # Each sample is 3 bytes
 

@@ -69,9 +69,9 @@ export function sendSensorDataToCloud(data: { type: SensorType } & Record<string
   if (!type || !['eeg', 'ppg', 'acc', 'bat', 'battery'].includes(type)) return;
 
   // 로그 추가: user_id 확인
-  if (data.user_id) {
-    console.log('[CloudSend] type:', type, 'user_id:', data.user_id);
-  }
+//   if (data.user_id) {
+//     console.log('[CloudSend] type:', type, 'user_id:', data.user_id);
+//   }
 
   // 데이터를 버퍼에 추가
   dataBuffers[type].push(data);
