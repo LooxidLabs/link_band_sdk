@@ -156,32 +156,42 @@ function createTray() {
 
 function startPythonServer() {
   if (pythonProcess) {
-    return; // 이미 실행 중이면 중복 실행 방지
-  }
-  const scriptPath = path.join(__dirname, '../../python_core/run_server.py');
-  if (!fs.existsSync(scriptPath)) {
-    console.error('Python server script not found:', scriptPath);
+    console.log('Python server is already running');
     return;
   }
-  pythonProcess = spawn('python3', [scriptPath], {
-    cwd: path.dirname(scriptPath),
-    env: process.env,
+
+  const pythonPath = path.join(__dirname, '../../python_core/run_server.py');
+  console.log('Starting Python server from:', pythonPath);
+
+  pythonProcess = spawn('python3', [pythonPath], {
+    stdio: ['pipe', 'pipe', 'pipe']
   });
 
-  pythonProcess.stdout.on('data', (data) => {
-    const msg = data.toString();
-    console.log('[PYTHON]', msg);
-    win?.webContents.send('python-log', msg);
+  pythonProcess.stdout?.on('data', (data) => {
+    const output = data.toString();
+    console.log('Python server output:', output);
+    
+    // Python 서버 로그를 renderer로 전달
+    win?.webContents.send('python-log', output);
+
+    // WebSocket 서버가 초기화되면 renderer에 알림
+    if (output.includes('WebSocket server initialized')) {
+      console.log('Python server is ready');
+      win?.webContents.send('python-server-ready');
+    }
   });
-  pythonProcess.stderr.on('data', (data) => {
-    const msg = data.toString();
-    console.error('[PYTHON]', msg);
-    win?.webContents.send('python-log', msg);
+
+  pythonProcess.stderr?.on('data', (data) => {
+    const error = data.toString();
+    console.error('Python server error:', error);
+    // 에러 로그도 renderer로 전달
+    win?.webContents.send('python-log', `ERROR: ${error}`);
   });
+
   pythonProcess.on('close', (code) => {
-    console.log(`[PYTHON] exited with code ${code}`);
-    win?.webContents.send('python-log', `[PYTHON] exited with code ${code}`);
+    console.log('Python server stopped with code:', code);
     pythonProcess = null;
+    win?.webContents.send('python-server-stopped');
   });
 }
 
@@ -195,7 +205,19 @@ function stopPythonServer() {
 // macOS에서 open-url 이벤트 핸들러
 app.on('open-url', (event, url) => {
   event.preventDefault(); // 기본 동작 방지
-  handleCustomUrl(url);
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.hostname === 'auth' && parsedUrl.searchParams.has('token')) {
+      const token = parsedUrl.searchParams.get('token');
+      // 렌더러 프로세스에 토큰 전달
+      if (win && win.webContents) {
+        console.log('Sending token to renderer:', token);
+        win.webContents.send('custom-token-received', token);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to parse custom URL or extract token:', e);
+  }
 });
 
 // Windows/Linux에서 이미 앱 인스턴스가 실행 중일 때 두 번째 인스턴스로 URL 전달 처리
@@ -263,10 +285,12 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
-  startPythonServer();
   if (!win) {
     createWindow();
   }
+
+  // 앱 시작 시 Python 서버 실행
+  startPythonServer();
 });
 
 app.on('window-all-closed', () => {
@@ -282,8 +306,13 @@ app.on('activate', () => {
 });
 
 // 웹 로그인 페이지를 여는 IPC 핸들러 (렌더러에서 요청 시)
-ipcMain.on('open-web-login', (event, webLoginUrl) => {
-  shell.openExternal(webLoginUrl);
+ipcMain.on('open-web-login', () => {
+  shell.openExternal('http://localhost:5173/login?from=electron');
+});
+
+// Python 서버 종료 IPC 핸들러
+ipcMain.on('stop-python-server', () => {
+  stopPythonServer();
 });
 
 // 개발자 도구에서 로그 확인을 위해 ipcMain 이벤트도 추가 가능

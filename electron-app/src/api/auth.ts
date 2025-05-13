@@ -45,7 +45,6 @@ export const authApi = {
 
   // 로그아웃
   signOut: async (): Promise<void> => {
-    await api.post(`${API_BASE_URL}/auth/signout`, {});
     localStorage.removeItem('token');
   },
 }; 

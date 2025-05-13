@@ -55,6 +55,7 @@ interface AuthState {
   subscribeToAuthState: () => () => void;
   setSavedCredentials: (credentials: { email: string; password: string; rememberMe: boolean } | null) => Promise<void>;
   clearSavedCredentials: () => Promise<void>;
+  setUser: (user: any) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -139,6 +140,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       const auth = getAuth(app);
       await firebaseSignOut(auth);
       await authApi.signOut();
+      if ((window as any).electron?.ipcRenderer) {
+        (window as any).electron.ipcRenderer.send('stop-python-server');
+      }
       localStorage.removeItem('user_id');
       set({ user: null, error: null });
     } catch (error: any) {
@@ -191,6 +195,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       throw error;
     }
   },
+
+  setUser: (user: any) => set({ user }),
 }));
 
 // Subscribe to auth state changes
