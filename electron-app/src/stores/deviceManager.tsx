@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { connectLinkCloudWS, sendSensorDataToCloud } from '../utils/linkCloudSocket';
-import { userApi } from '../api/user';
+import { sendSensorDataToCloud } from '../utils/linkCloudSocket';
+// import { userApi } from '../api/user';
 
 // 브라우저 호환 EventEmitter 구현
 class EventEmitter {
@@ -45,6 +45,9 @@ class WebSocketManager {
   private isConnecting = false;
   private messageHandler: (message: any) => void;
   public onConnectionChange: ((connected: boolean) => void) | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 2000; // 2초
 
   constructor(url: string, messageHandler: (message: any) => void) {
     this.url = url;
@@ -60,6 +63,7 @@ class WebSocketManager {
     // 1초마다 연결 상태 확인 및 재연결 시도
     this.checkConnectionTimer = setInterval(() => {
       if (!this.isConnected()) {
+        console.log('Connection check: WebSocket is not connected, attempting to reconnect...');
         this.connect();
       }
     }, 1000);
@@ -85,11 +89,17 @@ class WebSocketManager {
   }
 
   connect() {
-    if (this.isConnected()) return;
-    if (this.isConnecting) return;
+    if (this.isConnected()) {
+      console.log('WebSocket is already connected');
+      return;
+    }
+    if (this.isConnecting) {
+      console.log('WebSocket connection attempt already in progress');
+      return;
+    }
 
     this.isConnecting = true;
-    console.log('Attempting to connect to WebSocket server...');
+    console.log('Attempting to connect to WebSocket server...', this.url);
 
     try {
       this.ws = new WebSocket(this.url);
@@ -97,19 +107,30 @@ class WebSocketManager {
       this.ws.onopen = () => {
         console.log('WebSocket connected successfully');
         this.isConnecting = false;
+        this.reconnectAttempts = 0; // 연결 성공 시 재시도 횟수 초기화
         this.onConnectionChange?.(true);
-        this.startHealthCheck(); // 연결 성공 시 health check 시작
-        this.startConnectionCheck(); // 연결 성공 후 연결 상태 모니터링 시작
+        this.startHealthCheck();
+        this.startConnectionCheck();
       };
 
-      this.ws.onclose = () => {
-        console.log('WebSocket connection closed');
+      this.ws.onclose = (event) => {
+        console.log('WebSocket connection closed', event.code, event.reason);
         this.isConnecting = false;
         this.ws = null;
         this.onConnectionChange?.(false);
+        
         if (this.healthCheckTimer) {
           clearInterval(this.healthCheckTimer);
           this.healthCheckTimer = null;
+        }
+
+        // 재연결 시도
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.reconnectAttempts++;
+          console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+          setTimeout(() => this.connect(), this.reconnectDelay);
+        } else {
+          console.log('Max reconnection attempts reached');
         }
       };
 
@@ -135,6 +156,7 @@ class WebSocketManager {
   }
 
   disconnect() {
+    console.log('Disconnecting WebSocket...');
     if (this.checkConnectionTimer) {
       clearInterval(this.checkConnectionTimer);
       this.checkConnectionTimer = null;
@@ -147,6 +169,7 @@ class WebSocketManager {
       this.ws.close();
       this.ws = null;
     }
+    this.reconnectAttempts = 0;
   }
 
   send(message: any) {
@@ -155,6 +178,11 @@ class WebSocketManager {
     } else {
       console.error('Cannot send message: WebSocket is not connected');
     }
+  }
+
+  // 외부에서 연결 상태를 확인할 수 있도록 public 메서드 추가
+  public isConnectedPublic(): boolean {
+    return this.isConnected();
   }
 }
 
@@ -364,12 +392,6 @@ export const useDeviceManager = create<DeviceState & {
     ...initialState,
     autoShowWindow: initialAutoShow,
     eventEmitter: eventEmitter,
-  };
-
-  // 디바이스 등록 이벤트 리스너 설정
-  const setupDeviceListeners = () => {
-    // 최초 등록 디바이스 목록 요청만 WebSocket으로 보냄
-    wsManager.send({ command: 'get_registered_devices' });
   };
 
   // Store methods 정의
@@ -678,25 +700,36 @@ export const useDeviceManager = create<DeviceState & {
       });
     } else {
       set({ isServerConnected: true });
+      // 연결된 후에만 디바이스 목록 요청
+      wsManager.send({ command: 'get_registered_devices' });
     }
   };
 
-  // 초기 연결 시도
-  wsManager.connect();
+  // Python 서버가 준비되면 WebSocket 연결 시도
+  if ((window as any).electron?.ipcRenderer) {
+    (window as any).electron.ipcRenderer.on('python-server-ready', () => {
+      console.log('Python server is ready, connecting to WebSocket...');
+      wsManager.disconnect();
+      setTimeout(() => {
+        if (!wsManager.isConnectedPublic()) {
+          wsManager.connect();
+        }
+      }, 2000);
+    });
+
+    (window as any).electron.ipcRenderer.on('python-server-stopped', () => {
+      console.log('Python server stopped, disconnecting WebSocket...');
+      wsManager.disconnect();
+    });
+
+    // Python 서버 로그 수신
+    (window as any).electron.ipcRenderer.on('python-log', (_event: any, msg: string) => {
+      console.log('[PYTHON]', msg);
+    });
+  }
 
   // 디바이스 등록 리스너 설정
-  setupDeviceListeners();
-
-  (async () => {
-    try {
-      const user = await userApi.getCurrentUser();
-      if (user?.id) {
-        connectLinkCloudWS(user.id);
-      }
-    } catch (e) {
-      console.error('Failed to connect Link Cloud WebSocket:', e);
-    }
-  })();
+  wsManager.send({ command: 'get_registered_devices' });
 
   // 클라우드 전송 샘플 수를 1초마다 상태로 반영
   setInterval(() => {
@@ -716,5 +749,6 @@ export const useDeviceManager = create<DeviceState & {
     ...currentState,
     ...methods,
     ...initialCloudRates,
+    wsManager,
   };
 }); 

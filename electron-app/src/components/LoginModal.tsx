@@ -3,15 +3,16 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions,
   Button,
-  TextField,
   Typography,
   Box,
-  Checkbox,
-  FormControlLabel,
+  CircularProgress,
 } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
+import { userApi } from '../api/user';
+import { useDeviceManager } from '../stores/deviceManager';
+import { connectLinkCloudWS } from '../utils/linkCloudSocket';
 
 interface LoginModalProps {
   open: boolean;
@@ -19,133 +20,79 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isSignUp, setIsSignUp] = useState(false);
-
-  const { signInWithEmail, signInWithGoogle, signUpWithEmail, savedCredentials, setSavedCredentials } = useAuthStore();
+  const [waitingForToken, setWaitingForToken] = useState(false);
+  const setUser = useAuthStore((state) => state.setUser);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const loadSavedCredentials = async () => {
-      if (savedCredentials) {
-        setEmail(savedCredentials.email);
-        setPassword(savedCredentials.password);
-        setRememberMe(savedCredentials.rememberMe);
+    const handler = async (_event: any, token: string) => {
+      setWaitingForToken(false);
+      localStorage.setItem('token', token);
+
+      // 로그인 성공 시 WebSocket 연결 재시도
+      try {
+        // deviceManager의 wsManager에 접근하여 connect() 호출
+        const deviceManager = useDeviceManager.getState();
+        if (deviceManager && (deviceManager as any).wsManager) {
+          (deviceManager as any).wsManager.disconnect();
+          setTimeout(() => {
+            (deviceManager as any).wsManager.connect();
+          }, 500);
+        }
+      } catch (e) {
+        // 무시
+      }
+
+      try {
+        const user = await userApi.getCurrentUser();
+        setUser(user);
+        if (user?.id) {
+          connectLinkCloudWS(user.id);
+        }
+        navigate('/');
+        onClose();
+      } catch (e) {
+        // 에러 처리
       }
     };
-
-    loadSavedCredentials();
-  }, [savedCredentials]);
-
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    try {
-      await signInWithEmail(email, password, rememberMe ? 'local' : 'session');
-      if (rememberMe) {
-        await setSavedCredentials({ email, password, rememberMe });
-      } else {
-        await setSavedCredentials(null);
-      }
-      onClose();
-    } catch (error: any) {
-      setError(error.message);
+    if ((window as any).electron?.ipcRenderer) {
+      (window as any).electron.ipcRenderer.on('custom-token-received', handler);
     }
-  };
-
-  const handleEmailSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    try {
-      await signUpWithEmail(email, password);
-      if (rememberMe) {
-        await setSavedCredentials({ email, password, rememberMe });
+    return () => {
+      if ((window as any).electron?.ipcRenderer) {
+        (window as any).electron.ipcRenderer.removeListener('custom-token-received', handler);
       }
-      onClose();
-    } catch (error: any) {
-      setError(error.message);
-    }
-  };
+    };
+  }, [onClose, navigate, setUser]);
 
-  const handleGoogleLogin = async () => {
-    setError(null);
-
-    try {
-      await signInWithGoogle('session');
-      onClose();
-    } catch (error: any) {
-      setError(error.message);
+  const handleLogin = () => {
+    setWaitingForToken(true);
+    if ((window as any).electron?.ipcRenderer) {
+      (window as any).electron.ipcRenderer.send('open-web-login');
     }
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{isSignUp ? 'Sign Up' : 'Login'}</DialogTitle>
+      <DialogTitle>Login</DialogTitle>
       <DialogContent>
-        <Box component="form" onSubmit={isSignUp ? handleEmailSignUp : handleEmailLogin} sx={{ mt: 2 }}>
-          <TextField
-            fullWidth
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            margin="normal"
-            required
-          />
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-              />
-            }
-            label="Remember me"
-          />
-          {error && (
-            <Typography color="error" sx={{ mt: 2 }}>
-              {error}
-            </Typography>
+        <Box sx={{ mt: 4, mb: 4, textAlign: 'center' }}>
+          {waitingForToken ? (
+            <>
+              <CircularProgress />
+              <Typography sx={{ mt: 2 }}>Waiting for authentication...</Typography>
+            </>
+          ) : (
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleLogin}
+              fullWidth
+              size="large"
+            >
+              Login with Browser
+            </Button>
           )}
-          <DialogActions sx={{ mt: 2, px: 0 }}>
-            <Button onClick={() => setIsSignUp(!isSignUp)}>
-              {isSignUp ? 'Already have an account? Login' : 'Need an account? Sign Up'}
-            </Button>
-            <Button type="submit" variant="contained" color="primary">
-              {isSignUp ? 'Sign Up' : 'Login'}
-            </Button>
-          </DialogActions>
-        </Box>
-        <Box sx={{ mt: 2, textAlign: 'center' }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Or
-          </Typography>
-          <Button
-            fullWidth
-            variant="outlined"
-            onClick={handleGoogleLogin}
-            startIcon={
-              <img
-                src="https://www.google.com/favicon.ico"
-                alt="Google"
-                style={{ width: 20, height: 20 }}
-              />
-            }
-          >
-            Continue with Google
-          </Button>
         </Box>
       </DialogContent>
     </Dialog>
