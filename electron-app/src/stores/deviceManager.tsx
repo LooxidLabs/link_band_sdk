@@ -723,9 +723,9 @@ export const useDeviceManager = create<DeviceState & {
     });
 
     // Python 서버 로그 수신
-    (window as any).electron.ipcRenderer.on('python-log', (_event: any, msg: string) => {
-      console.log('[PYTHON]', msg);
-    });
+    // (window as any).electron.ipcRenderer.on('python-log', (_event: any, msg: string) => {
+    //   console.log('[PYTHON]', msg);
+    // });
   }
 
   // 디바이스 등록 리스너 설정
