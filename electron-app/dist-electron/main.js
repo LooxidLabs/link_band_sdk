@@ -201,7 +201,7 @@ function startPythonServer() {
     });
     pythonProcess.stderr?.on('data', (data) => {
         const error = data.toString();
-        console.error('Python server error:', error);
+        // console.error('Python server error:', error);
         // 에러 로그도 renderer로 전달
         win?.webContents.send('python-log', `ERROR: ${error}`);
     });
@@ -319,7 +319,36 @@ electron_1.app.on('activate', () => {
 });
 // 웹 로그인 페이지를 여는 IPC 핸들러 (렌더러에서 요청 시)
 electron_1.ipcMain.on('open-web-login', () => {
-    electron_1.shell.openExternal('http://localhost:5173/login?from=electron');
+    // shell.openExternal('http://localhost:5173/login?from=electron');
+    const loginWin = new electron_1.BrowserWindow({
+        width: 600,
+        height: 800,
+        autoHideMenuBar: true,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+        },
+    });
+    loginWin.loadURL('http://localhost:5173/login?from=electron');
+    // URL 변경 감지
+    loginWin.webContents.on('will-navigate', (event, url) => {
+        if (url.startsWith('linkbandapp://')) {
+            event.preventDefault();
+            try {
+                const parsedUrl = new URL(url);
+                if (parsedUrl.hostname === 'auth' && parsedUrl.searchParams.has('token')) {
+                    const token = parsedUrl.searchParams.get('token');
+                    if (win && win.webContents) {
+                        win.webContents.send('custom-token-received', token);
+                    }
+                }
+            }
+            catch (e) {
+                console.error('Failed to parse custom URL or extract token:', e);
+            }
+            loginWin.close();
+        }
+    });
 });
 // Python 서버 종료 IPC 핸들러
 electron_1.ipcMain.on('stop-python-server', () => {

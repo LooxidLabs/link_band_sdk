@@ -405,7 +405,7 @@ class DeviceManager:
                     break
 
                 # Read 24-bit unsigned value for PPG
-                ppg_raw = int.from_bytes(data[offset:offset+3], 'little', signed=False)
+                ppg_raw = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2]
                 sample_timestamp = base_timestamp + i / PPG_SAMPLE_RATE
 
                 sample = {
