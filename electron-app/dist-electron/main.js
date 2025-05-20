@@ -69,7 +69,7 @@ function createWindow() {
         },
     });
     if (process.env.NODE_ENV === 'development') {
-        win.loadURL('http://localhost:5173');
+        win.loadURL('http://http://dev.linkcloud.co');
         win.webContents.openDevTools();
     }
     else {
@@ -329,7 +329,7 @@ electron_1.ipcMain.on('open-web-login', () => {
             contextIsolation: true,
         },
     });
-    loginWin.loadURL('http://localhost:5173/login?from=electron');
+    loginWin.loadURL('http://dev.linkcloud.co/login?from=electron');
     // URL 변경 감지
     loginWin.webContents.on('will-navigate', (event, url) => {
         if (url.startsWith('linkbandapp://')) {
