@@ -73,7 +73,7 @@ const BottomStatusBar = () => (
     </Box>
     {/* Right Section */}
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 260, justifyContent: 'flex-end' }}>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>RAM 0.00 GB</Typography>
+      <Typography sx={{ color: '#aaa', fontSize: 12 }}>RAM 0.00 MB</Typography>
       <Typography sx={{ color: '#aaa', fontSize: 12 }}>CPU 0.00 %</Typography>
       <Typography sx={{ color: '#aaa', fontSize: 12 }}>Disk 0.00 MB used (limit 300MB)</Typography>
     </Box>
