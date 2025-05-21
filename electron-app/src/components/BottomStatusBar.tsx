@@ -8,6 +8,7 @@ import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 const isEngineRunning = true; // set to false for stopped
 const isDeviceConnected = true; // set to false for disconnected
 const isCloudConnected = true; // set to false for disconnected
+const isDataCenterRunning = true; // set to false for disconnected
 
 const activeColor = '#646cff'; // blue (from screenshot)
 const inactiveColor = '#aaa'; // gray
@@ -35,7 +36,7 @@ const BottomStatusBar = () => (
     {/* Left Section */}
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 260 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Engine running</Typography>
+        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Engine</Typography>
         {isEngineRunning ? (
           <PlayArrowIcon sx={{ color: activeColor, fontSize: 16, ml: 0.5 }} />
         ) : (
@@ -43,11 +44,19 @@ const BottomStatusBar = () => (
         )}
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Device</Typography>
+        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Link Band</Typography>
         {isDeviceConnected ? (
           <LinkIcon sx={{ color: activeColor, fontSize: 16, ml: 0.5 }} />
         ) : (
           <LinkOffIcon sx={{ color: inactiveColor, fontSize: 16, ml: 0.5 }} />
+        )}
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Data Center</Typography>
+        {isDataCenterRunning ? (
+          <PlayArrowIcon sx={{ color: activeColor, fontSize: 16, ml: 0.1 }} />
+        ) : (
+          <StopIcon sx={{ color: inactiveColor, fontSize: 16, ml: 0.5 }} /> 
         )}
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

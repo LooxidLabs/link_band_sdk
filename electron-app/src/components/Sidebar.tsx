@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Box, List, ListItemButton, ListItemIcon, ListItemText, IconButton } from '@mui/material';
+import MemoryIcon from '@mui/icons-material/Memory';
 import DashboardIcon from '@mui/icons-material/BarChart';
-import DevicesIcon from '@mui/icons-material/Devices';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 import StorageIcon from '@mui/icons-material/Storage';
 import CloudIcon from '@mui/icons-material/CloudQueue';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -9,10 +10,11 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 const menuItems = [
+  { label: 'Engine', icon: <MemoryIcon /> },
+  { label: 'Link Band', icon: <PsychologyIcon /> },
   { label: 'Visualizer', icon: <DashboardIcon /> },
-  { label: 'Device Manager', icon: <DevicesIcon /> },
-  { label: 'Data Manager', icon: <StorageIcon /> },
-  { label: 'Link Cloud Manager', icon: <CloudIcon /> },
+  { label: 'Data Center', icon: <StorageIcon /> },
+  { label: 'Link Cloud', icon: <CloudIcon /> },
   { label: 'Settings', icon: <SettingsIcon /> },
 ];
 
