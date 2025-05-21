@@ -7,8 +7,8 @@ export const theme = createTheme({
       main: '#646cff',
     },
     background: {
-      default: '#181a20',
-      paper: '#23263a',
+      default: '#000',
+      paper: '#000',
     },
     secondary: {
       main: '#ff61e6',

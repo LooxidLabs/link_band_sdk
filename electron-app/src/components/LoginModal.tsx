@@ -50,11 +50,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
           connectLinkCloudWS(user.id);
         }
         navigate('/');
-        onClose();
+      onClose();
       } catch (e) {
         // 에러 처리
-      }
-    };
+    }
+  };
     if ((window as any).electron?.ipcRenderer) {
       (window as any).electron.ipcRenderer.on('custom-token-received', handler);
     }
@@ -87,7 +87,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
               variant="contained"
               color="primary"
               onClick={handleLogin}
-              fullWidth
+            fullWidth
               size="large"
             >
               Login with Browser
