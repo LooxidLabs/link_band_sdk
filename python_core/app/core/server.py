@@ -80,12 +80,18 @@ class WebSocketServer:
             except asyncio.TimeoutError:
                 logger.warning("Timeout while closing previous WebSocket server.")
             self.server = None
+
         self.server = await websockets.serve(
             self.handle_client,
             self.host,
             self.port
         )
 
+        
+        # address = self.device_manager.get_device_info()['address']
+        # if self.device_manager.is_connected():
+        #     await self.device_manager.disconnect(address)
+        # self.device_manager.connect(address)
         # If streaming is already running, stop and restart after 1 second
         await self.start()
         # 주기적으로 상태 업데이트를 시작

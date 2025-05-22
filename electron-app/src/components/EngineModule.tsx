@@ -14,6 +14,7 @@ const EngineModule: React.FC = () => {
     isLoading,
     error,
     isWebSocketConnected,
+    isStreamingIdle,
     initEngine,
     startEngine,
     stopEngine,
@@ -381,7 +382,7 @@ const EngineModule: React.FC = () => {
                         EEG
                       </Typography>
                       <Typography variant="body2" sx={{ fontSize: 14 }}>
-                        {samplingRates.eeg ? samplingRates.eeg.toFixed(1) : '-'} Hz
+                        {isStreamingIdle ? '-' : (samplingRates.eeg ? samplingRates.eeg.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -389,7 +390,7 @@ const EngineModule: React.FC = () => {
                         PPG
                       </Typography>
                       <Typography variant="body2" sx={{ fontSize: 14 }}>
-                        {samplingRates.ppg ? samplingRates.ppg.toFixed(1) : '-'} Hz
+                        {isStreamingIdle ? '-' : (samplingRates.ppg ? samplingRates.ppg.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -397,7 +398,7 @@ const EngineModule: React.FC = () => {
                         Accelerometer
                       </Typography>
                       <Typography variant="body2" sx={{ fontSize: 14 }}>
-                        {samplingRates.acc ? samplingRates.acc.toFixed(1) : '-'} Hz
+                        {isStreamingIdle ? '-' : (samplingRates.acc ? samplingRates.acc.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -405,7 +406,7 @@ const EngineModule: React.FC = () => {
                         Battery
                       </Typography>
                       <Typography variant="body2" sx={{ fontSize: 14 }}>
-                        {samplingRates.bat ? samplingRates.bat.toFixed(1) : '-'} Hz
+                        {isStreamingIdle ? '-' : (samplingRates.bat ? samplingRates.bat.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>
                   </Box>
