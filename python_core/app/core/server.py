@@ -6,8 +6,8 @@ import time # For timestamping batched data
 from typing import Set, Dict, Any, Optional
 from enum import Enum, auto
 from datetime import datetime
-from device import DeviceManager, DeviceStatus
-from device_registry import DeviceRegistry
+from app.core.device import DeviceManager, DeviceStatus
+from app.core.device_registry import DeviceRegistry
 from bleak import BleakScanner
 
 # Configure logging
@@ -51,14 +51,43 @@ class WebSocketServer:
         self.device_manager = DeviceManager(server_disconnect_callback=self.handle_unexpected_disconnect)
         self.device_registry = DeviceRegistry()
         self.auto_connect_task: Optional[asyncio.Task] = None
+        self.data_stream_stats = {
+            'eeg': {'samples_per_sec': 0},
+            'ppg': {'samples_per_sec': 0},
+            'acc': {'samples_per_sec': 0},
+            'bat': {'samples_per_sec': 0},
+            'bat_level': 0
+        }
+        self.device_sampling_stats = {
+            'eeg': {'samples_per_sec': 0},
+            'ppg': {'samples_per_sec': 0},
+            'acc': {'samples_per_sec': 0},
+            'bat': {'samples_per_sec': 0},
+            'bat_level': 0
+        }
 
     async def initialize(self):
         logger.info("Initializing WebSocket server...")
+
+        # 서버 재시작
+        # If a server already exists, close it before creating a new one
+        if self.server:
+            logger.info("Existing WebSocket server found. Closing before re-initializing...")
+            self.server.close()
+            try:
+                await asyncio.wait_for(self.server.wait_closed(), timeout=5.0)
+                logger.info("Previous WebSocket server closed successfully.")
+            except asyncio.TimeoutError:
+                logger.warning("Timeout while closing previous WebSocket server.")
+            self.server = None
         self.server = await websockets.serve(
             self.handle_client,
             self.host,
             self.port
         )
+
+        # If streaming is already running, stop and restart after 1 second
+        await self.start()
         # 주기적으로 상태 업데이트를 시작
         asyncio.create_task(self._periodic_status_update())
         logger.info(f"WebSocket server initialized on {self.host}:{self.port}")
@@ -226,10 +255,13 @@ class WebSocketServer:
 
     async def _auto_connect_loop(self):
         """Periodically check and connect to registered devices"""
+        logger.info("Auto-connect loop started")
         while True:
             try:
+                # 연결된 디바이스가 없으면 등록된 디바이스 중 하나를 연결
                 if not self.device_manager.is_connected():
                     registered_devices = self.device_registry.get_registered_devices()
+                    logger.info(f"Registered devices: {registered_devices}")
                     for device in registered_devices:
                         address = device.get('address')
                         if address:
@@ -506,28 +538,42 @@ class WebSocketServer:
 
     async def stop_streaming(self):
         """Stop all streaming tasks."""
+        tasks_cancelled = False
         if self.is_streaming:
             self.is_streaming = False
-            
-            # Cancel all streaming tasks
-            for sensor_type, task in self.stream_tasks.items():
-                if task:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        logger.info(f"{sensor_type.upper()} streaming task successfully cancelled.")
-                    except Exception as e:
-                        logger.error(f"Error during {sensor_type} stream_task cancellation: {e}")
-                    self.stream_tasks[sensor_type] = None
-
+        # Cancel all streaming tasks regardless of is_streaming
+        for sensor_type, task in self.stream_tasks.items():
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    logger.info(f"{sensor_type.upper()} streaming task successfully cancelled.")
+                except Exception as e:
+                    logger.error(f"Error during {sensor_type} stream_task cancellation: {e}")
+                self.stream_tasks[sensor_type] = None
+                tasks_cancelled = True
+        if tasks_cancelled:
             await self.broadcast_event(EventType.STREAM_STOPPED, {"status": "streaming_stopped"})
             logger.info("Streaming stopped flag set.")
+            return True
         else:
-            logger.info("Streaming is not currently active.")
+            logger.info("No streaming tasks were active.")
+            return False
+
+    def _update_sampling_rate(self, sensor_type, processed_data):
+        if len(processed_data) < 2:
+            return
+        timestamps = [sample["timestamp"] for sample in processed_data]
+        intervals = [t2 - t1 for t1, t2 in zip(timestamps[:-1], timestamps[1:])]
+        avg_interval = sum(intervals) / len(intervals)
+        if avg_interval > 0:
+            sampling_rate = 1.0 / avg_interval
+        else:
+            sampling_rate = 0
+        self.device_sampling_stats[sensor_type]["samples_per_sec"] = round(sampling_rate, 2)
 
     async def stream_eeg_data(self):
-        """Stream EEG data independently."""
         logger.info("EEG stream task started.")
         SEND_INTERVAL = 0.04  # 25Hz (40ms)
         NO_DATA_TIMEOUT = 5.0
@@ -535,6 +581,11 @@ class WebSocketServer:
         total_samples_sent = 0
         last_log_time = time.time()
         samples_since_last_log = 0
+        # 샘플링 레이트 계산용
+        timestamp_buffer = []
+        WINDOW_SIZE = 60
+        last_rate_log_time = time.time()
+        RATE_LOG_INTERVAL = 5
 
         try:
             while self.is_streaming:
@@ -544,19 +595,23 @@ class WebSocketServer:
                 eeg_data = await self.device_manager.get_and_clear_eeg_buffer()
                 if eeg_data:
                     last_data_time = time.time()
-                    
                     # 데이터 구조 변환
                     processed_data = []
                     for sample in eeg_data:
                         processed_sample = {
                             "timestamp": sample["timestamp"],
-                            "ch1": sample["ch1"],  # 이미 uV로 변환된 값
-                            "ch2": sample["ch2"],  # 이미 uV로 변환된 값
+                            "ch1": sample["ch1"],
+                            "ch2": sample["ch2"],
                             "leadoff_ch1": sample["leadoff_ch1"],
                             "leadoff_ch2": sample["leadoff_ch2"]
                         }
                         processed_data.append(processed_sample)
-
+                        # 타임스탬프 버퍼에 추가
+                        timestamp_buffer.append(processed_sample["timestamp"])
+                    # 1분보다 오래된 타임스탬프 제거
+                    cutoff_time = time.time() - WINDOW_SIZE
+                    timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                    self._update_sampling_rate('eeg', processed_data)
                     message = {
                         "type": "sensor_data",
                         "sensor_type": "eeg",
@@ -576,7 +631,17 @@ class WebSocketServer:
                                       f"Buffer: {len(eeg_data):4d} samples")
                             samples_since_last_log = 0
                             last_log_time = current_time
-                            
+                        # 5초마다 실제 샘플링 레이트 로깅
+                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                            if len(timestamp_buffer) > 1:
+                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
+                                if intervals:
+                                    avg_interval = sum(intervals) / len(intervals)
+                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                    logger.info(f"[EEG] Actual sampling rate: {actual_rate:.2f} Hz "
+                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                    self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
+                            last_rate_log_time = current_time
                     except Exception as e:
                         logger.error(f"Error broadcasting EEG data: {e}")
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
@@ -591,7 +656,6 @@ class WebSocketServer:
             logger.info(f"EEG stream task finished. Total samples sent: {total_samples_sent}")
 
     async def stream_ppg_data(self):
-        """Stream PPG data independently."""
         logger.info("PPG stream task started.")
         SEND_INTERVAL = 0.016  # ~60Hz (16.7ms)
         NO_DATA_TIMEOUT = 5.0
@@ -599,6 +663,11 @@ class WebSocketServer:
         total_samples_sent = 0
         last_log_time = time.time()
         samples_since_last_log = 0
+        # 샘플링 레이트 계산용
+        timestamp_buffer = []
+        WINDOW_SIZE = 60
+        last_rate_log_time = time.time()
+        RATE_LOG_INTERVAL = 5
 
         try:
             while self.is_streaming:
@@ -614,11 +683,17 @@ class WebSocketServer:
                         "timestamp": time.time(),
                         "data": ppg_data
                     }
+                    # 타임스탬프 버퍼에 추가
+                    for sample in ppg_data:
+                        timestamp_buffer.append(sample["timestamp"])
+                    # 1분보다 오래된 타임스탬프 제거
+                    cutoff_time = time.time() - WINDOW_SIZE
+                    timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                    self._update_sampling_rate('ppg', ppg_data)
                     try:
                         await self.broadcast(json.dumps(message))
                         total_samples_sent += len(ppg_data)
                         samples_since_last_log += len(ppg_data)
-                        
                         # 1초마다 스트리밍 상태 로깅
                         current_time = time.time()
                         if current_time - last_log_time >= 1.0:
@@ -627,7 +702,17 @@ class WebSocketServer:
                                       f"Buffer: {len(ppg_data):4d} samples")
                             samples_since_last_log = 0
                             last_log_time = current_time
-                            
+                        # 5초마다 실제 샘플링 레이트 로깅
+                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                            if len(timestamp_buffer) > 1:
+                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
+                                if intervals:
+                                    avg_interval = sum(intervals) / len(intervals)
+                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                    logger.info(f"[PPG] Actual sampling rate: {actual_rate:.2f} Hz "
+                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                    self.device_sampling_stats['ppg']['samples_per_sec'] = actual_rate
+                            last_rate_log_time = current_time
                     except Exception as e:
                         logger.error(f"Error broadcasting PPG data: {e}")
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
@@ -642,7 +727,6 @@ class WebSocketServer:
             logger.info(f"PPG stream task finished. Total samples sent: {total_samples_sent}")
 
     async def stream_acc_data(self):
-        """Stream accelerometer data independently."""
         logger.info("ACC stream task started.")
         SEND_INTERVAL = 0.033  # ~30Hz (33.3ms)
         NO_DATA_TIMEOUT = 5.0
@@ -650,6 +734,11 @@ class WebSocketServer:
         total_samples_sent = 0
         last_log_time = time.time()
         samples_since_last_log = 0
+        # 샘플링 레이트 계산용
+        timestamp_buffer = []
+        WINDOW_SIZE = 60
+        last_rate_log_time = time.time()
+        RATE_LOG_INTERVAL = 5
 
         try:
             while self.is_streaming:
@@ -665,11 +754,17 @@ class WebSocketServer:
                         "timestamp": time.time(),
                         "data": acc_data
                     }
+                    # 타임스탬프 버퍼에 추가
+                    for sample in acc_data:
+                        timestamp_buffer.append(sample["timestamp"])
+                    # 1분보다 오래된 타임스탬프 제거
+                    cutoff_time = time.time() - WINDOW_SIZE
+                    timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                    self._update_sampling_rate('acc', acc_data)
                     try:
                         await self.broadcast(json.dumps(message))
                         total_samples_sent += len(acc_data)
                         samples_since_last_log += len(acc_data)
-                        
                         # 1초마다 스트리밍 상태 로깅
                         current_time = time.time()
                         if current_time - last_log_time >= 1.0:
@@ -678,7 +773,17 @@ class WebSocketServer:
                                       f"Buffer: {len(acc_data):4d} samples")
                             samples_since_last_log = 0
                             last_log_time = current_time
-                            
+                        # 5초마다 실제 샘플링 레이트 로깅
+                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                            if len(timestamp_buffer) > 1:
+                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
+                                if intervals:
+                                    avg_interval = sum(intervals) / len(intervals)
+                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                    logger.info(f"[ACC] Actual sampling rate: {actual_rate:.2f} Hz "
+                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                    self.device_sampling_stats['acc']['samples_per_sec'] = actual_rate
+                            last_rate_log_time = current_time
                     except Exception as e:
                         logger.error(f"Error broadcasting ACC data: {e}")
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
@@ -744,6 +849,8 @@ class WebSocketServer:
                         "timestamp": current_time,
                         "data": battery_data
                     }
+                    self._update_sampling_rate('bat', battery_data)
+                    self.battery_level = battery_data[-1]['level']
                     try:
                         await self.broadcast(json.dumps(message))
                         total_samples_sent += len(battery_data)
@@ -768,6 +875,8 @@ class WebSocketServer:
                                     actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
                                     logger.info(f"[BAT] Actual sampling rate: {actual_rate:.2f} Hz "
                                               f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                    self.device_sampling_stats['bat']['samples_per_sec'] = actual_rate
+                                    self.device_sampling_stats['bat_level'] = last_battery_level
                             last_rate_log_time = current_time
                             
                     except Exception as e:
@@ -866,3 +975,109 @@ class WebSocketServer:
             "available": is_available,
             "message": "Bluetooth is available" if is_available else "Bluetooth is turned off"
         })
+
+    def register_device(self, device_info: dict) -> bool:
+        return self.device_registry.register_device(device_info)
+
+    def unregister_device(self, address: str) -> bool:
+        # 현재 연결된 디바이스인 경우 연결 해제
+        current_device = self.device_manager.get_device_info()
+        if current_device and current_device.get("address") == address:
+            # 연결 해제 및 스트리밍 중단
+            if self.is_streaming:
+                # stop_streaming은 async이므로, 동기적으로 실행
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    coro = self.stop_streaming()
+                    asyncio.create_task(coro)
+                else:
+                    loop.run_until_complete(self.stop_streaming())
+            # 디바이스 연결 해제
+            if self.device_manager.is_connected():
+                if loop.is_running():
+                    coro = self.device_manager.disconnect()
+                    asyncio.create_task(coro)
+                else:
+                    loop.run_until_complete(self.device_manager.disconnect())
+        return self.device_registry.unregister_device(address)
+
+    def get_registered_devices(self):
+        return self.device_registry.get_registered_devices()
+
+    def is_device_registered(self, address: str) -> bool:
+        return self.device_registry.is_device_registered(address)
+
+    def get_stream_status(self):
+        # stream_stats가 없으면 기본값 생성
+        stream_stats = getattr(self, 'stream_stats', {
+            'eeg': {'samples_per_sec': 0},
+            'ppg': {'samples_per_sec': 0},
+            'acc': {'samples_per_sec': 0},
+            'bat': {'samples_per_sec': 0},
+            'bat_level': 0
+        })
+        return {
+            "status": "running" if self.is_streaming else "stopped",
+            "clients_connected": self.get_connected_clients(),
+            "eeg_sampling_rate": stream_stats.get('eeg', {}).get('samples_per_sec', 0),
+            "ppg_sampling_rate": stream_stats.get('ppg', {}).get('samples_per_sec', 0),
+            "acc_sampling_rate": stream_stats.get('acc', {}).get('samples_per_sec', 0),
+            "bat_sampling_rate": stream_stats.get('bat', {}).get('samples_per_sec', 0),
+            "bat_level": stream_stats.get('bat_level', 0)
+        }
+
+    def health_check(self):
+        return {
+            "status": "running" if self.is_streaming else "stopped",
+            "clients_connected": self.get_connected_clients(),
+            "is_streaming": self.is_streaming
+        }
+
+    def get_connection_info(self):
+        return {
+            "host": self.host,
+            "port": self.port,
+            "ws_url": f"ws://{self.host}:{self.port}"
+        }
+
+    def get_device_info(self):
+        device_info = self.device_manager.get_device_info()
+        if not device_info:
+            return {"status": "no_device_connected"}
+        return {
+            "status": "connected",
+            "name": device_info.get("name"),
+            "address": device_info.get("address"),
+            "is_connected": self.device_manager.is_connected()
+        }
+
+    def update_stream_stats(self, eeg=None, ppg=None, acc=None, bat=None):
+        if eeg is not None:
+            self.stream_stats['eeg']['samples_per_sec'] = eeg
+        if ppg is not None:
+            self.stream_stats['ppg']['samples_per_sec'] = ppg
+        if acc is not None:
+            self.stream_stats['acc']['samples_per_sec'] = acc
+        if bat is not None:
+            self.stream_stats['bat']['samples_per_sec'] = bat
+
+    def get_device_status(self):
+        info = self.device_manager.get_device_info()
+        status = {}
+
+        if info:
+            status = {
+                "status": "connected",
+                "name": info.get("name"),
+                "address": info.get("address"),
+                "eeg_sampling_rate": self.device_sampling_stats['eeg']['samples_per_sec'],
+                "ppg_sampling_rate": self.device_sampling_stats['ppg']['samples_per_sec'],
+                "acc_sampling_rate": self.device_sampling_stats['acc']['samples_per_sec'],
+                "bat_sampling_rate": self.device_sampling_stats['bat']['samples_per_sec'],
+                "bat_level": self.device_sampling_stats['bat_level']
+            }
+
+        else:
+            status["status"] = "disconnected"
+        return status

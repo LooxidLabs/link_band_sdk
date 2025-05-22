@@ -1,83 +1,128 @@
+import React, { useEffect } from 'react';
 import { Box, Typography } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import LinkIcon from '@mui/icons-material/Link';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 
-const isEngineRunning = true; // set to false for stopped
-const isDeviceConnected = true; // set to false for disconnected
-const isCloudConnected = true; // set to false for disconnected
-const isDataCenterRunning = true; // set to false for disconnected
+import { useMetricsStore } from '../stores/metrics';
 
-const activeColor = '#646cff'; // blue (from screenshot)
-const inactiveColor = '#aaa'; // gray
+export const BottomStatusBar: React.FC = () => {
+  const {
+    systemMetrics,
+    deviceStatus,
+    engineStatus,
+    errors,
+    startPolling,
+    stopPolling
+  } = useMetricsStore();
 
-const BottomStatusBar = () => (
-  <Box
-    sx={{
-      position: 'fixed',
-      left: 0,
-      bottom: 0,
-      width: '100vw',
-      height: 32,
-      bgcolor: '#111',
-      color: '#aaa',
-      borderTop: '1px solid #23263a',
-      display: 'flex',
-      alignItems: 'center',
-      px: 2,
-      zIndex: 1201,
-      fontSize: 12,
-      justifyContent: 'space-between',
-      boxShadow: '0 -2px 8px rgba(0,0,0,0.12)',
-    }}
-  >
-    {/* Left Section */}
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 260 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Engine</Typography>
-        {isEngineRunning ? (
-          <PlayArrowIcon sx={{ color: activeColor, fontSize: 16, ml: 0.5 }} />
-        ) : (
-          <StopIcon sx={{ color: inactiveColor, fontSize: 16, ml: 0.5 }} />
-        )}
+  useEffect(() => {
+    startPolling();
+    return () => stopPolling();
+  }, []);
+
+  const formatValue = (value: number | undefined | null) => {
+    if (value === undefined || value === null) return 'N/A';
+    return `${value.toFixed(1)}`;
+  };
+
+  const formatSamplingRate = (rate: number | undefined | null) => {
+    if (rate === undefined || rate === null || engineStatus?.status !== 'running') return '- Hz';
+    return `${rate.toFixed(1)} Hz`;
+  };
+
+  // Icon rendering helpers
+  const renderEngineIcon = () =>
+    engineStatus?.status === 'running' ? (
+      <PlayArrowIcon fontSize="small" color="success" sx={{ verticalAlign: 'middle' }} />
+    ) : (
+      <StopIcon fontSize="small" color="disabled" sx={{ verticalAlign: 'middle' }} />
+    );
+
+  const renderLinkBandIcon = () =>
+    deviceStatus?.status === 'connected' ? (
+      <LinkIcon fontSize="small" color="success" sx={{ verticalAlign: 'middle' }} />
+    ) : (
+      <LinkOffIcon fontSize="small" color="error" sx={{ verticalAlign: 'middle' }} />
+    );
+
+  const renderStreamingIcon = () =>
+    engineStatus?.is_streaming ? (
+      <PlayArrowIcon fontSize="small" color="success" sx={{ verticalAlign: 'middle' }} />
+    ) : (
+      <StopIcon fontSize="small" color="disabled" sx={{ verticalAlign: 'middle' }} />
+    );
+
+  return (
+    <Box
+      sx={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        bgcolor: 'grey.900',
+        color: 'common.white',
+        px: 2,
+        py: 1,
+        fontSize: 12,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        zIndex: 1300
+      }}
+    >
+      {/* Main status row */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {/* Engine */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>Engine</Typography>
+          {renderEngineIcon()}
+        </Box>
+        {/* Link Band */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>Link Band</Typography>
+          {renderLinkBandIcon()}
+        </Box>
+        {/* Clients */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>Clients:</Typography>
+          <Typography variant="body2" sx={{ fontSize: 12 }}>{engineStatus?.clients_connected ?? 0}</Typography>
+        </Box>
+        {/* Streaming
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>Streaming</Typography>
+          {renderStreamingIcon()}
+        </Box> */}
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Link Band</Typography>
-        {isDeviceConnected ? (
-          <LinkIcon sx={{ color: activeColor, fontSize: 16, ml: 0.5 }} />
-        ) : (
-          <LinkOffIcon sx={{ color: inactiveColor, fontSize: 16, ml: 0.5 }} />
-        )}
+      {/* EEG/PPG/ACC row */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>EEG:</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{formatSamplingRate(deviceStatus?.eeg_sampling_rate)}</Typography>
+        <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>PPG:</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{formatSamplingRate(deviceStatus?.ppg_sampling_rate)}</Typography>
+        <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>ACC:</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{formatSamplingRate(deviceStatus?.acc_sampling_rate)}</Typography>
+        <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>Battery:</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{deviceStatus?.bat_level} %</Typography>
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Data Center</Typography>
-        {isDataCenterRunning ? (
-          <PlayArrowIcon sx={{ color: activeColor, fontSize: 16, ml: 0.1 }} />
-        ) : (
-          <StopIcon sx={{ color: inactiveColor, fontSize: 16, ml: 0.5 }} /> 
-        )}
+      {/* System metrics row */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>CPU:</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{formatValue(systemMetrics?.cpu)} %</Typography>
+        <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>RAM:</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{formatValue(systemMetrics?.ram)} MB</Typography>
+        <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>Disk:</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{formatValue(systemMetrics?.disk)} MB</Typography>
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography sx={{ color: '#aaa', fontSize: 12, fontWeight: 500 }}>Link Cloud</Typography>
-        <CloudQueueIcon sx={{ color: isCloudConnected ? activeColor : inactiveColor, fontSize: 16, ml: 0.5 }} />
-      </Box>
+      {/* Error Display */}
+      {(errors.system || errors.device || errors.engine) && (
+        <Typography variant="body2" color="error.main" sx={{ fontSize: 12, ml: 2 }}>
+          {errors.system && <span>System Error: {errors.system} </span>}
+          {errors.device && <span>Device Error: {errors.device} </span>}
+          {errors.engine && <span>Engine Error: {errors.engine}</span>}
+        </Typography>
+      )}
     </Box>
-    {/* Center Section */}
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>EEG : 249.1 Hz</Typography>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>PPG : 50.1 Hz</Typography>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>ACC : 33.1 Hz</Typography>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>Battery : 42%</Typography>
-    </Box>
-    {/* Right Section */}
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 260, justifyContent: 'flex-end' }}>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>RAM 0.00 MB</Typography>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>CPU 0.00 %</Typography>
-      <Typography sx={{ color: '#aaa', fontSize: 12 }}>Disk 0.00 MB used (limit 300MB)</Typography>
-    </Box>
-  </Box>
-);
-
-export default BottomStatusBar; 
+  );
+};
