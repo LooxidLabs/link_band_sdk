@@ -23,29 +23,29 @@ const LinkBandModule: React.FC = () => {
   } = useDeviceStore();
 
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
+  // const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     startPolling();
     return () => stopPolling();
   }, [startPolling, stopPolling]);
 
-  useEffect(() => {
-    if (deviceStatus?.status === 'connected') {
-      setIsConnecting(false);
-    }
-  }, [deviceStatus?.status]);
+  // useEffect(() => {
+  //   if (deviceStatus?.status === 'connected') {
+  //     setIsConnecting(false);
+  //   }
+  // }, [deviceStatus?.status]);
 
   const handleConnect = async () => {
     if (deviceStatus?.status === 'connected') {
-      setIsConnecting(true);
+      // setIsConnecting(true);
       await disconnectDevice(deviceStatus.address);
     } else if (registeredDevices.length > 0) {
       try {
         await connectDevice(registeredDevices[0].address);
       } catch (error) {
         console.error('Failed to connect:', error);
-        setIsConnecting(false);
+        // setIsConnecting(false);
       }
     }
   };
@@ -205,7 +205,7 @@ const LinkBandModule: React.FC = () => {
               </Typography>
             ) : scannedDevices.length > 0 ? (
               <List sx={{ ml: 2 }}>
-                {scannedDevices.map((device, index) => (
+                {scannedDevices.map((device) => (
                   <ListItem key={device.address} sx={{ py: 0.5, fontSize: 12 }}>
                     <Radio
                       checked={selectedDevice === device.address}
