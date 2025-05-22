@@ -393,30 +393,33 @@ class DeviceManager:
                 self.logger.warning(f"PPG data too short: {len(data)} bytes")
                 return
 
-            time_raw = int.from_bytes(data[0:4], 'big')
-            base_timestamp = time_raw / TIMESTAMP_CLOCK
-            num_samples = (len(data) - 4) // 3  # Each sample is 3 bytes
+            # Timestamp conversion (4 bytes)
+            time_raw = (data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0])
+            base_timestamp = time_raw / 32.768 / 1000  # Convert to seconds
 
-            self.logger.debug(f"PPG data: base_timestamp={base_timestamp}, num_samples={num_samples}")
+            self.logger.debug(f"PPG data: base_timestamp={base_timestamp}")
 
             samples_to_add = []
-            for i in range(num_samples):
-                offset = 4 + i * 3
-                if offset + 3 > len(data):
-                    self.logger.warning(f"PPG data shorter than expected for sample {i}. Skipping remaining.")
+            # Process data in 6-byte chunks (3 bytes RED + 3 bytes IR)
+            for i in range(4, len(data), 6):
+                if i + 6 > len(data):
+                    self.logger.warning(f"PPG data shorter than expected at offset {i}. Skipping remaining.")
                     break
 
-                # Read 24-bit unsigned value for PPG
-                ppg_raw = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2]
-                sample_timestamp = base_timestamp + i / PPG_SAMPLE_RATE
+                # Read RED PPG (3 bytes)
+                ppg_red = (data[i] << 16 | data[i+1] << 8 | data[i+2])
+                # Read IR PPG (3 bytes)
+                ppg_ir = (data[i+3] << 16 | data[i+4] << 8 | data[i+5])
+
+                sample_timestamp = base_timestamp + (i - 4) / (6 * PPG_SAMPLE_RATE)
 
                 sample = {
                     "timestamp": sample_timestamp,
-                    "red": ppg_raw,
-                    "ir": ppg_raw
+                    "red": ppg_red,
+                    "ir": ppg_ir
                 }
                 samples_to_add.append(sample)
-                self.logger.debug(f"PPG sample {i}: {sample}")
+                self.logger.debug(f"PPG sample: {sample}")
 
             if samples_to_add:
                 for sample in samples_to_add:
