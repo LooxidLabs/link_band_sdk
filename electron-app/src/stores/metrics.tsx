@@ -78,7 +78,7 @@ export const useMetricsStore = create<MetricsState>((set) => {
       set(state => ({ isLoading: { ...state.isLoading, device: true } }));
       const status = await deviceApi.getDeviceStatus();
       set(state => ({
-        deviceStatus: status,
+        deviceStatus: status as DeviceStatus,
         isLoading: { ...state.isLoading, device: false },
         errors: { ...state.errors, device: null }
       }));

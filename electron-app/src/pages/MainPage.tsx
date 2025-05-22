@@ -9,12 +9,13 @@ import TopNavBar from '../components/TopNavBar';
 import { BottomStatusBar } from '../components/BottomStatusBar';
 import { theme } from '../theme';
 import EngineModule from '../components/EngineModule';
+import LinkBandModule from '../components/LinkBandModule';
 
 const menuToComponent: Record<string, React.ReactNode> = {
   'Engine': <EngineModule />,
+  'Link Band': <LinkBandModule />,
   'Visualizer': <div style={{ color: '#fff' }}>Visualizer (준비중)</div>,
-  'Device Manager': <DeviceManagerModule />,
-  'Data Manager': <div style={{ color: '#fff' }}>Data Manager (준비중)</div>,
+  'Data Center': <DeviceManagerModule />,
   'Link Cloud Manager': <LinkCloudManagerModule />,
   'Settings': <div style={{ color: '#fff' }}>Settings (준비중)</div>,
 };
@@ -41,11 +42,11 @@ const MainPage: React.FC = () => {
   };
 
   const handleDeviceClick = () => {
-    setSelectedMenu('Device Manager');
+    setSelectedMenu('Link Band');
   };
 
   const handleRecordClick = () => {
-    setSelectedMenu('Data Manager');
+    setSelectedMenu('Data Center');
   };
 
   const handleSettingsClick = () => {
@@ -71,10 +72,10 @@ const MainPage: React.FC = () => {
         <TopNavBar
           userEmail={user?.email || ''}
           onSettingsClick={handleSettingsClick}
+          onDeviceClick={handleDeviceClick}
           onCloudClick={handleCloudClick}
           onVisualizerClick={handleVisualizerClick}
           visualizerStatus={visualizerStatus}
-          onDeviceClick={handleDeviceClick}
           onRecordClick={handleRecordClick}
           onEngineClick={handleEngineClick}
         />

@@ -1,11 +1,21 @@
 import { create } from 'zustand';
 import { deviceApi } from '../api/device';
-import type { DeviceResponse, DeviceStatus, DeviceCreate } from '../types/device';
+import type { DeviceResponse, DeviceStatus, RegisteredDevicesResponse } from '../types/device';
+
+interface ScannedDevice {
+  name: string;
+  address: string;
+//   rssi: number;
+}
+
+interface ScanResponse {
+  devices: ScannedDevice[];
+}
 
 interface DeviceState {
   // Device list
   registeredDevices: DeviceResponse[];
-  scannedDevices: DeviceResponse[];
+  scannedDevices: ScannedDevice[];
   // Current device status
   deviceStatus: DeviceStatus | null;
   // Loading states
@@ -13,8 +23,6 @@ interface DeviceState {
     scan: boolean;
     connect: boolean;
     disconnect: boolean;
-    status: boolean;
-    register: boolean;
     unregister: boolean;
   };
   // Error states
@@ -22,141 +30,146 @@ interface DeviceState {
     scan: string | null;
     connect: string | null;
     disconnect: string | null;
-    status: string | null;
-    register: string | null;
     unregister: string | null;
   };
-  // Polling state
-  isPolling: boolean;
-  // Methods
+  // Actions
   scanDevices: () => Promise<void>;
   connectDevice: (address: string) => Promise<void>;
   disconnectDevice: (address: string) => Promise<void>;
   getDeviceStatus: () => Promise<void>;
-  registerDevice: (device: DeviceCreate) => Promise<void>;
-  unregisterDevice: (address: string) => Promise<void>;
+  registerDevice: (name: string, address: string) => Promise<void>;
   getRegisteredDevices: () => Promise<void>;
+  unregisterDevice: (address: string) => Promise<void>;
   startPolling: () => void;
   stopPolling: () => void;
+  clearScannedDevices: () => void;
 }
 
-export const useDeviceStore = create<DeviceState>((set, get) => ({
-  registeredDevices: [],
-  scannedDevices: [],
-  deviceStatus: null,
-  isLoading: {
-    scan: false,
-    connect: false,
-    disconnect: false,
-    status: false,
-    register: false,
-    unregister: false,
-  },
-  errors: {
-    scan: null,
-    connect: null,
-    disconnect: null,
-    status: null,
-    register: null,
-    unregister: null,
-  },
-  isPolling: false,
+export const useDeviceStore = create<DeviceState>((set, get) => {
+  let pollingInterval: NodeJS.Timeout | null = null;
 
-  scanDevices: async () => {
-    set(state => ({ isLoading: { ...state.isLoading, scan: true }, errors: { ...state.errors, scan: null } }));
-    try {
-      const devices = await deviceApi.scanDevices();
-      set({ scannedDevices: devices });
-    } catch (error) {
-      set(state => ({ errors: { ...state.errors, scan: error instanceof Error ? error.message : 'Failed to scan devices' } }));
-    } finally {
-      set(state => ({ isLoading: { ...state.isLoading, scan: false } }));
+  return {
+    // Initial state
+    registeredDevices: [],
+    scannedDevices: [],
+    deviceStatus: null,
+    isLoading: {
+      scan: false,
+      connect: false,
+      disconnect: false,
+      unregister: false
+    },
+    errors: {
+      scan: null,
+      connect: null,
+      disconnect: null,
+      unregister: null
+    },
+
+    // Actions
+    scanDevices: async () => {
+      set(state => ({ isLoading: { ...state.isLoading, scan: true }, errors: { ...state.errors, scan: null } }));
+      try {
+        const response = await deviceApi.scanDevices();
+        console.log('Scan response:', response);
+        set({ scannedDevices: response.devices });
+      } catch (error) {
+        console.error('Scan error:', error);
+        set(state => ({ errors: { ...state.errors, scan: error instanceof Error ? error.message : 'Failed to scan devices' } }));
+        throw error;
+      } finally {
+        set(state => ({ isLoading: { ...state.isLoading, scan: false } }));
+      }
+    },
+
+    connectDevice: async (address: string) => {
+      set(state => ({ isLoading: { ...state.isLoading, connect: true }, errors: { ...state.errors, connect: null } }));
+      try {
+        await deviceApi.connectDevice(address);
+        const status = await deviceApi.getDeviceStatus();
+        set({ deviceStatus: status });
+      } catch (error) {
+        set(state => ({ errors: { ...state.errors, connect: error instanceof Error ? error.message : 'Failed to connect device' } }));
+        throw error;
+      } finally {
+        set(state => ({ isLoading: { ...state.isLoading, connect: false } }));
+      }
+    },
+
+    disconnectDevice: async (address: string) => {
+      set(state => ({ isLoading: { ...state.isLoading, disconnect: true }, errors: { ...state.errors, disconnect: null } }));
+      try {
+        await deviceApi.disconnectDevice(address);
+        set({ deviceStatus: null });
+      } catch (error) {
+        set(state => ({ errors: { ...state.errors, disconnect: error instanceof Error ? error.message : 'Failed to disconnect device' } }));
+        throw error;
+      } finally {
+        set(state => ({ isLoading: { ...state.isLoading, disconnect: false } }));
+      }
+    },
+
+    getDeviceStatus: async () => {
+      try {
+        const status = await deviceApi.getDeviceStatus();
+        set({ deviceStatus: status });
+      } catch (error) {
+        console.error('Failed to get device status:', error);
+      }
+    },
+
+    getRegisteredDevices: async () => {
+      try {
+        const response = await deviceApi.getRegisteredDevices();
+        set({ registeredDevices: response.devices });
+      } catch (error) {
+        console.error('Failed to get registered devices:', error);
+      }
+    },
+
+    registerDevice: async (name: string, address: string) => {
+      try {
+        await deviceApi.registerDevice(name, address);
+        const response = await deviceApi.getRegisteredDevices();
+        set({ registeredDevices: response.devices });
+      } catch (error) {
+        console.error('Failed to register device:', error);
+      }
+    },
+
+    unregisterDevice: async (address: string) => {
+      try {
+        await deviceApi.unregisterDevice(address);
+        set({ deviceStatus: null, registeredDevices: [] });
+      } catch (error) {
+        throw error;
+      }
+    },
+
+    startPolling: () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+
+      // Initial fetch
+      get().getDeviceStatus();
+      get().getRegisteredDevices();
+
+      // Start polling
+      pollingInterval = setInterval(() => {
+        get().getDeviceStatus();
+      }, 1000);
+    },
+
+    stopPolling: () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
+    },
+
+    clearScannedDevices: () => {
+      set({ scannedDevices: [] });
     }
-  },
-
-  connectDevice: async (address: string) => {
-    set(state => ({ isLoading: { ...state.isLoading, connect: true }, errors: { ...state.errors, connect: null } }));
-    try {
-      await deviceApi.connectDevice(address);
-      await get().getDeviceStatus();
-    } catch (error) {
-      set(state => ({ errors: { ...state.errors, connect: error instanceof Error ? error.message : 'Failed to connect device' } }));
-    } finally {
-      set(state => ({ isLoading: { ...state.isLoading, connect: false } }));
-    }
-  },
-
-  disconnectDevice: async (address: string) => {
-    set(state => ({ isLoading: { ...state.isLoading, disconnect: true }, errors: { ...state.errors, disconnect: null } }));
-    try {
-      await deviceApi.disconnectDevice(address);
-      await get().getDeviceStatus();
-    } catch (error) {
-      set(state => ({ errors: { ...state.errors, disconnect: error instanceof Error ? error.message : 'Failed to disconnect device' } }));
-    } finally {
-      set(state => ({ isLoading: { ...state.isLoading, disconnect: false } }));
-    }
-  },
-
-  getDeviceStatus: async () => {
-    set(state => ({ isLoading: { ...state.isLoading, status: true }, errors: { ...state.errors, status: null } }));
-    try {
-      const status = await deviceApi.getDeviceStatus();
-      set({ deviceStatus: status });
-    } catch (error) {
-      set(state => ({ errors: { ...state.errors, status: error instanceof Error ? error.message : 'Failed to get device status' } }));
-    } finally {
-      set(state => ({ isLoading: { ...state.isLoading, status: false } }));
-    }
-  },
-
-  registerDevice: async (device: DeviceCreate) => {
-    set(state => ({ isLoading: { ...state.isLoading, register: true }, errors: { ...state.errors, register: null } }));
-    try {
-      await deviceApi.registerDevice(device);
-      await get().getRegisteredDevices();
-    } catch (error) {
-      set(state => ({ errors: { ...state.errors, register: error instanceof Error ? error.message : 'Failed to register device' } }));
-    } finally {
-      set(state => ({ isLoading: { ...state.isLoading, register: false } }));
-    }
-  },
-
-  unregisterDevice: async (address: string) => {
-    set(state => ({ isLoading: { ...state.isLoading, unregister: true }, errors: { ...state.errors, unregister: null } }));
-    try {
-      await deviceApi.unregisterDevice(address);
-      await get().getRegisteredDevices();
-    } catch (error) {
-      set(state => ({ errors: { ...state.errors, unregister: error instanceof Error ? error.message : 'Failed to unregister device' } }));
-    } finally {
-      set(state => ({ isLoading: { ...state.isLoading, unregister: false } }));
-    }
-  },
-
-  getRegisteredDevices: async () => {
-    try {
-      const devices = await deviceApi.getRegisteredDevices();
-      set({ registeredDevices: devices });
-    } catch (error) {
-      console.error('Failed to get registered devices:', error);
-    }
-  },
-
-  startPolling: () => {
-    if (get().isPolling) return;
-    set({ isPolling: true });
-
-    const poll = async () => {
-      if (!get().isPolling) return;
-      await get().getDeviceStatus();
-      setTimeout(poll, 1000);
-    };
-
-    poll();
-  },
-
-  stopPolling: () => {
-    set({ isPolling: false });
-  },
-})); 
+  };
+}); 
