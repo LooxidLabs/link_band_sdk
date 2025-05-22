@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { deviceApi } from '../api/device';
-import type { DeviceResponse, DeviceStatus, RegisteredDevicesResponse } from '../types/device';
+import type { DeviceResponse, DeviceStatus } from '../types/device';
 
 interface ScannedDevice {
   name: string;
@@ -8,9 +8,9 @@ interface ScannedDevice {
 //   rssi: number;
 }
 
-interface ScanResponse {
-  devices: ScannedDevice[];
-}
+// interface ScanResponse {
+//   devices: ScannedDevice[];
+// }
 
 interface DeviceState {
   // Device list

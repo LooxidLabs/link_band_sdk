@@ -8,10 +8,10 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import { userApi } from '../api/user';
-import { deviceApi } from '../api/device';
+// import { deviceApi } from '../api/device';
 import { useDeviceManager } from '../stores/deviceManager';
 import type { UserResponse } from '../types/user';
-import type { DeviceResponse } from '../types/device';
+// import type { DeviceResponse } from '../types/device';
 
 // 공통 스타일 정의 (DeviceManagerModule과 동일)
 // 공통 스타일 정의
@@ -58,11 +58,11 @@ const commonStyles = {
 
 const LinkCloudManagerModule: React.FC = () => {
   const [userInfo, setUserInfo] = useState<UserResponse | null>(null);
-  const [devices, setDevices] = useState<DeviceResponse[]>([]);
+  // const [devices, setDevices] = useState<DeviceResponse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deviceLoading, setDeviceLoading] = useState(true);
+  // const [deviceLoading, setDeviceLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deviceError, setDeviceError] = useState<string | null>(null);
+  // const [deviceError, setDeviceError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -92,9 +92,9 @@ const LinkCloudManagerModule: React.FC = () => {
         // const list = await deviceApi.getDevices();
         // setDevices(list);
       } catch (err) {
-        setDeviceError('디바이스 목록을 불러오는데 실패했습니다.');
+        // setDeviceError('디바이스 목록을 불러오는데 실패했습니다.');
       } finally {
-        setDeviceLoading(false);
+        // setDeviceLoading(false);
       }
     };
     fetchDevices();
@@ -184,32 +184,6 @@ const LinkCloudManagerModule: React.FC = () => {
             <Typography variant="body2" color="error" sx={{ mb: 1 }}>
               {syncError}
             </Typography>
-          )}
-          {deviceLoading ? (
-            <Stack direction="row" alignItems="center" spacing={1}>
-              <CircularProgress size={18} />
-              <Typography variant="body2" sx={{ color: '#888' }}>불러오는 중...</Typography>
-            </Stack>
-          ) : deviceError ? (
-            <Typography variant="body2" color="error">{deviceError}</Typography>
-          ) : devices.length === 0 ? (
-            <Typography variant="body2" sx={{ color: '#888' }}>등록된 디바이스가 없습니다.</Typography>
-          ) : (
-            <Stack spacing={0.5}>
-              {devices.map((device) => (
-                <Stack key={device.address} direction="row" alignItems="center" spacing={1}>
-                  <Typography variant="body2" sx={{ color: '#fff', flex: 1 }}>
-                    {device.name}
-                    {device.address && (
-                      <span style={{ color: '#888', marginLeft: 8 }}>({device.address})</span>
-                    )}
-                  </Typography>
-                  {/* <Typography variant="body2" sx={{ color: '#888' }}>
-                    {device.address || ''}
-                  </Typography> */}
-                </Stack>
-              ))}
-            </Stack>
           )}
           <Divider sx={commonStyles.divider} />
           <Stack direction="row" alignItems="center" spacing={1}>
