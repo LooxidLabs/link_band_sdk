@@ -1,6 +1,55 @@
 import { create } from 'zustand';
 import { engineApi } from '../api/engine';
 import type { ConnectionInfo, EngineStatus } from '../types/engine';
+import { useDeviceStore } from './device';
+import { useEffect } from 'react';
+import type { DeviceStatus } from '../types/device';
+
+interface SensorData {
+  timestamp: number;
+}
+
+interface EEGData extends SensorData {
+  ch1: number;
+  ch2: number;
+  leadoff_ch1: boolean;
+  leadoff_ch2: boolean;
+}
+
+interface PPGData extends SensorData {
+  red: number;
+  ir: number;
+}
+
+interface AccData extends SensorData {
+  x: number;
+  y: number;
+  z: number;
+}
+
+interface BatData extends SensorData {
+  level: number;
+}
+
+interface ConnectionQuality {
+  signal: 'Excellent' | 'Good' | 'Fair' | 'Poor' | 'Unknown';
+  dataRate: number;
+  eegRate: number;
+  ppgRate: number;
+  accRate: number;
+  batRate: number;
+}
+
+const MAX_DATA_POINTS = 1000;
+
+const initialConnectionQuality: ConnectionQuality = {
+  signal: 'Unknown',
+  dataRate: 0,
+  eegRate: 0,
+  ppgRate: 0,
+  accRate: 0,
+  batRate: 0,
+};
 
 // WebSocket 연결 관리 클래스
 class WebSocketManager {
@@ -8,16 +57,49 @@ class WebSocketManager {
   private url: string;
   private checkConnectionTimer: any = null;
   private healthCheckTimer: any = null;
+  private autoConnectTimer: any = null;
   private isConnecting = false;
   private messageHandler: (message: any) => void;
   public onConnectionChange: ((connected: boolean) => void) | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectDelay = 2000; // 2초
+  private reconnectDelay = 2000;
 
   constructor(url: string, messageHandler: (message: any) => void) {
     this.url = url;
     this.messageHandler = messageHandler;
+  }
+
+  startAutoConnect() {
+    if (this.autoConnectTimer) {
+      clearInterval(this.autoConnectTimer);
+    }
+
+    this.autoConnectTimer = setInterval(() => {
+      const deviceStore = useDeviceStore.getState();
+      const engineStore = useEngineStore.getState();
+
+      // 이미 연결되어 있으면 연결 시도하지 않음
+      if (this.isConnected()) {
+        console.log('WebSocket is already connected');
+        return;
+      }
+
+      // 디바이스가 연결되어 있고 스트리밍 중인 경우에만 연결 시도
+      if (deviceStore.deviceStatus?.status === 'connected' && 
+          engineStore.connectionInfo?.is_streaming === true) {
+        console.log('Auto-connecting to WebSocket...', {
+          deviceStatus: deviceStore.deviceStatus?.status,
+          isStreaming: engineStore.connectionInfo?.is_streaming
+        });
+        this.connect();
+      } else {
+        console.log('Auto-connect conditions not met:', {
+          deviceStatus: deviceStore.deviceStatus?.status,
+          isStreaming: engineStore.connectionInfo?.is_streaming
+        });
+      }
+    }, 1000);
   }
 
   private startConnectionCheck() {
@@ -27,8 +109,8 @@ class WebSocketManager {
 
     this.checkConnectionTimer = setInterval(() => {
       if (!this.isConnected()) {
-        console.log('Connection check: WebSocket is not connected, attempting to reconnect...');
-        this.connect();
+        console.log('Connection check: WebSocket is not connected');
+        this.onConnectionChange?.(false);
       }
     }, 5000);
   }
@@ -43,6 +125,8 @@ class WebSocketManager {
         this.send({
           command: 'health_check'
         });
+      } else {
+        this.onConnectionChange?.(false);
       }
     }, 1000);
   }
@@ -93,6 +177,7 @@ class WebSocketManager {
           setTimeout(() => this.connect(), this.reconnectDelay);
         } else {
           console.log('Max reconnection attempts reached');
+          this.onConnectionChange?.(false);
         }
       };
 
@@ -100,6 +185,7 @@ class WebSocketManager {
         console.error('WebSocket error:', error);
         this.isConnecting = false;
         this.ws = null;
+        this.onConnectionChange?.(false);
       };
 
       this.ws.onmessage = (event) => {
@@ -114,6 +200,7 @@ class WebSocketManager {
       console.error('Failed to create WebSocket connection:', error);
       this.isConnecting = false;
       this.ws = null;
+      this.onConnectionChange?.(false);
     }
   }
 
@@ -127,11 +214,16 @@ class WebSocketManager {
       clearInterval(this.healthCheckTimer);
       this.healthCheckTimer = null;
     }
+    if (this.autoConnectTimer) {
+      clearInterval(this.autoConnectTimer);
+      this.autoConnectTimer = null;
+    }
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     this.reconnectAttempts = 0;
+    this.onConnectionChange?.(false);
   }
 
   send(message: any) {
@@ -163,6 +255,36 @@ interface EngineState {
     connection: string | null;
   };
   isWebSocketConnected: boolean;
+  wsManager: WebSocketManager | null;
+  consecutiveFailures: number;
+  isEngineStopped: boolean;
+  // Sensor data states
+  eegData: EEGData[];
+  ppgData: PPGData[];
+  accData: AccData[];
+  batData: BatData[];
+  connectionQuality: ConnectionQuality;
+  lastRateUpdate: number;
+  lastDataUpdate: number;
+  samplingRates: {
+    eeg: number;
+    ppg: number;
+    acc: number;
+    bat: number;
+  };
+  lastSampleTimestamps: {
+    eeg: number;
+    ppg: number;
+    acc: number;
+    bat: number;
+  };
+  sampleCounts: {
+    eeg: number;
+    ppg: number;
+    acc: number;
+    bat: number;
+  };
+  // Methods
   initEngine: () => Promise<void>;
   startEngine: () => Promise<void>;
   stopEngine: () => Promise<void>;
@@ -170,25 +292,207 @@ interface EngineState {
   stopPolling: () => void;
   connectWebSocket: () => void;
   disconnectWebSocket: () => void;
+  sendWebSocketMessage: (message: any) => void;
+  addEEGData: (data: EEGData[]) => void;
+  addPPGData: (data: PPGData[]) => void;
+  addAccData: (data: AccData[]) => void;
+  addBatData: (data: BatData[]) => void;
+  clearData: () => void;
+  autoConnectWebSocket: () => void;
 }
 
 const WS_URL = 'ws://localhost:18765';
-const MAX_CONSECUTIVE_FAILURES = 5;
+
+// 샘플링 레이트 계산 및 업데이트 함수
+const updateSamplingRates = (state: EngineState): EngineState => {
+  const now = Date.now();
+  if (now - state.lastRateUpdate >= 1000) { // 1초마다 업데이트
+    const calculateRate = (data: SensorData[]) => {
+      if (data.length < 2) return 0;
+      const sortedData = [...data].sort((a, b) => a.timestamp - b.timestamp);
+      const intervals: number[] = [];
+      for (let i = 1; i < sortedData.length; i++) {
+        intervals.push(sortedData[i].timestamp - sortedData[i-1].timestamp);
+      }
+      const avgInterval = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+      return avgInterval > 0 ? Number((1.0 / avgInterval).toFixed(1)) : 0;
+    };
+
+    const eegRate = calculateRate(state.eegData);
+    const ppgRate = calculateRate(state.ppgData);
+    const accRate = calculateRate(state.accData);
+    const batRate = calculateRate(state.batData);
+
+    console.log('Sampling rates calculation:', {
+      eeg: { rate: eegRate, dataLength: state.eegData.length },
+      ppg: { rate: ppgRate, dataLength: state.ppgData.length },
+      acc: { rate: accRate, dataLength: state.accData.length },
+      bat: { rate: batRate, dataLength: state.batData.length }
+    });
+
+    const newState = {
+      ...state,
+      lastRateUpdate: now,
+      samplingRates: {
+        eeg: eegRate,
+        ppg: ppgRate,
+        acc: accRate,
+        bat: batRate
+      },
+      connectionQuality: {
+        ...state.connectionQuality,
+        eegRate,
+        ppgRate,
+        accRate,
+        batRate,
+        dataRate: eegRate + ppgRate + accRate + batRate
+      }
+    };
+
+    console.log('Updated state samplingRates:', newState.samplingRates);
+    return newState;
+  }
+  return state;
+};
 
 export const useEngineStore = create<EngineState>((set, get) => {
   let pollingInterval: NodeJS.Timeout | null = null;
-  let ws: WebSocket | null = null;
+  let isInitialFetch = true;
+  let samplingRateUpdateInterval: NodeJS.Timeout | null = null;
+
+  // 샘플링 레이트 계산 함수
+  // const calculateSamplingRates = () => {
+  //   const now = Date.now();
+  //   const state = get();
+  //   const timeWindow = 1000; // 1초
+
+  //   const calculateRate = (lastTimestamp: number, sampleCount: number, currentRate: number) => {
+  //     const timeDiff = now - lastTimestamp;
+  //     if (timeDiff > 0 && sampleCount > 0) {
+  //       // 초당 샘플 수 계산 (샘플 수 / 시간(초))
+  //       return Math.round((sampleCount / timeDiff) * 1000);
+  //     }
+  //     // 새로운 데이터가 없으면 이전 값 유지
+  //     return currentRate;
+  //   };
+
+  //   const newRates = {
+  //     eeg: calculateRate(state.lastSampleTimestamps.eeg, state.sampleCounts.eeg, state.samplingRates.eeg),
+  //     ppg: calculateRate(state.lastSampleTimestamps.ppg, state.sampleCounts.ppg, state.samplingRates.ppg),
+  //     acc: calculateRate(state.lastSampleTimestamps.acc, state.sampleCounts.acc, state.samplingRates.acc),
+  //     bat: calculateRate(state.lastSampleTimestamps.bat, state.sampleCounts.bat, state.samplingRates.bat)
+  //   };
+
+  //   set(state => ({
+  //     samplingRates: newRates,
+  //     sampleCounts: {
+  //       eeg: 0,
+  //       ppg: 0,
+  //       acc: 0,
+  //       bat: 0
+  //     },
+  //     lastSampleTimestamps: {
+  //       eeg: now,
+  //       ppg: now,
+  //       acc: now,
+  //       bat: now
+  //     }
+  //   }));
+
+  // };
+
+  // WebSocket 메시지 핸들러
+  const handleWebSocketMessage = (message: any) => {
+    if (message.type === 'sensor_data') {
+      const now = Date.now();
+      const dataLength = message.data.length;
+
+      switch (message.sensor_type) {
+        case 'eeg':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, eeg: state.sampleCounts.eeg + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, eeg: now }
+          }));
+          get().addEEGData(message.data);
+          break;
+        case 'ppg':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, ppg: state.sampleCounts.ppg + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, ppg: now }
+          }));
+          get().addPPGData(message.data);
+          break;
+        case 'acc':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, acc: state.sampleCounts.acc + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, acc: now }
+          }));
+          get().addAccData(message.data);
+          break;
+        case 'bat':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, bat: state.sampleCounts.bat + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, bat: now }
+          }));
+          get().addBatData(message.data);
+          break;
+      }
+    } else if (message.type === 'health_check_response') {
+      set({
+        isWebSocketConnected: true,
+        connectionInfo: {
+          ...get().connectionInfo,
+          status: message.status,
+          is_streaming: message.is_streaming,
+          clients_connected: message.clients_connected
+        }
+      });
+    }
+  };
+
+  // WebSocket 매니저 초기화
+  const wsManager = new WebSocketManager(WS_URL, handleWebSocketMessage);
+
+  // WebSocket 연결 상태 변경 핸들러
+  wsManager.onConnectionChange = (connected: boolean) => {
+    console.log('WebSocket connection state changed:', connected);
+    set(state => ({
+      isWebSocketConnected: connected,
+      connectionInfo: connected ? get().connectionInfo : null,
+      error: {
+        ...state.error,
+        connection: connected ? null : 'WebSocket connection lost'
+      }
+    }));
+  };
+
+  // 자동 연결 시작
+  wsManager.startAutoConnect();
 
   const updateEngineStatus = async () => {
     try {
       set(state => ({ isLoading: { ...state.isLoading, connection: true } }));
-      const status = await engineApi.getEngineStatus();
+      const [status, info] = await Promise.all([
+        engineApi.getEngineStatus(),
+        engineApi.getConnectionInfo()
+      ]);
+      
+      console.log('Engine status update:', { status, info });
+      
       set(state => ({
         engineStatus: status,
+        connectionInfo: info,
         isLoading: { ...state.isLoading, connection: false },
         error: { ...state.error, connection: null }
       }));
+
+      // 상태가 업데이트된 후 자동 연결 시도
+      if (status.status === 'running' && info.is_streaming === true) {
+        console.log('Engine is running and streaming, attempting auto-connect...');
+        wsManager.connect();
+      }
     } catch (error) {
+      console.error('Error updating engine status:', error);
       set(state => ({
         isLoading: { ...state.isLoading, connection: false },
         error: { ...state.error, connection: error instanceof Error ? error.message : 'Unknown error' }
@@ -213,14 +517,47 @@ export const useEngineStore = create<EngineState>((set, get) => {
       connection: null
     },
     isWebSocketConnected: false,
+    wsManager,
+    consecutiveFailures: 0,
+    isEngineStopped: false,
+    // Sensor data initial states
+    eegData: [],
+    ppgData: [],
+    accData: [],
+    batData: [],
+    connectionQuality: initialConnectionQuality,
+    lastRateUpdate: Date.now(),
+    lastDataUpdate: Date.now(),
+    samplingRates: {
+      eeg: 0,
+      ppg: 0,
+      acc: 0,
+      bat: 0
+    },
+    lastSampleTimestamps: {
+      eeg: Date.now(),
+      ppg: Date.now(),
+      acc: Date.now(),
+      bat: Date.now()
+    },
+    sampleCounts: {
+      eeg: 0,
+      ppg: 0,
+      acc: 0,
+      bat: 0
+    },
 
     // Actions
     initEngine: async () => {
       set(state => ({ isLoading: { ...state.isLoading, init: true }, error: { ...state.error, init: null } }));
       try {
         await engineApi.initEngine();
-        const info = await engineApi.getConnectionInfo();
+        const [status, info] = await Promise.all([
+          engineApi.getEngineStatus(),
+          engineApi.getConnectionInfo()
+        ]);
         set(state => ({
+          engineStatus: status,
           connectionInfo: info,
           isLoading: { ...state.isLoading, init: false },
           error: { ...state.error, init: null }
@@ -238,8 +575,12 @@ export const useEngineStore = create<EngineState>((set, get) => {
       set(state => ({ isLoading: { ...state.isLoading, start: true }, error: { ...state.error, start: null } }));
       try {
         await engineApi.startEngine();
-        const info = await engineApi.getConnectionInfo();
+        const [status, info] = await Promise.all([
+          engineApi.getEngineStatus(),
+          engineApi.getConnectionInfo()
+        ]);
         set(state => ({
+          engineStatus: status,
           connectionInfo: info,
           isLoading: { ...state.isLoading, start: false },
           error: { ...state.error, start: null }
@@ -273,16 +614,47 @@ export const useEngineStore = create<EngineState>((set, get) => {
     },
 
     startPolling: () => {
-      // Clear any existing polling
       if (pollingInterval) {
         clearInterval(pollingInterval);
       }
+      if (samplingRateUpdateInterval) {
+        clearInterval(samplingRateUpdateInterval);
+      }
 
-      // Initial update
-      updateEngineStatus();
+      // 초기 상태 업데이트
+      const updateStatus = async () => {
+        try {
+          const [status, info] = await Promise.all([
+            engineApi.getEngineStatus(),
+            engineApi.getConnectionInfo()
+          ]);
+          
+          set(state => ({
+            engineStatus: status,
+            connectionInfo: info,
+            isLoading: { ...state.isLoading, connection: false },
+            error: { ...state.error, connection: null }
+          }));
 
-      // Start polling every second
-      pollingInterval = setInterval(updateEngineStatus, 1000);
+          if (!wsManager.isConnectedPublic()) {
+            wsManager.connect();
+          }
+        } catch (error) {
+          set(state => ({
+            isLoading: { ...state.isLoading, connection: false },
+            error: { ...state.error, connection: error instanceof Error ? error.message : 'Unknown error' }
+          }));
+        }
+      };
+
+      // 즉시 첫 번째 업데이트 실행
+      updateStatus();
+      
+      // 이후 1초마다 업데이트
+      pollingInterval = setInterval(updateStatus, 1000);
+      
+      // 샘플링 레이트 계산 시작 (0.5초마다)
+      // samplingRateUpdateInterval = setInterval(calculateSamplingRates, 500);
     },
 
     stopPolling: () => {
@@ -290,44 +662,117 @@ export const useEngineStore = create<EngineState>((set, get) => {
         clearInterval(pollingInterval);
         pollingInterval = null;
       }
+      if (samplingRateUpdateInterval) {
+        clearInterval(samplingRateUpdateInterval);
+        samplingRateUpdateInterval = null;
+      }
     },
 
     connectWebSocket: () => {
-      if (ws) {
-        ws.close();
-      }
-
-      const info = get().connectionInfo;
-      if (!info?.ws_url) {
-        set(state => ({
-          error: { ...state.error, connection: 'WebSocket URL not available' }
-        }));
-        return;
-      }
-
-      ws = new WebSocket(info.ws_url);
-
-      ws.onopen = () => {
-        set({ isWebSocketConnected: true });
-      };
-
-      ws.onclose = () => {
-        set({ isWebSocketConnected: false });
-      };
-
-      ws.onerror = (error) => {
-        set(state => ({
-          error: { ...state.error, connection: 'WebSocket connection error' }
-        }));
-      };
+      console.log('Connecting to WebSocket...');
+      console.log('Current WebSocket state before connect:', wsManager.isConnectedPublic());
+      set(state => ({ 
+        error: { ...state.error, connection: null },
+        isWebSocketConnected: false 
+      }));
+      wsManager.connect();
     },
 
     disconnectWebSocket: () => {
-      if (ws) {
-        ws.close();
-        ws = null;
+      console.log('Disconnecting from WebSocket...');
+      console.log('Current WebSocket state before disconnect:', wsManager.isConnectedPublic());
+      wsManager.disconnect();
+      set({ 
+        isWebSocketConnected: false, 
+        connectionInfo: null,
+        error: { ...get().error, connection: null }
+      });
+    },
+
+    sendWebSocketMessage: (message: any) => {
+      wsManager.send(message);
+    },
+
+    // Sensor data methods
+    addEEGData: (newData: EEGData[]) => {
+      if (newData.length > 0) {
+        const now = Date.now();
+        set((state) => {
+          const currentData = state.eegData || [];
+          const newState = {
+            ...state,
+            eegData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            lastDataUpdate: now
+          };
+          return updateSamplingRates(newState);
+        });
       }
-      set({ isWebSocketConnected: false });
-    }
+    },
+
+    addPPGData: (newData: PPGData[]) => {
+      if (newData.length > 0) {
+        const now = Date.now();
+        set((state) => {
+          const currentData = state.ppgData || [];
+          const newState = {
+            ...state,
+            ppgData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            lastDataUpdate: now
+          };
+          return updateSamplingRates(newState);
+        });
+      }
+    },
+
+    addAccData: (newData: AccData[]) => {
+      if (newData.length > 0) {
+        const now = Date.now();
+        set((state) => {
+          const currentData = state.accData || [];
+          const newState = {
+            ...state,
+            accData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            lastDataUpdate: now
+          };
+          return updateSamplingRates(newState);
+        });
+      }
+    },
+
+    addBatData: (newData: BatData[]) => {
+      if (newData.length > 0) {
+        const now = Date.now();
+        set((state) => {
+          const currentData = state.batData || [];
+          const newState = {
+            ...state,
+            batData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            lastDataUpdate: now
+          };
+          return updateSamplingRates(newState);
+        });
+      }
+    },
+
+    clearData: () => {
+      set({ 
+        eegData: [],
+        ppgData: [],
+        accData: [],
+        batData: []
+      });
+    },
+
+    autoConnectWebSocket: () => {
+      const currentState = get();
+
+      // 이미 연결되어 있으면 연결 시도하지 않음
+      if (currentState.isWebSocketConnected) {
+        return;
+      }
+
+      // 연결 시도
+      wsManager.connect();
+    },
   };
 }); 
