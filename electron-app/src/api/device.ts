@@ -1,5 +1,5 @@
 import { api } from './interceptor';
-import type { DeviceCreate, DeviceUpdate, DeviceResponse, DeviceStatus } from '../types/device';
+import type { DeviceCreate, DeviceResponse, DeviceStatus } from '../types/device';
 import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000';

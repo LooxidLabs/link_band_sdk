@@ -40,7 +40,7 @@ const POLLING_INTERVAL = 1000;
 const ERROR_THRESHOLD = 3;
 const ERROR_RESET_DELAY = 5000;
 
-export const useMetricsStore = create<MetricsState>((set, get) => {
+export const useMetricsStore = create<MetricsState>((set) => {
   let pollingInterval: NodeJS.Timeout | null = null;
   let errorCount = 0;
   let lastErrorTime = 0;

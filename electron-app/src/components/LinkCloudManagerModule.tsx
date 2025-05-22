@@ -66,7 +66,7 @@ const LinkCloudManagerModule: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  const { registeredDevices, cloudEegRate, cloudPpgRate, cloudAccRate, cloudBatRate } = useDeviceManager();
+  const { cloudEegRate, cloudPpgRate, cloudAccRate, cloudBatRate } = useDeviceManager();
 
   useEffect(() => {
     const fetchUserInfo = async () => {
@@ -104,13 +104,13 @@ const LinkCloudManagerModule: React.FC = () => {
     setSyncing(true);
     setSyncError(null);
     try {
-      await deviceApi.resetDevices();
-      for (const device of registeredDevices) {
-        await deviceApi.createDevice({
-          name: device.name,
-          address: device.address,
-        });
-      }
+      // await deviceApi.resetDevices();
+      // for (const device of registeredDevices) {
+      //   await deviceApi.createDevice({
+      //     name: device.name,
+      //     address: device.address,
+      //   });
+      // }
       const list = await deviceApi.getDevices();
       setDevices(list);
     } catch (err) {
@@ -197,16 +197,16 @@ const LinkCloudManagerModule: React.FC = () => {
           ) : (
             <Stack spacing={0.5}>
               {devices.map((device) => (
-                <Stack key={device.id} direction="row" alignItems="center" spacing={1}>
+                <Stack key={device.address} direction="row" alignItems="center" spacing={1}>
                   <Typography variant="body2" sx={{ color: '#fff', flex: 1 }}>
                     {device.name}
                     {device.address && (
                       <span style={{ color: '#888', marginLeft: 8 }}>({device.address})</span>
                     )}
                   </Typography>
-                  <Typography variant="body2" sx={{ color: '#888' }}>
-                    {device.status || ''}
-                  </Typography>
+                  {/* <Typography variant="body2" sx={{ color: '#888' }}>
+                    {device.address || ''}
+                  </Typography> */}
                 </Stack>
               ))}
             </Stack>

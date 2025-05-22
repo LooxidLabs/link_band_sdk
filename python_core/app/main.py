@@ -1,8 +1,7 @@
 from fastapi import FastAPI
-from app.api import router_device, router_stream, router_recording, router_metrics
+from app.api import router_device, router_engine, router_recording, router_metrics
 from app.services.stream_service import StreamService
 from fastapi.middleware.cors import CORSMiddleware
-
 
 app = FastAPI(title="Link Band Core Engine")
 app.add_middleware(
@@ -15,7 +14,7 @@ app.add_middleware(
 stream_service = StreamService()
 
 app.include_router(router_device.router, prefix="/device", tags=["Device"])
-app.include_router(router_stream.router, prefix="/stream", tags=["Stream"])
+app.include_router(router_engine.router, prefix="/stream", tags=["Engine"])
 app.include_router(router_recording.router, prefix="/recordings", tags=["Recordings"])
 app.include_router(router_metrics.router, prefix="/metrics", tags=["Metrics"])
 
