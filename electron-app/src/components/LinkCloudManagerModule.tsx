@@ -89,8 +89,8 @@ const LinkCloudManagerModule: React.FC = () => {
   useEffect(() => {
     const fetchDevices = async () => {
       try {
-        const list = await deviceApi.getDevices();
-        setDevices(list);
+        // const list = await deviceApi.getDevices();
+        // setDevices(list);
       } catch (err) {
         setDeviceError('디바이스 목록을 불러오는데 실패했습니다.');
       } finally {
@@ -111,8 +111,8 @@ const LinkCloudManagerModule: React.FC = () => {
       //     address: device.address,
       //   });
       // }
-      const list = await deviceApi.getDevices();
-      setDevices(list);
+      // const list = await deviceApi.getDevices();
+      // setDevices(list);
     } catch (err) {
       setSyncError('동기화에 실패했습니다.');
     } finally {

@@ -1,20 +1,23 @@
 export interface DeviceBase {
   name: string;
   address: string;
-  // rssi?: number;
 }
 
 export interface DeviceCreate extends DeviceBase {
   // Additional fields for device creation if needed
 }
 
-export interface DeviceUpdate {
-  name?: string;
-  address?: string;
+export interface DeviceUpdate extends Partial<DeviceBase> {
+  // Fields that can be updated
 }
 
 export interface DeviceResponse extends DeviceBase {
   // Additional fields from API response if needed
+}
+
+export interface RegisteredDevicesResponse {
+  devices: DeviceResponse[];
+  count: number;
 }
 
 export interface ConnectionQuality {
@@ -27,9 +30,9 @@ export interface ConnectionQuality {
 }
 
 export interface DeviceStatus {
-  status: 'connected' | 'disconnected';
   name: string;
   address: string;
+  status: 'connected' | 'disconnected';
   eeg_sampling_rate: number;
   ppg_sampling_rate: number;
   acc_sampling_rate: number;
@@ -38,7 +41,6 @@ export interface DeviceStatus {
 }
 
 export interface DeviceStatusResponse {
-  status: string;
-  data: DeviceStatus;
-  timestamp: string;
+  status: DeviceStatus;
+  data: any; // Replace with specific data type if needed
 }

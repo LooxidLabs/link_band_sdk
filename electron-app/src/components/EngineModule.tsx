@@ -129,14 +129,14 @@ const EngineModule: React.FC = () => {
   return (
     <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
       {/* Engine Status Card */}
-      <Card sx={{ width: 800, mx: 'auto', bgcolor: 'grey.900', color: 'common.white' }}>
+      <Card sx={{ width: '100%', mx: 'auto', bgcolor: 'grey.900', color: 'common.white' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" gutterBottom>
               <MemoryIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
               Engine Status
             </Typography>
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" spacing={2}>
               <Button
                 variant="outlined"
                 color="info"
@@ -169,10 +169,10 @@ const EngineModule: React.FC = () => {
               </Button>
             </Stack>
           </Box>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
             {/* Status */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
+              <Typography variant="body2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
                 Engine Status
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 24 }}>
@@ -194,7 +194,7 @@ const EngineModule: React.FC = () => {
             </Box>
             {/* Device Connection Status */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
+              <Typography variant="body2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
                 Device Connection Status
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minHeight: 24 }}>
@@ -216,7 +216,7 @@ const EngineModule: React.FC = () => {
             </Box>
             {/* Streaming */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
+              <Typography variant="body2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
                 Streaming Service Status
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 24 }}>
@@ -241,7 +241,7 @@ const EngineModule: React.FC = () => {
             </Box>
             {/* Data Processing Status Section */}
             <Box>
-              <Typography variant="subtitle2" color="grey.400" sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
                 Data Processing Status
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 2 }}>
@@ -249,7 +249,7 @@ const EngineModule: React.FC = () => {
                   <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                     EEG
                   </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 14 }}>
+                  <Typography variant="body2" sx={{ fontSize: 12 }}>
                     {deviceStatus?.eeg_sampling_rate ? deviceStatus.eeg_sampling_rate.toFixed(1) : '-'} Hz
                   </Typography>
                 </Box>
@@ -257,7 +257,7 @@ const EngineModule: React.FC = () => {
                   <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                     PPG
                   </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 14 }}>
+                  <Typography variant="body2" sx={{ fontSize: 12 }}>
                     {deviceStatus?.ppg_sampling_rate ? deviceStatus.ppg_sampling_rate.toFixed(1) : '-'} Hz
                   </Typography>
                 </Box>
@@ -265,7 +265,7 @@ const EngineModule: React.FC = () => {
                   <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                     Accelerometer
                   </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 14 }}>
+                  <Typography variant="body2" sx={{ fontSize: 12 }}>
                     {deviceStatus?.acc_sampling_rate ? deviceStatus.acc_sampling_rate.toFixed(1) : '-'} Hz
                   </Typography>
                 </Box>
@@ -284,7 +284,7 @@ const EngineModule: React.FC = () => {
       </Card>
 
       {/* Connection Status Card */}
-      <Card sx={{ width: 800, mx: 'auto', bgcolor: 'grey.900', color: 'common.white' }}>
+      <Card sx={{ width: "100%", mx: 'auto', bgcolor: 'grey.900', color: 'common.white' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" gutterBottom>
@@ -318,10 +318,10 @@ const EngineModule: React.FC = () => {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {/* Websocket Status Section */}
             <Box>
-              <Typography variant="subtitle2" color="grey.400" sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" color="white" sx={{ mb: 1 , fontSize: 14, fontWeight: 800 }}>
                 Websocket Status
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 2 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                     Websocket address
@@ -361,12 +361,12 @@ const EngineModule: React.FC = () => {
                     {isWebSocketConnected ? (
                       <>
                         <LinkIcon fontSize="small" color="success" sx={{ mr: 1 }} />
-                        <Typography variant="body2" sx={{ color: 'success.main', fontSize: 14 }}>Connected</Typography>
+                        <Typography variant="body2" sx={{ color: 'success.main', fontSize: 12 }}>Connected</Typography>
                       </>
                     ) : (
                       <>
                         <LinkOffIcon fontSize="small" color="error" sx={{ mr: 1 }} />
-                        <Typography variant="body2" sx={{ color: 'error.main', fontSize: 14 }}>Disconnected</Typography>
+                        <Typography variant="body2" sx={{ color: 'error.main', fontSize: 12 }}>Disconnected</Typography>
                       </>
                     )}
                   </Box>
@@ -381,7 +381,7 @@ const EngineModule: React.FC = () => {
                       <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                         EEG
                       </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 14 }}>
+                      <Typography variant="body2" sx={{ fontSize: 12 }}>
                         {isStreamingIdle ? '-' : (samplingRates.eeg ? samplingRates.eeg.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>
@@ -389,7 +389,7 @@ const EngineModule: React.FC = () => {
                       <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                         PPG
                       </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 14 }}>
+                      <Typography variant="body2" sx={{ fontSize: 12 }}>
                         {isStreamingIdle ? '-' : (samplingRates.ppg ? samplingRates.ppg.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>
@@ -397,7 +397,7 @@ const EngineModule: React.FC = () => {
                       <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                         Accelerometer
                       </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 14 }}>
+                      <Typography variant="body2" sx={{ fontSize: 12 }}>
                         {isStreamingIdle ? '-' : (samplingRates.acc ? samplingRates.acc.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>
@@ -405,7 +405,7 @@ const EngineModule: React.FC = () => {
                       <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
                         Battery
                       </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 14 }}>
+                      <Typography variant="body2" sx={{ fontSize: 12 }}>
                         {isStreamingIdle ? '-' : (samplingRates.bat ? samplingRates.bat.toFixed(1) : '-')} Hz
                       </Typography>
                     </Box>

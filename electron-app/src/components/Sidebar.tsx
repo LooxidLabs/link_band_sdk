@@ -14,7 +14,7 @@ const menuItems = [
   { label: 'Link Band', icon: <PsychologyIcon /> },
   { label: 'Visualizer', icon: <DashboardIcon /> },
   { label: 'Data Center', icon: <StorageIcon /> },
-  { label: 'Link Cloud', icon: <CloudIcon /> },
+  { label: 'Link Cloud Manager', icon: <CloudIcon /> },
   { label: 'Settings', icon: <SettingsIcon /> },
 ];
 
