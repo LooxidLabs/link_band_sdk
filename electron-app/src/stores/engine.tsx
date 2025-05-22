@@ -2,8 +2,6 @@ import { create } from 'zustand';
 import { engineApi } from '../api/engine';
 import type { ConnectionInfo, EngineStatus } from '../types/engine';
 import { useDeviceStore } from './device';
-import { useEffect } from 'react';
-import type { DeviceStatus } from '../types/device';
 
 interface SensorData {
   timestamp: number;
@@ -322,15 +320,8 @@ const updateSamplingRates = (state: EngineState): EngineState => {
     const ppgRate = calculateRate(state.ppgData);
     const accRate = calculateRate(state.accData);
     const batRate = calculateRate(state.batData);
-
-    console.log('Sampling rates calculation:', {
-      eeg: { rate: eegRate, dataLength: state.eegData.length },
-      ppg: { rate: ppgRate, dataLength: state.ppgData.length },
-      acc: { rate: accRate, dataLength: state.accData.length },
-      bat: { rate: batRate, dataLength: state.batData.length }
-    });
-
-    const newState = {
+    
+    return {
       ...state,
       lastRateUpdate: now,
       samplingRates: {
@@ -348,58 +339,13 @@ const updateSamplingRates = (state: EngineState): EngineState => {
         dataRate: eegRate + ppgRate + accRate + batRate
       }
     };
-
-    console.log('Updated state samplingRates:', newState.samplingRates);
-    return newState;
   }
   return state;
 };
 
 export const useEngineStore = create<EngineState>((set, get) => {
   let pollingInterval: NodeJS.Timeout | null = null;
-  let isInitialFetch = true;
   let samplingRateUpdateInterval: NodeJS.Timeout | null = null;
-
-  // 샘플링 레이트 계산 함수
-  // const calculateSamplingRates = () => {
-  //   const now = Date.now();
-  //   const state = get();
-  //   const timeWindow = 1000; // 1초
-
-  //   const calculateRate = (lastTimestamp: number, sampleCount: number, currentRate: number) => {
-  //     const timeDiff = now - lastTimestamp;
-  //     if (timeDiff > 0 && sampleCount > 0) {
-  //       // 초당 샘플 수 계산 (샘플 수 / 시간(초))
-  //       return Math.round((sampleCount / timeDiff) * 1000);
-  //     }
-  //     // 새로운 데이터가 없으면 이전 값 유지
-  //     return currentRate;
-  //   };
-
-  //   const newRates = {
-  //     eeg: calculateRate(state.lastSampleTimestamps.eeg, state.sampleCounts.eeg, state.samplingRates.eeg),
-  //     ppg: calculateRate(state.lastSampleTimestamps.ppg, state.sampleCounts.ppg, state.samplingRates.ppg),
-  //     acc: calculateRate(state.lastSampleTimestamps.acc, state.sampleCounts.acc, state.samplingRates.acc),
-  //     bat: calculateRate(state.lastSampleTimestamps.bat, state.sampleCounts.bat, state.samplingRates.bat)
-  //   };
-
-  //   set(state => ({
-  //     samplingRates: newRates,
-  //     sampleCounts: {
-  //       eeg: 0,
-  //       ppg: 0,
-  //       acc: 0,
-  //       bat: 0
-  //     },
-  //     lastSampleTimestamps: {
-  //       eeg: now,
-  //       ppg: now,
-  //       acc: now,
-  //       bat: now
-  //     }
-  //   }));
-
-  // };
 
   // WebSocket 메시지 핸들러
   const handleWebSocketMessage = (message: any) => {
@@ -468,37 +414,6 @@ export const useEngineStore = create<EngineState>((set, get) => {
 
   // 자동 연결 시작
   wsManager.startAutoConnect();
-
-  const updateEngineStatus = async () => {
-    try {
-      set(state => ({ isLoading: { ...state.isLoading, connection: true } }));
-      const [status, info] = await Promise.all([
-        engineApi.getEngineStatus(),
-        engineApi.getConnectionInfo()
-      ]);
-      
-      console.log('Engine status update:', { status, info });
-      
-      set(state => ({
-        engineStatus: status,
-        connectionInfo: info,
-        isLoading: { ...state.isLoading, connection: false },
-        error: { ...state.error, connection: null }
-      }));
-
-      // 상태가 업데이트된 후 자동 연결 시도
-      if (status.status === 'running' && info.is_streaming === true) {
-        console.log('Engine is running and streaming, attempting auto-connect...');
-        wsManager.connect();
-      }
-    } catch (error) {
-      console.error('Error updating engine status:', error);
-      set(state => ({
-        isLoading: { ...state.isLoading, connection: false },
-        error: { ...state.error, connection: error instanceof Error ? error.message : 'Unknown error' }
-      }));
-    }
-  };
 
   return {
     // Initial state

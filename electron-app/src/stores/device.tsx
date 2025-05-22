@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { deviceApi } from '../api/device';
-import type { DeviceResponse, DeviceStatus, DeviceCreate, DeviceUpdate } from '../types/device';
+import type { DeviceResponse, DeviceStatus, DeviceCreate } from '../types/device';
 
 interface DeviceState {
   // Device list

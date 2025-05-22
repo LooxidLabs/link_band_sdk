@@ -47,13 +47,6 @@ export const BottomStatusBar: React.FC = () => {
       <LinkOffIcon fontSize="small" color="error" sx={{ verticalAlign: 'middle' }} />
     );
 
-  const renderStreamingIcon = () =>
-    engineStatus?.is_streaming ? (
-      <PlayArrowIcon fontSize="small" color="success" sx={{ verticalAlign: 'middle' }} />
-    ) : (
-      <StopIcon fontSize="small" color="disabled" sx={{ verticalAlign: 'middle' }} />
-    );
-
   return (
     <Box
       sx={{

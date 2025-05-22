@@ -27,7 +27,8 @@ const EngineModule: React.FC = () => {
   const {
     deviceStatus,
     engineStatus,
-    systemMetrics,
+    // systemMetrics,
+    isEngineStopped,
     connectionInfo,
     isLoading: metricsLoading,
     errors: metricsErrors,
@@ -82,10 +83,10 @@ const EngineModule: React.FC = () => {
     }
   }, [error?.connection]);
 
-  // Add logging for samplingRates
-  useEffect(() => {
-    console.log('EngineModule samplingRates:', samplingRates);
-  }, [samplingRates]);
+  // // Add logging to check samplingRates
+  // useEffect(() => {
+  //   console.log('EngineModule samplingRates:', samplingRates);
+  // }, [samplingRates]);
 
   const handleInit = async () => {
     try {
@@ -150,7 +151,7 @@ const EngineModule: React.FC = () => {
                 color="success"
                 size="small"
                 onClick={handleStart}
-                disabled={isLoading.start || engineStatus?.status === 'running'}
+                disabled={isEngineStopped || deviceStatus?.status !== 'connected' || engineStatus?.status === 'running'}
                 startIcon={isLoading.start ? <CircularProgress size={16} /> : <PlayArrowIcon />}
               >
                 Streaming Start
@@ -160,7 +161,7 @@ const EngineModule: React.FC = () => {
                 color="error"
                 size="small"
                 onClick={handleStop}
-                disabled={isLoading.stop || engineStatus?.status === 'stopped'}
+                disabled={isEngineStopped || deviceStatus?.status !== 'connected' || engineStatus?.status !== 'running'}
                 startIcon={isLoading.stop ? <CircularProgress size={16} /> : <StopIcon />}
               >
                 Streaming Stop
@@ -177,14 +178,14 @@ const EngineModule: React.FC = () => {
                 {isEngineLoading && !engineStatus ? (
                   <CircularProgress size={16} />
                 ) : (
-                  <Box sx={{ display: 'flex', alignItems: 'center', color: engineStatus?.status === 'running' ? 'success.main' : 'error.main' }}>
-                    {engineStatus?.status === 'running' ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', color: !isEngineStopped ? 'success.main' : 'error.main' }}>
+                    {!isEngineStopped ? (
                       <PlayArrowIcon fontSize="small" sx={{ mr: 1 }} />
                     ) : (
                       <StopIcon fontSize="small" sx={{ mr: 1 }} />
                     )}
                     <Typography variant="body2" sx={{ fontWeight: 600, fontSize: 14 }}>
-                      {engineStatus?.status === 'running' ? 'Running' : 'Stopped'}
+                      {!isEngineStopped ? 'Running' : 'Stopped'}
                     </Typography>
                   </Box>
                 )}
