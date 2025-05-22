@@ -35,7 +35,7 @@ BATTERY_CHAR_UUID    = "00002a19-0000-1000-8000-00805f9b34fb"
 
 # 데이터 샘플링 레이트 및 타임스탬프 계산용 (main.py 참고)
 EEG_SAMPLE_RATE = 250
-PPG_SAMPLE_RATE = 60
+PPG_SAMPLE_RATE = 50
 ACC_SAMPLE_RATE = 30
 TIMESTAMP_CLOCK = 32768.0  # 32.768 kHz 클럭 기반 타임스탬프
 
@@ -68,6 +68,7 @@ class DeviceManager:
         self.eeg_sample_count = 0
         self.ppg_sample_count = 0
         self.acc_sample_count = 0
+        self.bat_sample_count = 0
         self.last_sample_log_time = time.time()
 
     async def scan_devices(self) -> List[Dict[str, Any]]:
@@ -197,6 +198,7 @@ class DeviceManager:
         self.eeg_sample_count = 0
         self.ppg_sample_count = 0
         self.acc_sample_count = 0
+        self.bat_sample_count = 0
         
         # Reset all flags and references
         self.is_connected_flag = False
@@ -420,6 +422,7 @@ class DeviceManager:
                 for sample in samples_to_add:
                     self._add_to_buffer(self.ppg_buffer, sample, self.PPG_BUFFER_SIZE)
                 self.logger.debug(f"Added {len(samples_to_add)} PPG samples to buffer")
+                self.ppg_sample_count += len(samples_to_add)
 
         except Exception as e:
             self.logger.error(f"Error processing PPG data: {e}", exc_info=True)
@@ -464,6 +467,7 @@ class DeviceManager:
                 for sample in samples_to_add:
                     self._add_to_buffer(self.acc_buffer, sample, self.ACC_BUFFER_SIZE)
                 self.logger.debug(f"Added {len(samples_to_add)} ACC samples to buffer")
+                self.acc_sample_count += len(samples_to_add)
 
         except Exception as e:
             self.logger.error(f"Error processing ACC data: {e}", exc_info=True)
@@ -542,8 +546,12 @@ class DeviceManager:
                         "timestamp": timestamp,
                         "level": new_battery_level
                     }
+                    self.battery_level = new_battery_level
+                    
                     self._add_to_buffer(self.battery_buffer, battery_data, self.BATTERY_BUFFER_SIZE)
+                    # self.bat_sample_count += 1
                     self.logger.info(f"Battery level updated: {new_battery_level}% (Buffer size: {len(self.battery_buffer)})")
+                    
         except Exception as e:
             self.logger.error(f"Error processing battery data: {e}", exc_info=True)
 
@@ -595,13 +603,23 @@ class DeviceManager:
 
     # 샘플링 속도 계산 및 로그 (1초마다)
     def _calculate_sampling_rate(self):
+        from app.core.ws_singleton import ws_server
         now = time.time()
         if now - self.last_sample_log_time >= 0.2:
+            ws_server.data_stream_stats(
+                eeg=self.eeg_sample_count,
+                ppg=self.ppg_sample_count,
+                acc=self.acc_sample_count,
+                bat=self.bat_sample_count,
+                bat_level=self.battery_level
+            )
             print(f"[샘플링 속도] EEG: {self.eeg_sample_count} samples/sec, "
                   f"PPG: {self.ppg_sample_count} samples/sec, "
                   f"ACC: {self.acc_sample_count} samples/sec, "
+                  f"BAT: {self.bat_sample_count} samples/sec, "
                   f"Battery: {self.battery_level}%")
             self.eeg_sample_count = 0
             self.ppg_sample_count = 0
             self.acc_sample_count = 0
+            self.bat_sample_count = 0
             self.last_sample_log_time = now

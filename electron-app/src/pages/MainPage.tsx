@@ -6,10 +6,12 @@ import DeviceManagerModule from '../components/DeviceManagerModule';
 import LinkCloudManagerModule from '../components/LinkCloudManagerModule';
 import Sidebar from '../components/Sidebar';
 import TopNavBar from '../components/TopNavBar';
-import BottomStatusBar from '../components/BottomStatusBar';
+import { BottomStatusBar } from '../components/BottomStatusBar';
 import { theme } from '../theme';
+import EngineModule from '../components/EngineModule';
 
 const menuToComponent: Record<string, React.ReactNode> = {
+  'Engine': <EngineModule />,
   'Visualizer': <div style={{ color: '#fff' }}>Visualizer (준비중)</div>,
   'Device Manager': <DeviceManagerModule />,
   'Data Manager': <div style={{ color: '#fff' }}>Data Manager (준비중)</div>,
@@ -54,6 +56,10 @@ const MainPage: React.FC = () => {
     setSelectedMenu('Link Cloud Manager');
   };
 
+  const handleEngineClick = () => {
+    setSelectedMenu('Engine');
+  };
+
   if (loading && !user) {
     return <div>Loading...</div>;
   }
@@ -70,6 +76,7 @@ const MainPage: React.FC = () => {
           visualizerStatus={visualizerStatus}
           onDeviceClick={handleDeviceClick}
           onRecordClick={handleRecordClick}
+          onEngineClick={handleEngineClick}
         />
         <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
           <Sidebar selected={selectedMenu} onSelect={setSelectedMenu} />
