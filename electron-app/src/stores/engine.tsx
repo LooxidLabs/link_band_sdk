@@ -79,7 +79,7 @@ class WebSocketManager {
 
       // 이미 연결되어 있으면 연결 시도하지 않음
       if (this.isConnected()) {
-        console.log('WebSocket is already connected');
+        // console.log('WebSocket is already connected');
         return;
       }
 
@@ -92,10 +92,10 @@ class WebSocketManager {
         });
         this.connect();
       } else {
-        console.log('Auto-connect conditions not met:', {
-          deviceStatus: deviceStore.deviceStatus?.status,
-          isStreaming: engineStore.connectionInfo?.is_streaming
-        });
+        // console.log('Auto-connect conditions not met:', {
+        //   deviceStatus: deviceStore.deviceStatus?.status,
+        //   isStreaming: engineStore.connectionInfo?.is_streaming
+        // });
       }
     }, 1000);
   }
@@ -256,6 +256,7 @@ interface EngineState {
   wsManager: WebSocketManager | null;
   consecutiveFailures: number;
   isEngineStopped: boolean;
+  isStreamingIdle: boolean;
   // Sensor data states
   eegData: EEGData[];
   ppgData: PPGData[];
@@ -346,12 +347,16 @@ const updateSamplingRates = (state: EngineState): EngineState => {
 export const useEngineStore = create<EngineState>((set, get) => {
   let pollingInterval: NodeJS.Timeout | null = null;
   let samplingRateUpdateInterval: NodeJS.Timeout | null = null;
-
+  let idleCheckInterval: NodeJS.Timeout | null = null;
+  
   // WebSocket 메시지 핸들러
   const handleWebSocketMessage = (message: any) => {
     if (message.type === 'sensor_data') {
       const now = Date.now();
       const dataLength = message.data.length;
+
+      // 데이터가 들어오면 isStreamingIdle을 false로 설정
+      set(() => ({ isStreamingIdle: false }));
 
       switch (message.sensor_type) {
         case 'eeg':
@@ -408,8 +413,38 @@ export const useEngineStore = create<EngineState>((set, get) => {
       error: {
         ...state.error,
         connection: connected ? null : 'WebSocket connection lost'
-      }
+      },
+      isStreamingIdle: false
     }));
+
+    // WebSocket 연결 시 idle 체크 시작
+    if (connected) {
+      if (idleCheckInterval) {
+        clearInterval(idleCheckInterval);
+      }
+      idleCheckInterval = setInterval(() => {
+        const state = get();
+        const now = Date.now();
+        const lastUpdate = state.lastDataUpdate;
+        
+        if (now - lastUpdate >= 2000) { // 3초 동안 데이터가 없으면
+          set(() => ({ isStreamingIdle: true }));
+        }
+      }, 1000);
+    } else {
+      // WebSocket 연결 해제 시 idle 체크 중지
+      if (idleCheckInterval) {
+        clearInterval(idleCheckInterval);
+        idleCheckInterval = null;
+      }
+      set(() => ({ 
+        isStreamingIdle: false,
+        error: {
+          ...get().error,
+          connection: 'WebSocket connection lost'
+        }
+      }));
+    }
   };
 
   // 자동 연결 시작
@@ -435,6 +470,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
     wsManager,
     consecutiveFailures: 0,
     isEngineStopped: false,
+    isStreamingIdle: false,
     // Sensor data initial states
     eegData: [],
     ppgData: [],
