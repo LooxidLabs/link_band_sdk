@@ -1,7 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from app.api import router_device, router_engine, router_recording, router_metrics
 from app.services.stream_service import StreamService
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.server import WebSocketServer
+import logging
 
 app = FastAPI(title="Link Band Core Engine")
 app.add_middleware(
@@ -12,6 +14,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 stream_service = StreamService()
+ws_server = WebSocketServer()
+logger = logging.getLogger(__name__)
 
 app.include_router(router_device.router, prefix="/device", tags=["Device"])
 app.include_router(router_engine.router, prefix="/stream", tags=["Engine"])
@@ -21,7 +25,22 @@ app.include_router(router_metrics.router, prefix="/metrics", tags=["Metrics"])
 @app.on_event("startup")
 async def startup_event():
     await stream_service.init_stream()
+    logger.info("FastAPI server started")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await stream_service.stop_stream()
+    await ws_server.stop()
+    logger.info("FastAPI server stopped")
 
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Link Band Core Engine is running"}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_server.handle_websocket_connection(websocket)
+
+@app.websocket("/ws/processed")
+async def processed_websocket_endpoint(websocket: WebSocket):
+    await ws_server.handle_processed_websocket_connection(websocket)

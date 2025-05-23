@@ -48,7 +48,7 @@ python_core/
    ```bash
    python run_server.py
    ```
-   - REST API 서버: http://localhost:8000
+   - REST API 서버: http://localhost:8121
    - WebSocket 서버: ws://localhost:18765
 
 2. 테스트 실행:

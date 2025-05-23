@@ -158,7 +158,7 @@ export const useDeviceStore = create<DeviceState>((set, get) => {
       // Start polling
       pollingInterval = setInterval(() => {
         get().getDeviceStatus();
-      }, 1000);
+      }, 10000);
     },
 
     stopPolling: () => {
