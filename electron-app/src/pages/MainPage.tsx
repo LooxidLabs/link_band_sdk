@@ -10,6 +10,7 @@ import { BottomStatusBar } from '../components/BottomStatusBar';
 import { theme } from '../theme';
 import EngineModule from '../components/EngineModule';
 import LinkBandModule from '../components/LinkBandModule';
+import { ProcessedDataVisualizer } from '../components/ProcessedDataVisualizer';
 
 const menuToComponent: Record<string, React.ReactNode> = {
   'Engine': <EngineModule />,
@@ -28,6 +29,7 @@ const MainPage: React.FC = () => {
   } = useAuthStore();
   const [selectedMenu, setSelectedMenu] = useState('Link Cloud Manager');
   const [visualizerStatus, setVisualizerStatus] = useState<'active' | 'inactive'>('inactive');
+  const [minimized, setMinimized] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthState();
@@ -65,6 +67,25 @@ const MainPage: React.FC = () => {
     return <div>Loading...</div>;
   }
 
+  const renderContent = () => {
+    switch (selectedMenu) {
+      case 'Engine':
+        return <EngineModule />;
+      case 'Link Band':
+        return <LinkBandModule />;
+      case 'Visualizer':
+        return <ProcessedDataVisualizer />;
+      case 'Data Center':
+        return <DeviceManagerModule />;
+      case 'Link Cloud Manager':
+        return <LinkCloudManagerModule />;
+      case 'Settings':
+        return <div style={{ color: '#fff' }}>Settings (준비중)</div>;
+      default:
+        return <div />;
+    }
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -80,10 +101,10 @@ const MainPage: React.FC = () => {
           onEngineClick={handleEngineClick}
         />
         <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-          <Sidebar selected={selectedMenu} onSelect={setSelectedMenu} />
-          <Box sx={{ flex: 1, p: 3, minWidth: 0, fontSize: 12 }}>
+          <Sidebar selected={selectedMenu} onSelect={setSelectedMenu} minimized={minimized} setMinimized={setMinimized} />
+          <Box sx={{ flex: 1, p: 3, minWidth: 0, fontSize: 12, marginLeft: minimized ? '60px' : '220px', marginTop: '64px', minHeight: 'calc(100vh - 64px)' }}>
             {user ? (
-              menuToComponent[selectedMenu] || <div />
+              renderContent()
             ) : (
               <LoginModal open={true} onClose={() => {}} />
             )}

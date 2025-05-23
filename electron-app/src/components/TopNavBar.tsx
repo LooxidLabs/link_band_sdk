@@ -34,8 +34,8 @@ export const TopNavBar = ({
   const engineColor = engineStatus === 'active' ? 'primary' : 'default';
   return (
     <Box>
-      <AppBar position="static" color="transparent" elevation={0} sx={{ borderBottom: '1px solid #23263a', bgcolor: 'background.paper', px: 2 }}>
-        <Toolbar disableGutters sx={{ minHeight: 44, height: 44, alignItems: 'center' }}>
+      <AppBar position="fixed" color="transparent" elevation={0} sx={{ borderBottom: '1px solid #23263a', bgcolor: 'background.paper', px: 2, left: 0, top: 0, width: '100%', zIndex: 1100, height: 64 }}>
+        <Toolbar disableGutters sx={{ minHeight: 64, height: 64, alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
             <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: 1, color: '#fff', fontSize: 16 }}>
               LINK BAND SDK

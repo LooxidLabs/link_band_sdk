@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Box, List, ListItemButton, ListItemIcon, ListItemText, IconButton } from '@mui/material';
 import MemoryIcon from '@mui/icons-material/Memory';
 import DashboardIcon from '@mui/icons-material/BarChart';
@@ -18,17 +17,30 @@ const menuItems = [
   { label: 'Settings', icon: <SettingsIcon /> },
 ];
 
-export const Sidebar = ({ selected, onSelect }: { selected: string, onSelect: (label: string) => void }) => {
-  const [minimized, setMinimized] = useState(false);
+export const Sidebar = ({
+  selected,
+  onSelect,
+  minimized,
+  setMinimized,
+}: {
+  selected: string;
+  onSelect: (label: string) => void;
+  minimized: boolean;
+  setMinimized: React.Dispatch<React.SetStateAction<boolean>>;
+}) => {
   const width = minimized ? 60 : 220;
 
   return (
     <Box
       sx={{
+        position: 'fixed',
+        left: 0,
+        top: '64px',
+        height: 'calc(100vh - 64px)',
+        zIndex: 1200,
         width,
         minWidth: minimized ? 60 : 120,
         maxWidth: 320,
-        height: '100vh',
         bgcolor: 'background.paper',
         borderRight: '1px solid #23263a',
         display: 'flex',
@@ -36,7 +48,6 @@ export const Sidebar = ({ selected, onSelect }: { selected: string, onSelect: (l
         boxShadow: 2,
         fontSize: 12,
         transition: 'width 0.2s',
-        position: 'relative',
         overflow: 'hidden',
       }}
     >
