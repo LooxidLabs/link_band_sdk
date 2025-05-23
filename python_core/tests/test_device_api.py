@@ -2,7 +2,7 @@ import pytest
 import httpx
 import asyncio
 
-API_URL = "http://localhost:8000/device"
+API_URL = "http://localhost:8121/device"
 
 @pytest.mark.asyncio
 async def test_device_api_full_lifecycle():

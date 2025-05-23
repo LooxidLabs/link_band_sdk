@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { EngineStatus, ConnectionInfoResponse } from '../types/engine';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL;
 
 // Custom type guard for Axios errors
 const isAxiosError = (error: unknown): error is { message: string; response?: { data: unknown; status: number } } => {

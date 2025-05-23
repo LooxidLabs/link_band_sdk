@@ -3,12 +3,17 @@ import json
 import logging
 import websockets
 import time # For timestamping batched data
-from typing import Set, Dict, Any, Optional
+from typing import Set, Dict, Any, Optional, List, Callable
 from enum import Enum, auto
 from datetime import datetime
 from app.core.device import DeviceManager, DeviceStatus
 from app.core.device_registry import DeviceRegistry
 from bleak import BleakScanner
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import uuid
+from app.core.utils import ensure_port_available
 
 # Configure logging
 logging.basicConfig(
@@ -34,6 +39,8 @@ class EventType(Enum):
     DATA_ACQUISITION_STOPPED = "data_acquisition_stopped"
     REGISTERED_DEVICES = "registered_devices"
     BLUETOOTH_STATUS = "bluetooth_status"
+    DATA_RECEIVED = "data_received"
+    STATUS = "status"
 
 class WebSocketServer:
     def __init__(self, host: str = "localhost", port: int = 18765):
@@ -48,7 +55,7 @@ class WebSocketServer:
             'acc': None,
             'battery': None  # 배터리 스트리밍 태스크 추가
         }
-        self.device_manager = DeviceManager(server_disconnect_callback=self.handle_unexpected_disconnect)
+        self.device_manager = DeviceManager()
         self.device_registry = DeviceRegistry()
         self.auto_connect_task: Optional[asyncio.Task] = None
         self.data_stream_stats = {
@@ -65,8 +72,23 @@ class WebSocketServer:
             'bat': {'samples_per_sec': 0},
             'bat_level': 0
         }
+        self.connected_clients: Dict[str, WebSocket] = {}
+        self.event_callbacks: Dict[str, List[Callable]] = {
+            EventType.DEVICE_CONNECTED.value: [],
+            EventType.DEVICE_DISCONNECTED.value: [],
+            EventType.DATA_RECEIVED.value: [],
+            EventType.ERROR.value: [],
+            EventType.STATUS.value: []
+        }
+        # Add callback for processed data
+        self.device_manager.add_processed_data_callback(self._handle_processed_data)
+
+    def setup_routes(self):
+        """Setup FastAPI routes and WebSocket endpoints."""
+        pass  # Routes are now handled in main.py
 
     async def initialize(self):
+        """Initialize the WebSocket server."""
         logger.info("Initializing WebSocket server...")
 
         # 서버 재시작
@@ -81,22 +103,57 @@ class WebSocketServer:
                 logger.warning("Timeout while closing previous WebSocket server.")
             self.server = None
 
-        self.server = await websockets.serve(
-            self.handle_client,
-            self.host,
-            self.port
-        )
+        # Cancel auto-connect task if it exists
+        if self.auto_connect_task:
+            self.auto_connect_task.cancel()
+            try:
+                await self.auto_connect_task
+            except asyncio.CancelledError:
+                pass
+            self.auto_connect_task = None
 
-        
-        # address = self.device_manager.get_device_info()['address']
-        # if self.device_manager.is_connected():
-        #     await self.device_manager.disconnect(address)
-        # self.device_manager.connect(address)
-        # If streaming is already running, stop and restart after 1 second
-        await self.start()
-        # 주기적으로 상태 업데이트를 시작
-        asyncio.create_task(self._periodic_status_update())
-        logger.info(f"WebSocket server initialized on {self.host}:{self.port}")
+        # Cancel all streaming tasks
+        for sensor_type, task in self.stream_tasks.items():
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                self.stream_tasks[sensor_type] = None
+
+        # Clear all clients
+        for client in list(self.clients):
+            try:
+                await client.close(1000, "Server reinitializing")
+            except Exception as e:
+                logger.error(f"Error closing client connection: {e}")
+        self.clients.clear()
+
+        # Check if port is available
+        if not ensure_port_available(self.port):
+            logger.error(f"Cannot start server: Port {self.port} is in use and could not be freed")
+            raise OSError(f"Port {self.port} is already in use")
+
+        try:
+            # Create new server
+            self.server = await websockets.serve(
+                self.handle_client,
+                self.host,
+                self.port
+            )
+            
+            # Start auto-connect task
+            self.auto_connect_task = asyncio.create_task(self._auto_connect_loop())
+            
+            # Start periodic status update
+            asyncio.create_task(self._periodic_status_update())
+            
+            logger.info(f"WebSocket server initialized on {self.host}:{self.port}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize WebSocket server: {e}")
+            raise
 
     async def _periodic_status_update(self):
         """주기적으로 모든 클라이언트에게 상태를 업데이트합니다."""
@@ -213,51 +270,21 @@ class WebSocketServer:
         if not self.server:
             await self.initialize()
         logger.info("WebSocket server started")
-        # Start auto-connect task
-        self.auto_connect_task = asyncio.create_task(self._auto_connect_loop())
 
     async def stop(self):
-        """Stop the WebSocket server and disconnect BLE device if connected."""
-        logger.info("Stopping WebSocket server...")
+        """Stop the WebSocket server."""
+        # Remove callback before stopping
+        self.device_manager.remove_processed_data_callback(self._handle_processed_data)
         
-        # 모든 클라이언트 연결 종료
-        for client in list(self.clients):
-            try:
-                await client.close(1000, "Server shutdown")
-            except Exception as e:
-                logger.error(f"Error closing client connection: {e}")
-        self.clients.clear()
-
-        if self.auto_connect_task:
-            self.auto_connect_task.cancel()
-            try:
-                await self.auto_connect_task
-            except asyncio.CancelledError:
-                pass
-
-        # Cancel all streaming tasks
-        for sensor_type, task in self.stream_tasks.items():
-            if task:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-                self.stream_tasks[sensor_type] = None
-
-        if self.device_manager.is_connected():
-            logger.info("Disconnecting BLE device during server shutdown...")
-            await self.device_manager.disconnect()
-
-        if self.server:
-            self.server.close()
-            try:
-                await asyncio.wait_for(self.server.wait_closed(), timeout=5.0)
-                logger.info("WebSocket server stopped gracefully.")
-            except asyncio.TimeoutError:
-                logger.warning("WebSocket server close timed out.")
-        else:
-            logger.warning("Server object not found, already stopped?")
+        # Cleanup connections
+        for client_id in list(self.connected_clients.keys()):
+            await self.handle_client_disconnect(client_id)
+        
+        # Stop stream engine
+        if hasattr(self, 'stream_engine'):
+            await self.stream_engine.stop()
+        
+        logger.info("WebSocket server stopped")
 
     async def _auto_connect_loop(self):
         """Periodically check and connect to registered devices"""
@@ -285,117 +312,136 @@ class WebSocketServer:
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
         """Handle messages from clients"""
         try:
-            data = json.loads(message)
-            command = data.get("command")
-            payload = data.get("payload", {})
-            logger.debug(f"Received command: {command} with payload: {payload}")
-
-            if command == "check_device_connection":
-                await self._send_current_device_status(websocket)
-
-            elif command == "check_bluetooth_status":
-                is_bluetooth_available = await self._check_bluetooth_status()
-                await self._broadcast_bluetooth_status(is_bluetooth_available)
-
-            elif command == "scan_devices":
-                # 스캔 전에 블루투스 상태 확인
-                is_bluetooth_available = await self._check_bluetooth_status()
-                if not is_bluetooth_available:
-                    await self.send_error_to_client(websocket, "Bluetooth is turned off")
+            logger.info(f"Received message: {message}")
+            # Parse JSON message if it's a string
+            if isinstance(message, str):
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError:
+                    logger.error(f"Invalid JSON message received: {message}")
                     return
-                asyncio.create_task(self._run_scan_and_notify(websocket))
+            else:
+                data = message
 
-            elif command == "connect_device":
-                # 연결 전에 블루투스 상태 확인
-                is_bluetooth_available = await self._check_bluetooth_status()
-                if not is_bluetooth_available:
-                    await self.send_error_to_client(websocket, "Bluetooth is turned off")
-                    return
-                address = payload.get("address")
-                if address:
-                    asyncio.create_task(self._run_connect_and_notify(address))
-                else:
-                    await self.send_error_to_client(websocket, "Address is required for connect_device command.")
+            # Handle ping/pong
+            if isinstance(data, str) and data.strip() == "ping":
+                await websocket.send("pong")
+                return
 
-            elif command == "disconnect_device":
-                asyncio.create_task(self._run_disconnect_and_notify(websocket))
+            # Ensure data is a dictionary
+            if not isinstance(data, dict):
+                logger.error(f"Invalid message format: {data}")
+                await self.send_error_to_client(websocket, "Invalid message format: expected JSON object")
+                return
 
-            elif command == "start_streaming":
-                await self.start_streaming(websocket)
+            message_type = data.get('type')
+            if not message_type:
+                logger.warning("Message missing type")
+                await self.send_error_to_client(websocket, "Message missing type")
+                return
 
-            elif command == "stop_streaming":
-                await self.stop_streaming()
-
-            elif command == "health_check":
-                await websocket.send(json.dumps({
-                    "type": "health_check_response",
-                    "status": "ok",
-                    "clients_connected": len(self.clients),
-                    "is_streaming": self.is_streaming,
-                    "device_connected": self.device_manager.is_connected()
-                }))
-
-            elif command == "get_registered_devices":
-                devices = self.device_registry.get_registered_devices()
-                await self.send_event_to_client(websocket, EventType.REGISTERED_DEVICES, {"devices": devices})
-
-            elif command == "register_device":
-                logger.info(f"Registering device: {payload}")
-                if self.device_registry.register_device(payload):
-                    devices = self.device_registry.get_registered_devices()
-                    await self.broadcast_event(EventType.REGISTERED_DEVICES, {"devices": devices})
-                else:
-                    await self.send_error_to_client(websocket, "Failed to register device")
-
-            elif command == "unregister_device":
-                address = payload.get("address")
-                if not address:
-                    await self.send_error_to_client(websocket, "Address is required for unregister_device command.")
+            if message_type == 'command':
+                command = data.get('command')
+                payload = data.get('payload', {})
+                
+                if not command:
+                    logger.warning("Command message missing command")
+                    await self.send_error_to_client(websocket, "Command message missing command")
                     return
 
-                # 현재 연결된 디바이스인 경우 연결 해제
-                if self.device_manager.is_connected():
-                    connected_device = self.device_manager.get_device_info()
-                    if connected_device and connected_device.get("address") == address:
-                        logger.info(f"Disconnecting device {address} before unregistering")
-                        if self.is_streaming:
-                            await self.stop_streaming()
-                        await self.device_manager.disconnect()
+                logger.info(f"Processing command: {command} with payload: {payload}")
 
-                # 디바이스 등록 해제
-                if self.device_registry.unregister_device(address):
-                    devices = self.device_registry.get_registered_devices()
-                    await self.broadcast_event(EventType.REGISTERED_DEVICES, {"devices": devices})
-                    logger.info(f"Successfully unregistered device: {address}")
+                # Command handling logic
+                if command == "check_device_connection":
+                    await self._send_current_device_status(websocket)
+                elif command == "check_bluetooth_status":
+                    is_bluetooth_available = await self._check_bluetooth_status()
+                    await self._broadcast_bluetooth_status(is_bluetooth_available)
+                elif command == "scan_devices":
+                    is_bluetooth_available = await self._check_bluetooth_status()
+                    if not is_bluetooth_available:
+                        await self.send_error_to_client(websocket, "Bluetooth is turned off")
+                        return
+                    asyncio.create_task(self._run_scan_and_notify(websocket))
+                elif command == "connect_device":
+                    is_bluetooth_available = await self._check_bluetooth_status()
+                    if not is_bluetooth_available:
+                        await self.send_error_to_client(websocket, "Bluetooth is turned off")
+                        return
+                    address = payload.get("address")
+                    if address:
+                        asyncio.create_task(self._run_connect_and_notify(address))
+                    else:
+                        await self.send_error_to_client(websocket, "Address is required for connect_device command")
+                elif command == "disconnect_device":
+                    asyncio.create_task(self._run_disconnect_and_notify(websocket))
+                elif command == "start_streaming":
+                    await self.start_streaming(websocket)
+                elif command == "stop_streaming":
+                    await self.stop_streaming()
+                elif command == "health_check":
+                    await websocket.send(json.dumps({
+                        "type": "health_check_response",
+                        "status": "ok",
+                        "clients_connected": len(self.clients),
+                        "is_streaming": self.is_streaming,
+                        "device_connected": self.device_manager.is_connected()
+                    }))
                 else:
-                    await self.send_error_to_client(websocket, "Failed to unregister device")
+                    logger.warning(f"Unknown command received: {command}")
+                    await self.send_error_to_client(websocket, f"Unknown command: {command}")
 
-            elif command == "get_server_status":
-                # 현재 디바이스 연결 상태
-                is_connected = self.device_manager.is_connected()
-                device_info = self.device_manager.get_device_info() if is_connected else None
-                
-                # 등록된 디바이스 정보
-                registered_devices = self.device_registry.get_registered_devices()
-                
-                # 서버 상태 정보 구성
-                status_data = {
-                    "connected": is_connected,
-                    "device_info": device_info,
-                    "registered_devices": registered_devices,
-                    "is_streaming": self.is_streaming,
-                    "clients_connected": len(self.clients)
-                }
-                
-                await self.send_event_to_client(websocket, EventType.DEVICE_INFO, status_data)
+            elif message_type == 'data':
+                # Process the data
+                try:
+                    # Get the sensor type from the data
+                    sensor_type = data.get('sensor_type')
+                    if not sensor_type:
+                        logger.warning("Data message missing sensor_type")
+                        await self.send_error_to_client(websocket, "Data message missing sensor_type")
+                        return
+
+                    # Process the data based on sensor type
+                    if sensor_type == 'eeg':
+                        eeg_data = data.get('data', [])
+                        if eeg_data:
+                            await self.broadcast_event(EventType.DATA_RECEIVED, {
+                                'type': 'eeg',
+                                'data': eeg_data
+                            })
+                    elif sensor_type == 'ppg':
+                        ppg_data = data.get('data', [])
+                        if ppg_data:
+                            await self.broadcast_event(EventType.DATA_RECEIVED, {
+                                'type': 'ppg',
+                                'data': ppg_data
+                            })
+                    elif sensor_type == 'acc':
+                        acc_data = data.get('data', [])
+                        if acc_data:
+                            await self.broadcast_event(EventType.DATA_RECEIVED, {
+                                'type': 'acc',
+                                'data': acc_data
+                            })
+                    elif sensor_type == 'battery':
+                        battery_data = data.get('data', [])
+                        if battery_data:
+                            await self.broadcast_event(EventType.DATA_RECEIVED, {
+                                'type': 'battery',
+                                'data': battery_data
+                            })
+                    else:
+                        logger.warning(f"Unknown sensor type: {sensor_type}")
+                        await self.send_error_to_client(websocket, f"Unknown sensor type: {sensor_type}")
+
+                except Exception as e:
+                    logger.error(f"Error processing data: {e}")
+                    await self.send_error_to_client(websocket, f"Error processing data: {e}")
 
             else:
-                logger.warning(f"Unknown command received: {command}")
-                await self.send_error_to_client(websocket, f"Unknown command: {command}")
+                logger.warning(f"Unknown message type: {message_type}")
+                await self.send_error_to_client(websocket, f"Unknown message type: {message_type}")
 
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON message received")
-            await self.send_error_to_client(websocket, "Invalid JSON format.")
         except Exception as e:
             logger.error(f"Error handling client message: {e}", exc_info=True)
             await self.send_error_to_client(websocket, f"Server error processing message: {e}")
@@ -412,20 +458,43 @@ class WebSocketServer:
     async def _run_connect_and_notify(self, device_address: str):
         """Connect to device and start notifications."""
         try:
+            # 먼저 스캔을 실행하여 디바이스를 찾습니다
+            logger.info(f"Scanning for device {device_address}...")
+            devices = await self.device_manager.scan_devices()
+            device_found = any(device.get('address') == device_address for device in devices)
+            
+            if not device_found:
+                logger.error(f"Device {device_address} not found during scanning")
+                await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
+                    "address": device_address,
+                    "reason": "device_not_found"
+                })
+                return
+
             # Connect to device
+            logger.info(f"Found device {device_address}, attempting to connect...")
             if not await self.device_manager.connect(device_address):
                 logger.error("Failed to connect to device")
+                await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
+                    "address": device_address,
+                    "reason": "connection_failed"
+                })
                 return
 
             # Start data acquisition
             if not await self.device_manager.start_data_acquisition():
                 logger.error("Failed to start data acquisition")
+                await self._cleanup_connection()
+                await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
+                    "address": device_address,
+                    "reason": "data_acquisition_failed"
+                })
                 return
 
             # Start battery monitoring
             if not await self.device_manager.start_battery_monitoring():
                 logger.error("Failed to start battery monitoring")
-                return
+                # 배터리 모니터링 실패는 치명적이지 않으므로 계속 진행
 
             # Get device info and broadcast connection event
             device_info = self.device_manager.get_device_info()
@@ -442,10 +511,19 @@ class WebSocketServer:
                 await self.start_streaming()
             else:
                 logger.error("Failed to get device info after connection")
+                await self._cleanup_connection()
+                await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
+                    "address": device_address,
+                    "reason": "device_info_failed"
+                })
 
         except Exception as e:
             logger.error(f"Error in _run_connect_and_notify: {e}", exc_info=True)
             await self._cleanup_connection()
+            await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
+                "address": device_address,
+                "reason": str(e)
+            })
 
     async def _cleanup_connection(self):
         """Clean up connection resources."""
@@ -598,58 +676,70 @@ class WebSocketServer:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                eeg_data = await self.device_manager.get_and_clear_eeg_buffer()
-                if eeg_data:
-                    last_data_time = time.time()
-                    # 데이터 구조 변환
-                    processed_data = []
-                    for sample in eeg_data:
-                        processed_sample = {
-                            "timestamp": sample["timestamp"],
-                            "ch1": sample["ch1"],
-                            "ch2": sample["ch2"],
-                            "leadoff_ch1": sample["leadoff_ch1"],
-                            "leadoff_ch2": sample["leadoff_ch2"]
-                        }
-                        processed_data.append(processed_sample)
-                        # 타임스탬프 버퍼에 추가
-                        timestamp_buffer.append(processed_sample["timestamp"])
-                    # 1분보다 오래된 타임스탬프 제거
-                    cutoff_time = time.time() - WINDOW_SIZE
-                    timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
-                    self._update_sampling_rate('eeg', processed_data)
-                    message = {
-                        "type": "sensor_data",
+                # Raw data와 Processed data 모두 가져오기
+                raw_data = await self.device_manager.get_and_clear_eeg_buffer()
+                processed_data = await self.device_manager.get_and_clear_processed_eeg_buffer()
+                
+                current_time = time.time()
+                
+                # Raw data 전송
+                if raw_data:
+                    raw_message = {
+                        "type": "raw_data",
                         "sensor_type": "eeg",
-                        "timestamp": time.time(),
+                        "timestamp": current_time,
+                        "data": raw_data
+                    }
+                    try:
+                        await self.broadcast(json.dumps(raw_message))
+                        total_samples_sent += len(raw_data)
+                        samples_since_last_log += len(raw_data)
+                        
+                        # 타임스탬프 버퍼에 추가
+                        for sample in raw_data:
+                            timestamp_buffer.append(sample["timestamp"])
+                        # 1분보다 오래된 타임스탬프 제거
+                        cutoff_time = current_time - WINDOW_SIZE
+                        timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                        self._update_sampling_rate('eeg', raw_data)
+                    except Exception as e:
+                        logger.error(f"Error broadcasting raw EEG data: {e}")
+
+                # Processed data 전송
+                if processed_data:
+                    processed_message = {
+                        "type": "processed_data",
+                        "sensor_type": "eeg",
+                        "timestamp": current_time,
                         "data": processed_data
                     }
                     try:
-                        await self.broadcast(json.dumps(message))
-                        total_samples_sent += len(eeg_data)
-                        samples_since_last_log += len(eeg_data)
-
-                        # 1초마다 스트리밍 상태 로깅
-                        current_time = time.time()
-                        if current_time - last_log_time >= 1.0:
-                            logger.info(f"[EEG] Samples/sec: {samples_since_last_log:4d} | "
-                                      f"Total: {total_samples_sent:6d} | "
-                                      f"Buffer: {len(eeg_data):4d} samples")
-                            samples_since_last_log = 0
-                            last_log_time = current_time
-                        # 5초마다 실제 샘플링 레이트 로깅
-                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
-                            if len(timestamp_buffer) > 1:
-                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
-                                if intervals:
-                                    avg_interval = sum(intervals) / len(intervals)
-                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
-                                    logger.info(f"[EEG] Actual sampling rate: {actual_rate:.2f} Hz "
-                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                    self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
-                            last_rate_log_time = current_time
+                        await self.broadcast(json.dumps(processed_message))
                     except Exception as e:
-                        logger.error(f"Error broadcasting EEG data: {e}")
+                        logger.error(f"Error broadcasting processed EEG data: {e}")
+
+                # 로깅
+                if raw_data or processed_data:
+                    last_data_time = current_time
+                    # 1초마다 스트리밍 상태 로깅
+                    if current_time - last_log_time >= 1.0:
+                        logger.info(f"[EEG] Samples/sec: {samples_since_last_log:4d} | "
+                                  f"Total: {total_samples_sent:6d} | "
+                                  f"Raw Buffer: {len(raw_data):4d} | "
+                                  f"Processed Buffer: {len(processed_data):4d} samples")
+                        samples_since_last_log = 0
+                        last_log_time = current_time
+                    # 5초마다 실제 샘플링 레이트 로깅
+                    if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                        if len(timestamp_buffer) > 1:
+                            intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
+                            if intervals:
+                                avg_interval = sum(intervals) / len(intervals)
+                                actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                logger.info(f"[EEG] Actual sampling rate: {actual_rate:.2f} Hz "
+                                          f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
+                        last_rate_log_time = current_time
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
                     logger.warning("No EEG data received for too long")
                     break
@@ -663,7 +753,7 @@ class WebSocketServer:
 
     async def stream_ppg_data(self):
         logger.info("PPG stream task started.")
-        SEND_INTERVAL = 0.016  # ~60Hz (16.7ms)
+        SEND_INTERVAL = 0.02  # 50Hz (20ms)
         NO_DATA_TIMEOUT = 5.0
         last_data_time = time.time()
         total_samples_sent = 0
@@ -680,47 +770,70 @@ class WebSocketServer:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                ppg_data = await self.device_manager.get_and_clear_ppg_buffer()
-                if ppg_data:
-                    last_data_time = time.time()
-                    message = {
-                        "type": "sensor_data",
+                # Raw data와 Processed data 모두 가져오기
+                raw_data = await self.device_manager.get_and_clear_ppg_buffer()
+                processed_data = await self.device_manager.get_and_clear_processed_ppg_buffer()
+                
+                current_time = time.time()
+                
+                # Raw data 전송
+                if raw_data:
+                    raw_message = {
+                        "type": "raw_data",
                         "sensor_type": "ppg",
-                        "timestamp": time.time(),
-                        "data": ppg_data
+                        "timestamp": current_time,
+                        "data": raw_data
                     }
-                    # 타임스탬프 버퍼에 추가
-                    for sample in ppg_data:
-                        timestamp_buffer.append(sample["timestamp"])
-                    # 1분보다 오래된 타임스탬프 제거
-                    cutoff_time = time.time() - WINDOW_SIZE
-                    timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
-                    self._update_sampling_rate('ppg', ppg_data)
                     try:
-                        await self.broadcast(json.dumps(message))
-                        total_samples_sent += len(ppg_data)
-                        samples_since_last_log += len(ppg_data)
-                        # 1초마다 스트리밍 상태 로깅
-                        current_time = time.time()
-                        if current_time - last_log_time >= 1.0:
-                            logger.info(f"[PPG] Samples/sec: {samples_since_last_log:4d} | "
-                                      f"Total: {total_samples_sent:6d} | "
-                                      f"Buffer: {len(ppg_data):4d} samples")
-                            samples_since_last_log = 0
-                            last_log_time = current_time
-                        # 5초마다 실제 샘플링 레이트 로깅
-                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
-                            if len(timestamp_buffer) > 1:
-                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
-                                if intervals:
-                                    avg_interval = sum(intervals) / len(intervals)
-                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
-                                    logger.info(f"[PPG] Actual sampling rate: {actual_rate:.2f} Hz "
-                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                    self.device_sampling_stats['ppg']['samples_per_sec'] = actual_rate
-                            last_rate_log_time = current_time
+                        await self.broadcast(json.dumps(raw_message))
+                        total_samples_sent += len(raw_data)
+                        samples_since_last_log += len(raw_data)
+                        
+                        # 타임스탬프 버퍼에 추가
+                        for sample in raw_data:
+                            timestamp_buffer.append(sample["timestamp"])
+                        # 1분보다 오래된 타임스탬프 제거
+                        cutoff_time = current_time - WINDOW_SIZE
+                        timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                        self._update_sampling_rate('ppg', raw_data)
                     except Exception as e:
-                        logger.error(f"Error broadcasting PPG data: {e}")
+                        logger.error(f"Error broadcasting raw PPG data: {e}")
+
+                # Processed data 전송
+                if processed_data:
+                    processed_message = {
+                        "type": "processed_data",
+                        "sensor_type": "ppg",
+                        "timestamp": current_time,
+                        "data": processed_data
+                    }
+                    try:
+                        await self.broadcast(json.dumps(processed_message))
+                    except Exception as e:
+                        logger.error(f"Error broadcasting processed PPG data: {e}")
+
+                # 로깅
+                if raw_data or processed_data:
+                    last_data_time = current_time
+                    # 1초마다 스트리밍 상태 로깅
+                    if current_time - last_log_time >= 1.0:
+                        logger.info(f"[PPG] Samples/sec: {samples_since_last_log:4d} | "
+                                  f"Total: {total_samples_sent:6d} | "
+                                  f"Raw Buffer: {len(raw_data):4d} | "
+                                  f"Processed Buffer: {len(processed_data):4d} samples")
+                        samples_since_last_log = 0
+                        last_log_time = current_time
+                    # 5초마다 실제 샘플링 레이트 로깅
+                    if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                        if len(timestamp_buffer) > 1:
+                            intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
+                            if intervals:
+                                avg_interval = sum(intervals) / len(intervals)
+                                actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                logger.info(f"[PPG] Actual sampling rate: {actual_rate:.2f} Hz "
+                                          f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                self.device_sampling_stats['ppg']['samples_per_sec'] = actual_rate
+                        last_rate_log_time = current_time
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
                     logger.warning("No PPG data received for too long")
                     break
@@ -751,47 +864,70 @@ class WebSocketServer:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                acc_data = await self.device_manager.get_and_clear_acc_buffer()
-                if acc_data:
-                    last_data_time = time.time()
-                    message = {
-                        "type": "sensor_data",
+                # Raw data와 Processed data 모두 가져오기
+                raw_data = await self.device_manager.get_and_clear_acc_buffer()
+                processed_data = await self.device_manager.get_and_clear_processed_acc_buffer()
+                
+                current_time = time.time()
+                
+                # Raw data 전송
+                if raw_data:
+                    raw_message = {
+                        "type": "raw_data",
                         "sensor_type": "acc",
-                        "timestamp": time.time(),
-                        "data": acc_data
+                        "timestamp": current_time,
+                        "data": raw_data
                     }
-                    # 타임스탬프 버퍼에 추가
-                    for sample in acc_data:
-                        timestamp_buffer.append(sample["timestamp"])
-                    # 1분보다 오래된 타임스탬프 제거
-                    cutoff_time = time.time() - WINDOW_SIZE
-                    timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
-                    self._update_sampling_rate('acc', acc_data)
                     try:
-                        await self.broadcast(json.dumps(message))
-                        total_samples_sent += len(acc_data)
-                        samples_since_last_log += len(acc_data)
-                        # 1초마다 스트리밍 상태 로깅
-                        current_time = time.time()
-                        if current_time - last_log_time >= 1.0:
-                            logger.info(f"[ACC] Samples/sec: {samples_since_last_log:4d} | "
-                                      f"Total: {total_samples_sent:6d} | "
-                                      f"Buffer: {len(acc_data):4d} samples")
-                            samples_since_last_log = 0
-                            last_log_time = current_time
-                        # 5초마다 실제 샘플링 레이트 로깅
-                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
-                            if len(timestamp_buffer) > 1:
-                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
-                                if intervals:
-                                    avg_interval = sum(intervals) / len(intervals)
-                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
-                                    logger.info(f"[ACC] Actual sampling rate: {actual_rate:.2f} Hz "
-                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                    self.device_sampling_stats['acc']['samples_per_sec'] = actual_rate
-                            last_rate_log_time = current_time
+                        await self.broadcast(json.dumps(raw_message))
+                        total_samples_sent += len(raw_data)
+                        samples_since_last_log += len(raw_data)
+                        
+                        # 타임스탬프 버퍼에 추가
+                        for sample in raw_data:
+                            timestamp_buffer.append(sample["timestamp"])
+                        # 1분보다 오래된 타임스탬프 제거
+                        cutoff_time = current_time - WINDOW_SIZE
+                        timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                        self._update_sampling_rate('acc', raw_data)
                     except Exception as e:
-                        logger.error(f"Error broadcasting ACC data: {e}")
+                        logger.error(f"Error broadcasting raw ACC data: {e}")
+
+                # Processed data 전송
+                if processed_data:
+                    processed_message = {
+                        "type": "processed_data",
+                        "sensor_type": "acc",
+                        "timestamp": current_time,
+                        "data": processed_data
+                    }
+                    try:
+                        await self.broadcast(json.dumps(processed_message))
+                    except Exception as e:
+                        logger.error(f"Error broadcasting processed ACC data: {e}")
+
+                # 로깅
+                if raw_data or processed_data:
+                    last_data_time = current_time
+                    # 1초마다 스트리밍 상태 로깅
+                    if current_time - last_log_time >= 1.0:
+                        logger.info(f"[ACC] Samples/sec: {samples_since_last_log:4d} | "
+                                  f"Total: {total_samples_sent:6d} | "
+                                  f"Raw Buffer: {len(raw_data):4d} | "
+                                  f"Processed Buffer: {len(processed_data):4d} samples")
+                        samples_since_last_log = 0
+                        last_log_time = current_time
+                    # 5초마다 실제 샘플링 레이트 로깅
+                    if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                        if len(timestamp_buffer) > 1:
+                            intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
+                            if intervals:
+                                avg_interval = sum(intervals) / len(intervals)
+                                actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                logger.info(f"[ACC] Actual sampling rate: {actual_rate:.2f} Hz "
+                                          f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                self.device_sampling_stats['acc']['samples_per_sec'] = actual_rate
+                        last_rate_log_time = current_time
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
                     logger.warning("No ACC data received for too long")
                     break
@@ -1087,3 +1223,205 @@ class WebSocketServer:
         else:
             status["status"] = "disconnected"
         return status
+
+    async def handle_websocket_connection(self, websocket: WebSocket):
+        """Handle new WebSocket connections."""
+        client_id = str(uuid.uuid4())
+        try:
+            await websocket.accept()
+            self.connected_clients[client_id] = websocket
+            logger.info(f"Client {client_id} connected")
+
+            # Send initial status
+            await self.send_status(websocket)
+
+            while True:
+                try:
+                    data = await websocket.receive_json()
+                    await self.handle_client_message(client_id, data)
+                except WebSocketDisconnect:
+                    break
+                except json.JSONDecodeError:
+                    logger.error(f"Invalid JSON from client {client_id}")
+                except Exception as e:
+                    logger.error(f"Error handling message from client {client_id}: {e}")
+                    await self.broadcast_event(EventType.ERROR, {"error": str(e)})
+
+        except Exception as e:
+            logger.error(f"Error in websocket connection for client {client_id}: {e}")
+        finally:
+            await self.handle_client_disconnect(client_id)
+
+    async def handle_processed_websocket_connection(self, websocket: WebSocket):
+        """Handle WebSocket connections for processed data."""
+        client_id = str(uuid.uuid4())
+        try:
+            await websocket.accept()
+            self.connected_clients[client_id] = websocket
+            logger.info(f"Processed data client {client_id} connected")
+
+            # Add data callback for this client
+            async def data_callback(data: Dict[str, Any]):
+                try:
+                    await websocket.send_json(data)
+                except Exception as e:
+                    logger.error(f"Error sending processed data to client {client_id}: {e}")
+                    await self.handle_client_disconnect(client_id)
+
+            self.stream_engine.add_data_callback(data_callback)
+
+            while True:
+                try:
+                    await websocket.receive_text()  # Keep connection alive
+                except WebSocketDisconnect:
+                    break
+                except Exception as e:
+                    logger.error(f"Error in processed websocket connection for client {client_id}: {e}")
+                    break
+
+        except Exception as e:
+            logger.error(f"Error in processed websocket connection for client {client_id}: {e}")
+        finally:
+            self.stream_engine.remove_data_callback(data_callback)
+            await self.handle_client_disconnect(client_id)
+
+    async def handle_client_message(self, client_id: str, data: Dict[str, Any]):
+        """Handle incoming messages from clients."""
+        try:
+            # message_type = data.get('type')
+            # if not message_type:
+            #     logger.warning(f"Message from client {client_id} missing type")
+            #     return
+
+            # if message_type == 'command':
+            #     # await self.handle_command(client_id, data)
+            #     logger.info(f"Command message from client {client_id}: {data}")
+            # elif message_type == 'data':
+            #     # await self.handle_data(client_id, data)
+            #     logger.info(f"Data message from client {client_id}: {data}")
+            # else:
+            #     logger.warning(f"Unknown message type from client {client_id}: {message_type}")
+            logger.info(f"Data message from client {data}")
+        except Exception as e:
+            logger.error(f"Error handling message from client {client_id}: {e}")
+            # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
+
+    async def handle_command(self, client_id: str, data: Dict[str, Any]):
+        """Handle command messages from clients."""
+        # command = data.get('command')
+        # if not command:
+        #     logger.warning(f"Command message from client {client_id} missing command")
+        #     return
+
+        try:
+            # if command == 'scan':
+            #     devices = await self.device_manager.scan_devices()
+            #     await self.send_to_client(client_id, {
+            #         'type': 'scan_result',
+            #         'devices': devices
+            #     })
+            # elif command == 'connect':
+            #     address = data.get('address')
+            #     if not address:
+            #         raise ValueError("Connect command missing address")
+            #     success = await self.device_manager.connect(address)
+            #     await self.broadcast_event(EventType.STATUS, {
+            #         'type': 'connection',
+            #         'address': address,
+            #         'success': success
+            #     })
+            # elif command == 'disconnect':
+            #     address = data.get('address')
+            #     if not address:
+            #         raise ValueError("Disconnect command missing address")
+            #     success = await self.device_manager.disconnect()
+            #     await self.broadcast_event(EventType.STATUS, {
+            #         'type': 'disconnection',
+            #         'address': address,
+            #         'success': success
+            #     })
+            # else:
+            #     logger.warning(f"Unknown command from client {client_id}: {command}")
+            logger.info(f"Command message from client {data}")
+        except Exception as e:
+            logger.error(f"Error handling command from client {client_id}: {e}")
+            # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
+
+    async def handle_data(self, client_id: str, data: Dict[str, Any]):
+        """Handle data messages from clients."""
+        try:
+            # Process the data
+            processed_data = await self.signal_processor.process_data(data)
+            
+            # Broadcast processed data
+            await self.broadcast_event(EventType.DATA_RECEIVED, processed_data)
+            
+            # Update stream engine stats
+            self.stream_engine.update_stats(
+                eeg=len(data.get('eeg', [])),
+                ppg=len(data.get('ppg', [])),
+                acc=len(data.get('acc', [])),
+                bat=len(data.get('battery', [])),
+                bat_level=data.get('battery_level')
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling data from client {client_id}: {e}")
+            await self.broadcast_event(EventType.ERROR, {"error": str(e)})
+
+    async def handle_client_disconnect(self, client_id: str):
+        """Handle client disconnection."""
+        if client_id in self.connected_clients:
+            del self.connected_clients[client_id]
+            logger.info(f"Client {client_id} disconnected")
+
+    async def send_to_client(self, client_id: str, data: Dict[str, Any]):
+        """Send data to a specific client."""
+        if client_id in self.connected_clients:
+            try:
+                await self.connected_clients[client_id].send_json(data)
+            except Exception as e:
+                logger.error(f"Error sending data to client {client_id}: {e}")
+                await self.handle_client_disconnect(client_id)
+
+    async def send_status(self, websocket: WebSocket):
+        """Send current status to a client."""
+        status = {
+            'type': 'status',
+            'timestamp': time.time(),
+            'data': {
+                'connected_devices': len(self.device_manager.get_connected_devices()),
+                'connected_clients': len(self.connected_clients),
+                'stream_engine_status': self.stream_engine.get_status()
+            }
+        }
+        await websocket.send_json(status)
+
+    def add_event_callback(self, event_type: str, callback: Callable):
+        """Add a callback for a specific event type."""
+        if event_type in self.event_callbacks:
+            self.event_callbacks[event_type].append(callback)
+
+    def remove_event_callback(self, event_type: str, callback: Callable):
+        """Remove a callback for a specific event type."""
+        if event_type in self.event_callbacks and callback in self.event_callbacks[event_type]:
+            self.event_callbacks[event_type].remove(callback)
+
+    async def start(self, host: str = "localhost", port: int = 8000):
+        """Start the WebSocket server."""
+        import uvicorn
+        config = uvicorn.Config(self.app, host=host, port=port)
+        server = uvicorn.Server(config)
+        await server.serve()
+
+    async def _handle_processed_data(self, data_type: str, processed_data: dict):
+        """Handle processed data from device manager"""
+        try:
+            # Broadcast processed data to all clients
+            await self.broadcast_event(EventType.DATA_RECEIVED, {
+                'type': data_type,
+                'data': processed_data,
+                'timestamp': time.time()
+            })
+        except Exception as e:
+            logger.error(f"Error handling processed data: {e}")

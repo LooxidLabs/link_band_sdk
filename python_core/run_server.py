@@ -49,7 +49,7 @@ def ensure_port_available(port: int) -> bool:
             return False
     return True
 
-def run_server(host: str = "localhost", port: int = 8000) -> None:
+def run_server(host: str = "localhost", port: int = 8121) -> None:
     """Run the FastAPI server with proper error handling."""
     try:
         # Add the parent directory to Python path
@@ -63,14 +63,11 @@ def run_server(host: str = "localhost", port: int = 8000) -> None:
 
         logger.info(f"Starting FastAPI server on {host}:{port}")
         
+        # Import app here to avoid circular imports
+        from app.main import app
+        
         # Run the FastAPI server using uvicorn
-        uvicorn.run(
-            "app.main:app",
-            host=host,
-            port=port,
-            reload=True,
-            log_level="info"
-        )
+        uvicorn.run(app, host=host, port=port, reload=False, log_level="info")
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
     except Exception as e:
@@ -78,4 +75,4 @@ def run_server(host: str = "localhost", port: int = 8000) -> None:
         sys.exit(1)
 
 if __name__ == "__main__":
-    run_server()
+    run_server(host="localhost", port=8121)

@@ -4,7 +4,7 @@ import httpx
 import websockets
 import json
 
-API_URL = "http://localhost:8000"
+API_URL = "http://localhost:8121"
 WS_URL = "ws://localhost:18765"
 
 @pytest.mark.asyncio
