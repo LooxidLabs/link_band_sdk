@@ -10,6 +10,13 @@ from enum import Enum, auto
 import time
 from app.core.signal_processing import SignalProcessor
 
+class Device:
+    def __init__(self, address: str, name: str):
+        self.address = address
+        self.name = name
+        self.status = DeviceStatus.DISCONNECTED
+        self.client: Optional[BleakClient] = None
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -720,6 +727,13 @@ class DeviceManager:
         buffer_copy = self._processed_eeg_buffer.copy()
         self._processed_eeg_buffer.clear()
         self.logger.debug(f"Getting and clearing processed EEG buffer: {len(buffer_copy)} samples")
+        return buffer_copy
+
+    async def get_and_clear_processed_ppg_buffer(self) -> List[Any]:
+        """Get a copy of the processed PPG buffer and clear it."""
+        buffer_copy = self._processed_ppg_buffer.copy()
+        self._processed_ppg_buffer.clear()
+        self.logger.debug(f"Getting and clearing processed PPG buffer: {len(buffer_copy)} samples")
         return buffer_copy
 
     async def get_and_clear_processed_acc_buffer(self) -> List[Any]:
