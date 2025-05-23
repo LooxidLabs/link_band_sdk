@@ -1,32 +1,12 @@
 import { create } from 'zustand';
 import { engineApi } from '../api/engine';
 import type { ConnectionInfo, EngineStatus } from '../types/engine';
+import type { EEGData, PPGData, AccData, BatteryData, SensorDataMessage } from '../types/sensor';
 import { useDeviceStore } from './device';
+import { useSensorStore } from './sensor';
 
 interface SensorData {
   timestamp: number;
-}
-
-interface EEGData extends SensorData {
-  ch1: number;
-  ch2: number;
-  leadoff_ch1: boolean;
-  leadoff_ch2: boolean;
-}
-
-interface PPGData extends SensorData {
-  red: number;
-  ir: number;
-}
-
-interface AccData extends SensorData {
-  x: number;
-  y: number;
-  z: number;
-}
-
-interface BatData extends SensorData {
-  level: number;
 }
 
 interface ConnectionQuality {
@@ -261,7 +241,7 @@ interface EngineState {
   eegData: EEGData[];
   ppgData: PPGData[];
   accData: AccData[];
-  batData: BatData[];
+  batData: BatteryData[];
   connectionQuality: ConnectionQuality;
   lastRateUpdate: number;
   lastDataUpdate: number;
@@ -295,7 +275,7 @@ interface EngineState {
   addEEGData: (data: EEGData[]) => void;
   addPPGData: (data: PPGData[]) => void;
   addAccData: (data: AccData[]) => void;
-  addBatData: (data: BatData[]) => void;
+  addBatData: (data: BatteryData[]) => void;
   clearData: () => void;
   autoConnectWebSocket: () => void;
 }
@@ -351,53 +331,146 @@ export const useEngineStore = create<EngineState>((set, get) => {
   
   // WebSocket 메시지 핸들러
   const handleWebSocketMessage = (message: any) => {
-    if (message.type === 'sensor_data') {
-      const now = Date.now();
-      const dataLength = message.data.length;
+    const now = Date.now();
+    const dataLength = message.data.length;
 
       // 데이터가 들어오면 isStreamingIdle을 false로 설정
-      set(() => ({ isStreamingIdle: false }));
+    set(() => ({ isStreamingIdle: false }));
 
+    if (message.type === 'processed_data') {
+      const now = Date.now();
+      const dataLength = message.data ? 1 : 0;
+      
       switch (message.sensor_type) {
         case 'eeg':
           set(state => ({
             sampleCounts: { ...state.sampleCounts, eeg: state.sampleCounts.eeg + dataLength },
             lastSampleTimestamps: { ...state.lastSampleTimestamps, eeg: now }
           }));
-          get().addEEGData(message.data);
+          // Transform EEG data to match EEGData interface
+          const eegData: EEGData = {
+            timestamp: message.data[0].timestamp,
+            ch1_filtered: message.data[0].ch1_filtered || [],
+            ch2_filtered: message.data[0].ch2_filtered || [],
+            ch1_leadoff: message.data[0].ch1_leadoff || false,
+            ch2_leadoff: message.data[0].ch2_leadoff || false,
+            ch1_sqi: message.data[0].ch1_sqi || [],
+            ch2_sqi: message.data[0].ch2_sqi || [],
+            ch1_power: message.data[0].ch1_power || [],
+            ch2_power: message.data[0].ch2_power || [],
+            frequencies: message.data[0].frequencies || [],
+            ch1_band_powers: message.data[0].ch1_band_powers || { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 },
+            ch2_band_powers: message.data[0].ch2_band_powers || { delta: 0, theta: 0, alpha: 0, beta: 0, gamma: 0 },
+            signal_quality: message.data[0].signal_quality || 'poor',
+            good_samples_ratio: message.data[0].good_samples_ratio || 0,
+            total_power: message.data[0].total_power || 0,
+            focus_index: message.data[0].focus_index || 0,
+            relaxation_index: message.data[0].relaxation_index || 0,
+            stress_index: message.data[0].stress_index || 0,
+            hemispheric_balance: message.data[0].hemispheric_balance || 0,
+            cognitive_load: message.data[0].cognitive_load || 0,
+            emotional_stability: message.data[0].emotional_stability || 0
+          };
+          useSensorStore.getState().updateSensorData({
+            type: 'eeg',
+            timestamp: message.timestamp,
+            data: eegData
+          });
           break;
+
         case 'ppg':
           set(state => ({
             sampleCounts: { ...state.sampleCounts, ppg: state.sampleCounts.ppg + dataLength },
             lastSampleTimestamps: { ...state.lastSampleTimestamps, ppg: now }
           }));
-          get().addPPGData(message.data);
+          // Transform PPG data to match PPGData interface
+          const ppgData: PPGData = {
+            timestamp: message.data[0].timestamp,
+            filtered_ppg: message.data[0].filtered_ppg || [],
+            ppg_sqi: message.data[0].ppg_sqi || [],
+            bpm: message.data[0].bpm || 0,
+            sdnn: message.data[0].sdnn || 0,
+            rmssd: message.data[0].rmssd || 0,
+            pnn50: message.data[0].pnn50 || 0,
+            sdsd: message.data[0].sdsd || 0,
+            hr_mad: message.data[0].hr_mad || 0,
+            sd1: message.data[0].sd1 || 0,
+            sd2: message.data[0].sd2 || 0,
+            lf: message.data[0].lf || 0,
+            hf: message.data[0].hf || 0,
+            lf_hf_ratio: message.data[0].lf_hf || 0,
+            signal_quality: message.data[0].signal_quality || 'poor',
+            red_mean: message.data[0].red_mean || 0,
+            ir_mean: message.data[0].ir_mean || 0,
+            rr_intervals: message.data[0].rr_intervals || []
+          };
+          useSensorStore.getState().updateSensorData({
+            type: 'ppg',
+            timestamp: message.timestamp,
+            data: ppgData
+          });
           break;
+
         case 'acc':
           set(state => ({
             sampleCounts: { ...state.sampleCounts, acc: state.sampleCounts.acc + dataLength },
             lastSampleTimestamps: { ...state.lastSampleTimestamps, acc: now }
           }));
-          get().addAccData(message.data);
-          break;
-        case 'bat':
-          set(state => ({
-            sampleCounts: { ...state.sampleCounts, bat: state.sampleCounts.bat + dataLength },
-            lastSampleTimestamps: { ...state.lastSampleTimestamps, bat: now }
-          }));
-          get().addBatData(message.data);
+          // Transform ACC data to match AccData interface
+          const accData: AccData = {
+            timestamp: message.data[0].timestamp,
+            x_change: message.data[0].x_change || [],
+            y_change: message.data[0].y_change || [],
+            z_change: message.data[0].z_change || [],
+            avg_movement: message.data[0].avg_movement || 0,
+            std_movement: message.data[0].std_movement || 0,
+            max_movement: message.data[0].max_movement || 0,
+            activity_state: message.data[0].activity_state || 'stationary',
+            x_change_mean: message.data[0].x_change_mean || 0,
+            y_change_mean: message.data[0].y_change_mean || 0,
+            z_change_mean: message.data[0].z_change_mean || 0
+          };
+          useSensorStore.getState().updateSensorData({
+            type: 'acc',
+            timestamp: message.timestamp,
+            data: accData
+          });
           break;
       }
-    } else if (message.type === 'health_check_response') {
-      set({
-        isWebSocketConnected: true,
-        connectionInfo: {
-          ...get().connectionInfo,
-          status: message.status,
-          is_streaming: message.is_streaming,
-          clients_connected: message.clients_connected
+      
+      if (message.type === 'raw_data') {
+        // console.log('Raw data received:', message.data);
+        switch (message.sensor_type) {
+          case 'eeg':
+            set(state => ({
+              sampleCounts: { ...state.sampleCounts, eeg: state.sampleCounts.eeg + dataLength },
+              lastSampleTimestamps: { ...state.lastSampleTimestamps, eeg: now }
+            }));
+            get().addEEGData(message.data);
+            break;
+          case 'ppg':
+            set(state => ({
+              sampleCounts: { ...state.sampleCounts, ppg: state.sampleCounts.ppg + dataLength },
+              lastSampleTimestamps: { ...state.lastSampleTimestamps, ppg: now }
+            }));
+            get().addPPGData(message.data);
+            break;
+          case 'acc':
+            set(state => ({
+              sampleCounts: { ...state.sampleCounts, acc: state.sampleCounts.acc + dataLength },
+              lastSampleTimestamps: { ...state.lastSampleTimestamps, acc: now }
+            }));
+            get().addAccData(message.data);
+            break;
+          case 'bat':
+            set(state => ({
+              sampleCounts: { ...state.sampleCounts, bat: state.sampleCounts.bat + dataLength },
+              lastSampleTimestamps: { ...state.lastSampleTimestamps, bat: now }
+            }));
+            get().addBatData(message.data);
+            break;
         }
-      });
+      }
     }
   };
 
@@ -690,7 +763,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
       }
     },
 
-    addBatData: (newData: BatData[]) => {
+    addBatData: (newData: BatteryData[]) => {
       if (newData.length > 0) {
         const now = Date.now();
         set((state) => {

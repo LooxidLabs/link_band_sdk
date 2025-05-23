@@ -143,7 +143,7 @@ class SignalProcessor:
         """Combine amplitude and frequency SQI"""
         return 1.0 * amplitude_sqi + 0.0 * frequency_sqi
 
-    def calculate_ppg_sqi(self, data: np.ndarray, threshold: float = 200) -> np.ndarray:
+    def calculate_ppg_sqi(self, data: np.ndarray, threshold: float = 50) -> np.ndarray:
         """Calculate amplitude-based SQI for PPG"""
         window_size = 25
         sqi_values = np.zeros_like(data)
@@ -387,7 +387,7 @@ class SignalProcessor:
             red_data = np.array([float(d.get('red', 0)) for d in buffer_data])
             ir_data = np.array([float(d.get('ir', 0)) for d in buffer_data])
             
-            if len(red_data) == 0 or len(ir_data) == 0:
+            if len(red_data) == 0 or len(red_data) == 0:
                 logger.warning("[WARNING] Empty PPG data received")
                 return None
             
@@ -399,7 +399,7 @@ class SignalProcessor:
                 
                 # Filter PPG signal
                 filtered_ppg = await loop.run_in_executor(None, lambda: hp.filter_signal(
-                    ir_data,
+                    red_data,
                     cutoff=[0.5, 5.0],
                     sample_rate=sampling_rate,
                     order=2,

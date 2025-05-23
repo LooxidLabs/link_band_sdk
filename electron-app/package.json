@@ -16,6 +16,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@mui/material": "^7.1.0",
+    "echarts": "^5.6.0",
     "electron-oauth-helper": "^5.1.1",
     "electron-store": "^10.0.1",
     "firebase": "^11.7.1",

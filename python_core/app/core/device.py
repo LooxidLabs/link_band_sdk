@@ -449,8 +449,8 @@ class DeviceManager:
                 self.logger.warning(f"PPG data too short: {len(data)} bytes")
                 return
 
-            time_raw = int.from_bytes(data[0:4], 'little')
-            base_timestamp = time_raw / TIMESTAMP_CLOCK
+            time_raw = (data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0])
+            base_timestamp = time_raw / 32.768 / 1000
             
             # 데이터 구조: 4바이트 단위로 반복 (2바이트 red + 2바이트 ir)
             num_samples = (len(data) - 4) // 4
@@ -458,15 +458,17 @@ class DeviceManager:
             self.logger.debug(f"PPG data: base_timestamp={base_timestamp}, num_samples={num_samples}")
 
             samples_to_add = []
-            for i in range(num_samples):
-                offset = 4 + i * 4
-                if offset + 4 > len(data):
-                    self.logger.warning(f"PPG data shorter than expected for sample {i}. Skipping remaining.")
-                    break
+            for i in range(4,172,6):
+                # offset = 4 + i * 4
+                # if offset + 4 > len(data):
+                #     self.logger.warning(f"PPG data shorter than expected for sample {i}. Skipping remaining.")
+                #     break
 
                 # Read 16-bit unsigned values for red and ir
-                red_raw = int.from_bytes(data[offset:offset+2], 'little', signed=False)
-                ir_raw = int.from_bytes(data[offset+2:offset+4], 'little', signed=False)
+                # ppgRedData = (data[i] << 16 | data[i+1] << 8 | data[i+2])
+                # ppgIRData = (data[i+3] << 16 | data[i+4] << 8 | data[i+5])
+                red_raw = (data[i] << 16 | data[i+1] << 8 | data[i+2])
+                ir_raw = (data[i+3] << 16 | data[i+4] << 8 | data[i+5])
                 sample_timestamp = base_timestamp + i / PPG_SAMPLE_RATE
 
                 sample = {
