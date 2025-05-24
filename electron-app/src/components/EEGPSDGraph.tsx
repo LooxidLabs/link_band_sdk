@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Card, Typography } from '@mui/material';
+import { Card } from '@mui/material';
 import * as echarts from 'echarts';
 
 interface EEGPSDGraphProps {

@@ -36,7 +36,7 @@ const ACCGraph: React.FC = () => {
       grid: {
         top: 50,
         right:10,
-        bottom: 30,
+        bottom: 15,
         left: 20,
         containLabel: true
       },
@@ -112,7 +112,8 @@ const ACCGraph: React.FC = () => {
         textStyle: {
           color: 'rgba(255, 255, 255, 0.7)'
         },
-        top: 30
+        left: '80%',
+        top: 5
       }
     };
 
@@ -129,7 +130,7 @@ const ACCGraph: React.FC = () => {
   }, []);
 
   return (
-    <Card sx={{ p: 1, height: '200px' }}>
+    <Card sx={{ p: 1, height: '150px' }}>
       <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
     </Card>
   );

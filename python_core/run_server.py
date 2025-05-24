@@ -8,6 +8,10 @@ import socket
 from pathlib import Path
 from typing import Optional
 
+# Add the project root directory to Python path
+project_root = str(Path(__file__).parent)
+sys.path.insert(0, project_root)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -52,10 +56,6 @@ def ensure_port_available(port: int) -> bool:
 def run_server(host: str = "localhost", port: int = 8121) -> None:
     """Run the FastAPI server with proper error handling."""
     try:
-        # Add the parent directory to Python path
-        current_dir = Path(__file__).parent
-        sys.path.append(str(current_dir))
-
         # Check if port is available
         if not ensure_port_available(port):
             logger.error(f"Cannot start server: Port {port} is in use and could not be freed")

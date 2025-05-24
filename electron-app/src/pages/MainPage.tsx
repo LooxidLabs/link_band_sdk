@@ -12,14 +12,14 @@ import EngineModule from '../components/EngineModule';
 import LinkBandModule from '../components/LinkBandModule';
 import { ProcessedDataVisualizer } from '../components/ProcessedDataVisualizer';
 
-const menuToComponent: Record<string, React.ReactNode> = {
-  'Engine': <EngineModule />,
-  'Link Band': <LinkBandModule />,
-  'Visualizer': <div style={{ color: '#fff' }}>Visualizer (준비중)</div>,
-  'Data Center': <DeviceManagerModule />,
-  'Link Cloud Manager': <LinkCloudManagerModule />,
-  'Settings': <div style={{ color: '#fff' }}>Settings (준비중)</div>,
-};
+// const menuToComponent: Record<string, React.ReactNode> = {
+//   'Engine': <EngineModule />,
+//   'Link Band': <LinkBandModule />,
+//   'Visualizer': <div style={{ color: '#fff' }}>Visualizer (준비중)</div>,
+//   'Data Center': <DeviceManagerModule />,
+//   'Link Cloud Manager': <LinkCloudManagerModule />,
+//   'Settings': <div style={{ color: '#fff' }}>Settings (준비중)</div>,
+// };
 
 const MainPage: React.FC = () => {
   const {

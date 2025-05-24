@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Card, Typography, Box } from '@mui/material';
+import { Card } from '@mui/material';
 import * as echarts from 'echarts';
 import { useSensorStore } from '../stores/sensor';
 

@@ -1,7 +1,6 @@
 from typing import Dict, Any
 from fastapi import WebSocket
 from log import logger
-import json
 
 class Server:
     def __init__(self, stream_engine):
