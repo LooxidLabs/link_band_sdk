@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Typography, Box, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Card, Typography, Box, ToggleButton } from '@mui/material';
 import { useSensorStore } from '../stores/sensor';
 import EEGPreprocessedGraph from './EEGPreprocessedGraph';
 import EEGPSDGraph from './EEGPSDGraph';
@@ -21,25 +21,25 @@ const SingleValueCard: React.FC<{ title: string; value: number | string }> = ({ 
   </Card>
 );
 
-const BandPowerCard: React.FC<{ title: string; powers: { delta: number; theta: number; alpha: number; beta: number; gamma: number } }> = ({ title, powers }) => (
-  <Card sx={{ p: 2, height: '100%' }}>
-    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-      {title}
-    </Typography>
-    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-      {Object.entries(powers).map(([band, power]) => (
-        <Box key={band} sx={{ flex: '1 1 30%', minWidth: '100px' }}>
-          <Typography variant="caption" color="text.secondary">
-            {band.toUpperCase()}
-          </Typography>
-          <Typography variant="body2">
-            {power.toFixed(2)}
-          </Typography>
-        </Box>
-      ))}
-    </Box>
-  </Card>
-);
+// const BandPowerCard: React.FC<{ title: string; powers: { delta: number; theta: number; alpha: number; beta: number; gamma: number } }> = ({ title, powers }) => (
+//   <Card sx={{ p: 2, height: '100%' }}>
+//     <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+//       {title}
+//     </Typography>
+//     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+//       {Object.entries(powers).map(([band, power]) => (
+//         <Box key={band} sx={{ flex: '1 1 30%', minWidth: '100px' }}>
+//           <Typography variant="caption" color="text.secondary">
+//             {band.toUpperCase()}
+//           </Typography>
+//           <Typography variant="body2">
+//             {power.toFixed(2)}
+//           </Typography>
+//         </Box>
+//       ))}
+//     </Box>
+//   </Card>
+// );
 
 export const ProcessedDataVisualizer: React.FC = () => {
   const { eeg, ppg, acc } = useSensorStore();
@@ -61,8 +61,8 @@ export const ProcessedDataVisualizer: React.FC = () => {
   });
 
   // EEG 데이터 준비
-  const ch1Filtered = eeg?.ch1_filtered || [];
-  const ch2Filtered = eeg?.ch2_filtered || [];
+//   const ch1Filtered = eeg?.ch1_filtered || [];
+//   const ch2Filtered = eeg?.ch2_filtered || [];
   const frequencies = eeg?.frequencies || [];
   const ch1Power = eeg?.ch1_power || [];
   const ch2Power = eeg?.ch2_power || [];
@@ -409,7 +409,7 @@ export const ProcessedDataVisualizer: React.FC = () => {
       )}
 
       {/* ACC Section */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
         <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 1, ml: 2, fontWeight: 600, color: '#FFF' }}>
           ACC Graphs
         </Typography>
