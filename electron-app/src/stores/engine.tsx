@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { engineApi } from '../api/engine';
 import type { ConnectionInfo, EngineStatus } from '../types/engine';
-import type { EEGData, PPGData, AccData, BatteryData, SensorDataMessage } from '../types/sensor';
+import type { EEGData, PPGData, AccData, BatteryData } from '../types/sensor';
 import { useDeviceStore } from './device';
 import { useSensorStore } from './sensor';
 
@@ -331,8 +331,8 @@ export const useEngineStore = create<EngineState>((set, get) => {
   
   // WebSocket 메시지 핸들러
   const handleWebSocketMessage = (message: any) => {
-    const now = Date.now();
-    const dataLength = message.data.length;
+    // const now = Date.now();
+    // const dataLength = message.data.length;
 
       // 데이터가 들어오면 isStreamingIdle을 false로 설정
     set(() => ({ isStreamingIdle: false }));

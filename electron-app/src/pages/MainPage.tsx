@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Box, CssBaseline, ThemeProvider } from '@mui/material';
+import { Box, CssBaseline, ThemeProvider, Snackbar, Alert } from '@mui/material';
 import { useAuthStore } from '../stores/authStore';
-import { LoginModal } from '../components/LoginModal';
-import DeviceManagerModule from '../components/DeviceManagerModule';
+// import { LoginModal } from '../components/LoginModal';
+// import DeviceManagerModule from '../components/DeviceManagerModule';
 import LinkCloudManagerModule from '../components/LinkCloudManagerModule';
 import Sidebar from '../components/Sidebar';
 import TopNavBar from '../components/TopNavBar';
@@ -11,6 +11,8 @@ import { theme } from '../theme';
 import EngineModule from '../components/EngineModule';
 import LinkBandModule from '../components/LinkBandModule';
 import { ProcessedDataVisualizer } from '../components/ProcessedDataVisualizer';
+import DataCenter from '../components/DataCenter';
+import { useUiStore } from '../stores/uiStore';
 
 // const menuToComponent: Record<string, React.ReactNode> = {
 //   'Engine': <EngineModule />,
@@ -30,6 +32,8 @@ const MainPage: React.FC = () => {
   const [selectedMenu, setSelectedMenu] = useState('Link Cloud Manager');
   const [visualizerStatus, setVisualizerStatus] = useState<'active' | 'inactive'>('inactive');
   const [minimized, setMinimized] = useState(false);
+
+  const { open: snackbarOpen, message: snackbarMessage, severity: snackbarSeverity, hideSnackbar } = useUiStore();
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthState();
@@ -76,7 +80,7 @@ const MainPage: React.FC = () => {
       case 'Visualizer':
         return <ProcessedDataVisualizer />;
       case 'Data Center':
-        return <DeviceManagerModule />;
+        return <DataCenter />;
       case 'Link Cloud Manager':
         return <LinkCloudManagerModule />;
       case 'Settings':
@@ -103,14 +107,22 @@ const MainPage: React.FC = () => {
         <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
           <Sidebar selected={selectedMenu} onSelect={setSelectedMenu} minimized={minimized} setMinimized={setMinimized} />
           <Box sx={{ flex: 1, p: 3, minWidth: 0, fontSize: 12, marginLeft: minimized ? '60px' : '220px', marginTop: '64px', minHeight: 'calc(100vh - 64px)' }}>
-            {user ? (
-              renderContent()
-            ) : (
-              <LoginModal open={true} onClose={() => {}} />
-            )}
+            {/* 로그인 여부와 관계없이 항상 메인 콘텐츠를 렌더링합니다. */}
+            {/* 로그인 기능이 필요하다면, 사용자가 명시적으로 로그인 버튼을 클릭하는 등의 다른 방식으로 LoginModal을 띄워야 합니다. */}
+            {renderContent()}
           </Box>
         </Box>
         <BottomStatusBar />
+        <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={6000}
+          onClose={hideSnackbar}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert onClose={hideSnackbar} severity={snackbarSeverity} sx={{ width: '100%' }}>
+            {snackbarMessage}
+          </Alert>
+        </Snackbar>
       </Box>
     </ThemeProvider>
   );

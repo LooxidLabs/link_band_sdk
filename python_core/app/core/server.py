@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uuid
 from app.core.utils import ensure_port_available
+from app.data.data_recorder import DataRecorder
+from app.core.signal_processing import SignalProcessor
 
 # Configure logging
 logging.basicConfig(
@@ -43,7 +45,13 @@ class EventType(Enum):
     STATUS = "status"
 
 class WebSocketServer:
-    def __init__(self, host: str = "localhost", port: int = 18765):
+    def __init__(self, 
+                 host: str = "localhost", 
+                 port: int = 18765, 
+                 data_recorder: Optional[DataRecorder] = None,
+                 device_manager: Optional[DeviceManager] = None,
+                 device_registry: Optional[DeviceRegistry] = None
+                ):
         self.host = host
         self.port = port
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
@@ -53,10 +61,10 @@ class WebSocketServer:
             'eeg': None,
             'ppg': None,
             'acc': None,
-            'battery': None  # 배터리 스트리밍 태스크 추가
+            'battery': None
         }
-        self.device_manager = DeviceManager()
-        self.device_registry = DeviceRegistry()
+        self.device_manager = device_manager
+        self.device_registry = device_registry
         self.auto_connect_task: Optional[asyncio.Task] = None
         self.data_stream_stats = {
             'eeg': {'samples_per_sec': 0},
@@ -80,8 +88,22 @@ class WebSocketServer:
             EventType.ERROR.value: [],
             EventType.STATUS.value: []
         }
-        # Add callback for processed data
-        self.device_manager.add_processed_data_callback(self._handle_processed_data)
+        # Ensure device_manager is available before adding callback
+        if self.device_manager:
+            self.device_manager.add_processed_data_callback(self._handle_processed_data)
+        else:
+            logger.warning("DeviceManager not provided to WebSocketServer, processed data callback not added.")
+            
+        self.data_recorder = data_recorder
+        self.loop = None
+        self.server_task = None
+        self.acc_timestamps: Dict[str, List[float]] = {}
+        self.ecg_timestamps: Dict[str, List[float]] = {}
+        self.server_initialized = False
+        logger.info(f"WebSocketServer initialized. Host: {host}, Port: {port}. "
+                    f"DataRecorder {'IS' if self.data_recorder else 'IS NOT'} configured. "
+                    f"DeviceManager {'IS' if self.device_manager else 'IS NOT'} configured. "
+                    f"DeviceRegistry {'IS' if self.device_registry else 'IS NOT'} configured.")
 
     def setup_routes(self):
         """Setup FastAPI routes and WebSocket endpoints."""
@@ -150,6 +172,7 @@ class WebSocketServer:
             asyncio.create_task(self._periodic_status_update())
             
             logger.info(f"WebSocket server initialized on {self.host}:{self.port}")
+            self.server_initialized = True
             return True
         except Exception as e:
             logger.error(f"Failed to initialize WebSocket server: {e}")
@@ -660,33 +683,73 @@ class WebSocketServer:
     async def stream_eeg_data(self):
         logger.info("EEG stream task started.")
         SEND_INTERVAL = 0.04  # 25Hz (40ms)
-        NO_DATA_TIMEOUT = 5.0
+        NO_DATA_TIMEOUT = 5.0 # 5초 동안 데이터 없으면 경고 후 종료
         last_data_time = time.time()
         total_samples_sent = 0
         last_log_time = time.time()
         samples_since_last_log = 0
-        # 샘플링 레이트 계산용
         timestamp_buffer = []
         WINDOW_SIZE = 60
         last_rate_log_time = time.time()
         RATE_LOG_INTERVAL = 5
+        
+        raw_device_id = "unknown_device" 
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict):
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
 
         try:
             while self.is_streaming:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                # Raw data와 Processed data 모두 가져오기
                 raw_data = await self.device_manager.get_and_clear_eeg_buffer()
                 processed_data = await self.device_manager.get_and_clear_processed_eeg_buffer()
                 
                 current_time = time.time()
                 
-                # Raw data 전송
+                logger.info(f"[STREAM_EEG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
+                if self.data_recorder:
+                    logger.info(f"[STREAM_EEG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
+                
+                raw_data_len = len(raw_data) if raw_data else 0
+                processed_data_len = len(processed_data) if processed_data else 0
+                logger.info(f"[STREAM_EEG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+
+                if raw_data_len > 0:
+                    logger.debug(f"[STREAM_EEG_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
+                if processed_data_len > 0:
+                    logger.debug(f"[STREAM_EEG_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
+
+                if self.data_recorder and self.data_recorder.is_recording:
+                    logger.info(f"[STREAM_EEG_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                    if raw_data:
+                        for i, sample in enumerate(raw_data): 
+                            if isinstance(sample, dict):
+                                self.data_recorder.add_data(
+                                    data_type=f"{device_id_for_filename}_eeg_raw",
+                                    data=sample 
+                                )
+                            else:
+                                logger.warning(f"Skipping non-dict EEG raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                    if processed_data:
+                        for i, sample in enumerate(processed_data): 
+                            if isinstance(sample, dict):
+                                self.data_recorder.add_data(
+                                    data_type=f"{device_id_for_filename}_eeg_processed",
+                                    data=sample
+                                )
+                            else:
+                                logger.warning(f"Skipping non-dict EEG processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                
                 if raw_data:
                     raw_message = {
                         "type": "raw_data",
                         "sensor_type": "eeg",
+                        "device_id": raw_device_id, # Broadcast original device_id
                         "timestamp": current_time,
                         "data": raw_data
                     }
@@ -695,41 +758,38 @@ class WebSocketServer:
                         total_samples_sent += len(raw_data)
                         samples_since_last_log += len(raw_data)
                         
-                        # 타임스탬프 버퍼에 추가
                         for sample in raw_data:
-                            timestamp_buffer.append(sample["timestamp"])
-                        # 1분보다 오래된 타임스탬프 제거
+                            if isinstance(sample, dict) and "timestamp" in sample:
+                                timestamp_buffer.append(sample["timestamp"])
                         cutoff_time = current_time - WINDOW_SIZE
                         timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
-                        self._update_sampling_rate('eeg', raw_data)
+                        if raw_data and isinstance(raw_data, list) and len(raw_data) > 0 and isinstance(raw_data[0], dict):
+                            self._update_sampling_rate('eeg', raw_data)
                     except Exception as e:
-                        logger.error(f"Error broadcasting raw EEG data: {e}")
+                        logger.error(f"Error broadcasting raw EEG data: {e}", exc_info=True)
 
-                # Processed data 전송
                 if processed_data:
                     processed_message = {
                         "type": "processed_data",
                         "sensor_type": "eeg",
+                        "device_id": raw_device_id, # Broadcast original device_id
                         "timestamp": current_time,
                         "data": processed_data
                     }
                     try:
                         await self.broadcast(json.dumps(processed_message))
                     except Exception as e:
-                        logger.error(f"Error broadcasting processed EEG data: {e}")
+                        logger.error(f"Error broadcasting processed EEG data: {e}", exc_info=True)
 
-                # 로깅
                 if raw_data or processed_data:
                     last_data_time = current_time
-                    # 1초마다 스트리밍 상태 로깅
                     if current_time - last_log_time >= 1.0:
                         logger.info(f"[EEG] Samples/sec: {samples_since_last_log:4d} | "
                                   f"Total: {total_samples_sent:6d} | "
-                                  f"Raw Buffer: {len(raw_data):4d} | "
-                                  f"Processed Buffer: {len(processed_data):4d} samples")
+                                  f"Raw Buffer: {len(raw_data) if raw_data else 0:4d} | "
+                                  f"Processed Buffer: {len(processed_data) if processed_data else 0:4d} samples")
                         samples_since_last_log = 0
                         last_log_time = current_time
-                    # 5초마다 실제 샘플링 레이트 로깅
                     if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
                         if len(timestamp_buffer) > 1:
                             intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
@@ -738,11 +798,12 @@ class WebSocketServer:
                                 actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
                                 logger.info(f"[EEG] Actual sampling rate: {actual_rate:.2f} Hz "
                                           f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
+                                if isinstance(self.device_sampling_stats, dict) and 'eeg' in self.device_sampling_stats and isinstance(self.device_sampling_stats['eeg'], dict):
+                                    self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
                         last_rate_log_time = current_time
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
-                    logger.warning("No EEG data received for too long")
-                    break
+                    logger.warning("No EEG data received for too long, stopping EEG stream task.")
+                    break # Exit loop if no data
 
         except asyncio.CancelledError:
             logger.info("EEG stream task received cancellation.")
@@ -759,28 +820,68 @@ class WebSocketServer:
         total_samples_sent = 0
         last_log_time = time.time()
         samples_since_last_log = 0
-        # 샘플링 레이트 계산용
         timestamp_buffer = []
         WINDOW_SIZE = 60
         last_rate_log_time = time.time()
         RATE_LOG_INTERVAL = 5
+        
+        raw_device_id = "unknown_device"
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict):
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
 
         try:
             while self.is_streaming:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                # Raw data와 Processed data 모두 가져오기
                 raw_data = await self.device_manager.get_and_clear_ppg_buffer()
                 processed_data = await self.device_manager.get_and_clear_processed_ppg_buffer()
                 
                 current_time = time.time()
                 
-                # Raw data 전송
+                logger.info(f"[STREAM_PPG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
+                if self.data_recorder:
+                    logger.info(f"[STREAM_PPG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
+                
+                raw_data_len = len(raw_data) if raw_data else 0
+                processed_data_len = len(processed_data) if processed_data else 0
+                logger.info(f"[STREAM_PPG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                
+                if raw_data_len > 0:
+                    logger.debug(f"[STREAM_PPG_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
+                if processed_data_len > 0:
+                    logger.debug(f"[STREAM_PPG_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
+
+                if self.data_recorder and self.data_recorder.is_recording:
+                    logger.info(f"[STREAM_PPG_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                    if raw_data:
+                        for i, sample in enumerate(raw_data):
+                            if isinstance(sample, dict):
+                                self.data_recorder.add_data(
+                                    data_type=f"{device_id_for_filename}_ppg_raw",
+                                    data=sample
+                                )
+                            else:
+                                logger.warning(f"Skipping non-dict PPG raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                    if processed_data:
+                        for i, sample in enumerate(processed_data):
+                            if isinstance(sample, dict):
+                                self.data_recorder.add_data(
+                                    data_type=f"{device_id_for_filename}_ppg_processed",
+                                    data=sample
+                                )
+                            else:
+                                logger.warning(f"Skipping non-dict PPG processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                
                 if raw_data:
                     raw_message = {
                         "type": "raw_data",
                         "sensor_type": "ppg",
+                        "device_id": raw_device_id,
                         "timestamp": current_time,
                         "data": raw_data
                     }
@@ -789,41 +890,38 @@ class WebSocketServer:
                         total_samples_sent += len(raw_data)
                         samples_since_last_log += len(raw_data)
                         
-                        # 타임스탬프 버퍼에 추가
                         for sample in raw_data:
-                            timestamp_buffer.append(sample["timestamp"])
-                        # 1분보다 오래된 타임스탬프 제거
+                            if isinstance(sample, dict) and "timestamp" in sample:
+                                timestamp_buffer.append(sample["timestamp"])
                         cutoff_time = current_time - WINDOW_SIZE
                         timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
-                        self._update_sampling_rate('ppg', raw_data)
+                        if raw_data and isinstance(raw_data, list) and len(raw_data) > 0 and isinstance(raw_data[0], dict):
+                            self._update_sampling_rate('ppg', raw_data)
                     except Exception as e:
-                        logger.error(f"Error broadcasting raw PPG data: {e}")
+                        logger.error(f"Error broadcasting raw PPG data: {e}", exc_info=True)
 
-                # Processed data 전송
                 if processed_data:
                     processed_message = {
                         "type": "processed_data",
                         "sensor_type": "ppg",
+                        "device_id": raw_device_id,
                         "timestamp": current_time,
                         "data": processed_data
                     }
                     try:
                         await self.broadcast(json.dumps(processed_message))
                     except Exception as e:
-                        logger.error(f"Error broadcasting processed PPG data: {e}")
+                        logger.error(f"Error broadcasting processed PPG data: {e}", exc_info=True)
 
-                # 로깅
                 if raw_data or processed_data:
                     last_data_time = current_time
-                    # 1초마다 스트리밍 상태 로깅
                     if current_time - last_log_time >= 1.0:
                         logger.info(f"[PPG] Samples/sec: {samples_since_last_log:4d} | "
                                   f"Total: {total_samples_sent:6d} | "
-                                  f"Raw Buffer: {len(raw_data):4d} | "
-                                  f"Processed Buffer: {len(processed_data):4d} samples")
+                                  f"Raw Buffer: {len(raw_data) if raw_data else 0:4d} | "
+                                  f"Processed Buffer: {len(processed_data) if processed_data else 0:4d} samples")
                         samples_since_last_log = 0
                         last_log_time = current_time
-                    # 5초마다 실제 샘플링 레이트 로깅
                     if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
                         if len(timestamp_buffer) > 1:
                             intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
@@ -832,10 +930,11 @@ class WebSocketServer:
                                 actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
                                 logger.info(f"[PPG] Actual sampling rate: {actual_rate:.2f} Hz "
                                           f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                self.device_sampling_stats['ppg']['samples_per_sec'] = actual_rate
+                                if isinstance(self.device_sampling_stats, dict) and 'ppg' in self.device_sampling_stats and isinstance(self.device_sampling_stats['ppg'], dict):
+                                    self.device_sampling_stats['ppg']['samples_per_sec'] = actual_rate
                         last_rate_log_time = current_time
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
-                    logger.warning("No PPG data received for too long")
+                    logger.warning("No PPG data received for too long, stopping PPG stream task.")
                     break
 
         except asyncio.CancelledError:
@@ -853,28 +952,67 @@ class WebSocketServer:
         total_samples_sent = 0
         last_log_time = time.time()
         samples_since_last_log = 0
-        # 샘플링 레이트 계산용
         timestamp_buffer = []
         WINDOW_SIZE = 60
         last_rate_log_time = time.time()
         RATE_LOG_INTERVAL = 5
+        
+        raw_device_id = "unknown_device"
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict):
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
 
         try:
             while self.is_streaming:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                # Raw data와 Processed data 모두 가져오기
                 raw_data = await self.device_manager.get_and_clear_acc_buffer()
                 processed_data = await self.device_manager.get_and_clear_processed_acc_buffer()
                 
                 current_time = time.time()
                 
-                # Raw data 전송
+                logger.info(f"[STREAM_ACC_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
+                if self.data_recorder:
+                    logger.info(f"[STREAM_ACC_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
+                raw_data_len = len(raw_data) if raw_data else 0
+                processed_data_len = len(processed_data) if processed_data else 0
+                logger.info(f"[STREAM_ACC_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+
+                if raw_data_len > 0:
+                    logger.debug(f"[STREAM_ACC_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
+                if processed_data_len > 0:
+                    logger.debug(f"[STREAM_ACC_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
+
+                if self.data_recorder and self.data_recorder.is_recording:
+                    logger.info(f"[STREAM_ACC_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                    if raw_data:
+                        for i, sample in enumerate(raw_data):
+                            if isinstance(sample, dict):
+                                self.data_recorder.add_data(
+                                    data_type=f"{device_id_for_filename}_acc_raw",
+                                    data=sample
+                                )
+                            else:
+                                logger.warning(f"Skipping non-dict ACC raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                    if processed_data:
+                        for i, sample in enumerate(processed_data):
+                            if isinstance(sample, dict):
+                                self.data_recorder.add_data(
+                                    data_type=f"{device_id_for_filename}_acc_processed",
+                                    data=sample
+                                )
+                            else:
+                                logger.warning(f"Skipping non-dict ACC processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                
                 if raw_data:
                     raw_message = {
                         "type": "raw_data",
                         "sensor_type": "acc",
+                        "device_id": raw_device_id,
                         "timestamp": current_time,
                         "data": raw_data
                     }
@@ -883,41 +1021,38 @@ class WebSocketServer:
                         total_samples_sent += len(raw_data)
                         samples_since_last_log += len(raw_data)
                         
-                        # 타임스탬프 버퍼에 추가
                         for sample in raw_data:
-                            timestamp_buffer.append(sample["timestamp"])
-                        # 1분보다 오래된 타임스탬프 제거
+                            if isinstance(sample, dict) and "timestamp" in sample:
+                                timestamp_buffer.append(sample["timestamp"])
                         cutoff_time = current_time - WINDOW_SIZE
                         timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
-                        self._update_sampling_rate('acc', raw_data)
+                        if raw_data and isinstance(raw_data, list) and len(raw_data) > 0 and isinstance(raw_data[0], dict):
+                            self._update_sampling_rate('acc', raw_data)
                     except Exception as e:
-                        logger.error(f"Error broadcasting raw ACC data: {e}")
+                        logger.error(f"Error broadcasting raw ACC data: {e}", exc_info=True)
 
-                # Processed data 전송
                 if processed_data:
                     processed_message = {
                         "type": "processed_data",
                         "sensor_type": "acc",
+                        "device_id": raw_device_id,
                         "timestamp": current_time,
                         "data": processed_data
                     }
                     try:
                         await self.broadcast(json.dumps(processed_message))
                     except Exception as e:
-                        logger.error(f"Error broadcasting processed ACC data: {e}")
+                        logger.error(f"Error broadcasting processed ACC data: {e}", exc_info=True)
 
-                # 로깅
                 if raw_data or processed_data:
                     last_data_time = current_time
-                    # 1초마다 스트리밍 상태 로깅
                     if current_time - last_log_time >= 1.0:
                         logger.info(f"[ACC] Samples/sec: {samples_since_last_log:4d} | "
                                   f"Total: {total_samples_sent:6d} | "
-                                  f"Raw Buffer: {len(raw_data):4d} | "
-                                  f"Processed Buffer: {len(processed_data):4d} samples")
+                                  f"Raw Buffer: {len(raw_data) if raw_data else 0:4d} | "
+                                  f"Processed Buffer: {len(processed_data) if processed_data else 0:4d} samples")
                         samples_since_last_log = 0
                         last_log_time = current_time
-                    # 5초마다 실제 샘플링 레이트 로깅
                     if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
                         if len(timestamp_buffer) > 1:
                             intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
@@ -926,10 +1061,11 @@ class WebSocketServer:
                                 actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
                                 logger.info(f"[ACC] Actual sampling rate: {actual_rate:.2f} Hz "
                                           f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                self.device_sampling_stats['acc']['samples_per_sec'] = actual_rate
+                                if isinstance(self.device_sampling_stats, dict) and 'acc' in self.device_sampling_stats and isinstance(self.device_sampling_stats['acc'], dict):
+                                    self.device_sampling_stats['acc']['samples_per_sec'] = actual_rate
                         last_rate_log_time = current_time
                 elif time.time() - last_data_time > NO_DATA_TIMEOUT:
-                    logger.warning("No ACC data received for too long")
+                    logger.warning("No ACC data received for too long, stopping ACC stream task.")
                     break
 
         except asyncio.CancelledError:
@@ -940,20 +1076,27 @@ class WebSocketServer:
             logger.info(f"ACC stream task finished. Total samples sent: {total_samples_sent}")
 
     async def stream_battery_data(self):
-        """Stream battery data independently."""
         logger.info("Battery stream task started.")
         SEND_INTERVAL = 0.1  # 100ms마다 체크 (10Hz)
+        NO_DATA_TIMEOUT = 10.0 
         last_data_time = time.time()
         total_samples_sent = 0
         last_log_time = time.time()
         samples_since_last_log = 0
-        last_battery_level = None
+        last_battery_level_reported = None 
         
-        # 타임스탬프 기반 샘플링 레이트 계산을 위한 변수들
-        timestamp_buffer = []  # 최근 1분간의 타임스탬프 저장
-        WINDOW_SIZE = 60  # 1분 윈도우
+        timestamp_buffer = [] 
+        WINDOW_SIZE = 60 
         last_rate_log_time = time.time()
-        RATE_LOG_INTERVAL = 5  # 5초마다 샘플링 레이트 로깅
+        RATE_LOG_INTERVAL = 5  
+        
+        raw_device_id = "unknown_device"
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict): 
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
 
         try:
             while self.is_streaming:
@@ -961,55 +1104,78 @@ class WebSocketServer:
                 if not self.is_streaming: break
 
                 current_time = time.time()
+                actual_battery_data_list = await self.device_manager.get_and_clear_battery_buffer() 
                 
-                # 배터리 버퍼에서 데이터 가져오기
-                battery_data = await self.device_manager.get_and_clear_battery_buffer()
+                logger.info(f"[STREAM_BAT_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
+                if self.data_recorder:
+                    logger.info(f"[STREAM_BAT_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
                 
-                # 배터리 데이터가 없고, 마지막 배터리 레벨이 있는 경우
-                if not battery_data and last_battery_level is not None:
-                    # 마지막 알려진 배터리 레벨로 데이터 생성
-                    battery_data = [{
-                        "timestamp": current_time,
-                        "level": last_battery_level
-                    }]
+                actual_battery_data_len = len(actual_battery_data_list) if actual_battery_data_list else 0
+                logger.info(f"[STREAM_BAT_DEBUG] Actual battery data len: {actual_battery_data_len}")
+                if actual_battery_data_len > 0 :
+                     logger.debug(f"[STREAM_BAT_DEBUG] First battery sample type: {type(actual_battery_data_list[0]) if actual_battery_data_len > 0 else 'N/A'}")
+
+                if self.data_recorder and self.data_recorder.is_recording:
+                    logger.info(f"[STREAM_BAT_DEBUG] REC_CONDITION_MET. Actual battery data len: {actual_battery_data_len}")
+                    if actual_battery_data_list: 
+                        for i, sample in enumerate(actual_battery_data_list): 
+                            if isinstance(sample, dict):
+                                self.data_recorder.add_data(
+                                    data_type=f"{device_id_for_filename}_bat", 
+                                    data=sample 
+                                )
+                                if 'level' in sample: # Update last reported level from actual data
+                                     last_battery_level_reported = sample['level']
+                            else:
+                                logger.warning(f"Skipping non-dict actual battery sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
                 
-                if battery_data:
+                # 브로드캐스트는 추정된 값이라도 할 수 있도록 기존 로직 유지 (단, 저장과는 별개)
+                display_battery_data = actual_battery_data_list
+                if not display_battery_data and last_battery_level_reported is not None:
+                     display_battery_data = [{"timestamp": current_time, "level": last_battery_level_reported, "source": "estimated"}]
+                
+                if display_battery_data: # display_battery_data 사용
                     last_data_time = current_time
-                    last_battery_level = battery_data[-1]['level']  # 마지막 배터리 레벨 저장
+                    if display_battery_data and isinstance(display_battery_data[-1], dict) and 'level' in display_battery_data[-1]:
+                        current_level_for_log = display_battery_data[-1]['level']
+                        if 'source' not in display_battery_data[-1] or display_battery_data[-1]['source'] != 'estimated':
+                             last_battery_level_reported = current_level_for_log # 실제 데이터일 때만 업데이트
+                    else:
+                        current_level_for_log = last_battery_level_reported # 이전 값 사용
+
                     
-                    # 타임스탬프 버퍼 업데이트
-                    for sample in battery_data:
-                        timestamp_buffer.append(sample['timestamp'])
+                    for sample in display_battery_data: # display_battery_data 사용
+                        if isinstance(sample, dict) and 'timestamp' in sample:
+                            timestamp_buffer.append(sample['timestamp'])
                     
-                    # 1분보다 오래된 타임스탬프 제거
                     cutoff_time = current_time - WINDOW_SIZE
                     timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
                     
                     message = {
                         "type": "sensor_data",
                         "sensor_type": "bat",
+                        "device_id": raw_device_id,
                         "timestamp": current_time,
-                        "data": battery_data
+                        "data": display_battery_data # display_battery_data 사용
                     }
-                    self._update_sampling_rate('bat', battery_data)
-                    self.battery_level = battery_data[-1]['level']
+                    
+                    if display_battery_data and isinstance(display_battery_data, list) and len(display_battery_data) > 0 and isinstance(display_battery_data[0], dict):
+                        self._update_sampling_rate('bat', display_battery_data) 
+                    
                     try:
                         await self.broadcast(json.dumps(message))
-                        total_samples_sent += len(battery_data)
-                        samples_since_last_log += len(battery_data)
+                        total_samples_sent += len(display_battery_data) # display_battery_data 사용
+                        samples_since_last_log += len(display_battery_data) # display_battery_data 사용
                         
-                        # 1초마다 스트리밍 상태 로깅
                         if current_time - last_log_time >= 1.0:
                             logger.info(f"[BAT] Updates/sec: {samples_since_last_log:4d} | "
                                       f"Total: {total_samples_sent:6d} | "
-                                      f"Level: {last_battery_level}%")
+                                      f"Level: {current_level_for_log if current_level_for_log is not None else 'N/A'}%")
                             samples_since_last_log = 0
                             last_log_time = current_time
                             
-                        # 5초마다 실제 샘플링 레이트 로깅
                         if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
                             if timestamp_buffer:
-                                # 타임스탬프 간격의 평균 계산
                                 intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] 
                                            for i in range(len(timestamp_buffer)-1)]
                                 if intervals:
@@ -1017,15 +1183,17 @@ class WebSocketServer:
                                     actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
                                     logger.info(f"[BAT] Actual sampling rate: {actual_rate:.2f} Hz "
                                               f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                    self.device_sampling_stats['bat']['samples_per_sec'] = actual_rate
-                                    self.device_sampling_stats['bat_level'] = last_battery_level
+                                    if isinstance(self.device_sampling_stats, dict) and 'bat' in self.device_sampling_stats and isinstance(self.device_sampling_stats['bat'], dict):
+                                        self.device_sampling_stats['bat']['samples_per_sec'] = actual_rate
+                                    if isinstance(self.device_sampling_stats, dict) and 'bat_level' in self.device_sampling_stats and current_level_for_log is not None:
+                                        self.device_sampling_stats['bat_level'] = current_level_for_log
                             last_rate_log_time = current_time
                             
                     except Exception as e:
-                        logger.error(f"Error broadcasting battery data: {e}")
-                else:
-                    # 배터리 데이터가 없는 경우 로그만 출력
-                    logger.debug("No new battery data available")
+                        logger.error(f"Error broadcasting battery data: {e}", exc_info=True)
+                elif time.time() - last_data_time > NO_DATA_TIMEOUT: # 배터리 데이터가 일정 시간 동안 없을 때
+                    logger.warning("No Battery data (real or estimated) for too long, stopping battery stream task.")
+                    break # 루프 종료
 
         except asyncio.CancelledError:
             logger.info("Battery stream task received cancellation.")
@@ -1288,19 +1456,6 @@ class WebSocketServer:
     async def handle_client_message(self, client_id: str, data: Dict[str, Any]):
         """Handle incoming messages from clients."""
         try:
-            # message_type = data.get('type')
-            # if not message_type:
-            #     logger.warning(f"Message from client {client_id} missing type")
-            #     return
-
-            # if message_type == 'command':
-            #     # await self.handle_command(client_id, data)
-            #     logger.info(f"Command message from client {client_id}: {data}")
-            # elif message_type == 'data':
-            #     # await self.handle_data(client_id, data)
-            #     logger.info(f"Data message from client {client_id}: {data}")
-            # else:
-            #     logger.warning(f"Unknown message type from client {client_id}: {message_type}")
             logger.info(f"Data message from client {data}")
         except Exception as e:
             logger.error(f"Error handling message from client {client_id}: {e}")
@@ -1407,12 +1562,26 @@ class WebSocketServer:
         if event_type in self.event_callbacks and callback in self.event_callbacks[event_type]:
             self.event_callbacks[event_type].remove(callback)
 
-    async def start(self, host: str = "localhost", port: int = 8000):
+    async def start(self):
         """Start the WebSocket server."""
-        import uvicorn
-        config = uvicorn.Config(self.app, host=host, port=port)
-        server = uvicorn.Server(config)
-        await server.serve()
+        if not self.server:
+            await self.initialize()
+        logger.info("WebSocket server started")
+
+    async def stop(self):
+        """Stop the WebSocket server."""
+        # Remove callback before stopping
+        self.device_manager.remove_processed_data_callback(self._handle_processed_data)
+        
+        # Cleanup connections
+        for client_id in list(self.connected_clients.keys()):
+            await self.handle_client_disconnect(client_id)
+        
+        # Stop stream engine
+        if hasattr(self, 'stream_engine'):
+            await self.stream_engine.stop()
+        
+        logger.info("WebSocket server stopped")
 
     async def _handle_processed_data(self, data_type: str, processed_data: dict):
         """Handle processed data from device manager"""

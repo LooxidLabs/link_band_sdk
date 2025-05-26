@@ -9,6 +9,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from enum import Enum, auto
 import time
 from app.core.signal_processing import SignalProcessor
+from app.core.device_registry import DeviceRegistry
 
 class Device:
     def __init__(self, address: str, name: str):
@@ -48,13 +49,12 @@ ACC_SAMPLE_RATE = 30
 TIMESTAMP_CLOCK = 32768.0  # 32.768 kHz 클럭 기반 타임스탬프
 
 class DeviceManager:
-    def __init__(self, server_disconnect_callback: Optional[Callable] = None):
-        # Logger 초기화
+    def __init__(self, registry: DeviceRegistry, server_disconnect_callback: Optional[Callable] = None):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         
-        # SignalProcessor 초기화
         self.signal_processor = SignalProcessor()
+        self.registry = registry
         
         self.devices: Dict[str, Device] = {}
         self.connection_callbacks: List[Callable] = []

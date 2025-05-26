@@ -1,8 +1,11 @@
 import type { FileInfo, ExportHistory } from './data-center';
 
 export interface ApiResponse<T> {
-  data: T;
-  status: number;
+  success: boolean;
+  data?: T; // Data is optional if success is false
+  error?: string; // Error message if success is false
+  // Keeping status and message for potential use with direct HTTP status codes if needed
+  status?: number;
   message?: string;
 }
 

@@ -204,7 +204,7 @@ class SignalProcessor:
         """Clear the specified buffer"""
         if data_type in self.buffers:
             self.buffers[data_type].clear()
-            logger.info(f"Cleared {data_type} buffer")
+            # logger.info(f"Cleared {data_type} buffer")
 
     async def process_eeg_data(self):
         """Process EEG data with bandpass filtering and power spectrum analysis"""
@@ -213,7 +213,7 @@ class SignalProcessor:
             if not self.should_process("eeg"):
                 return None
             
-            logger.info("Processing EEG data at scheduled interval")
+            # logger.info("Processing EEG data at scheduled interval")
             
             # Get data from buffer
             buffer_data = self.get_buffer_data("eeg")
@@ -223,7 +223,7 @@ class SignalProcessor:
                 logger.warning(f"Insufficient EEG data points: {len(buffer_data)} < 2000")
                 return None
             
-            logger.info(f"Processing {len(buffer_data)} EEG samples")
+            # logger.info(f"Processing {len(buffer_data)} EEG samples")
             
             # Extract data from buffer
             ch1_data = np.array([float(d.get('ch1', 0)) for d in buffer_data])
@@ -254,7 +254,7 @@ class SignalProcessor:
             ch2_quality_mask = ch2_sqi >= 0.7
             good_quality_samples = np.sum(ch1_quality_mask & ch2_quality_mask)
             
-            logger.info(f"EEG quality: {good_quality_samples}/{len(ch1_data)} good samples")
+            # logger.info(f"EEG quality: {good_quality_samples}/{len(ch1_data)} good samples")
             
             # Perform wavelet analysis on high-quality data
             ch1_power = []
@@ -357,7 +357,7 @@ class SignalProcessor:
                 'emotional_stability': float(emotional_stability)
             }
             
-            logger.info("EEG processing completed successfully")
+            # logger.info("EEG processing completed successfully")
             return result
             
         except Exception as e:
@@ -371,7 +371,7 @@ class SignalProcessor:
             if not self.should_process("ppg"):
                 return None
             
-            logger.info("Processing PPG data at scheduled interval")
+            # logger.info("Processing PPG data at scheduled interval")
             
             # Get data from buffer
             buffer_data = self.get_buffer_data("ppg")
@@ -381,7 +381,7 @@ class SignalProcessor:
                 logger.warning(f"Insufficient PPG data points: {len(buffer_data)} < 3000")
                 return None
             
-            logger.info(f"Processing {len(buffer_data)} PPG samples")
+            # logger.info(f"Processing {len(buffer_data)} PPG samples")
             
             # Extract data from buffer
             red_data = np.array([float(d.get('red', 0)) for d in buffer_data])
@@ -495,7 +495,7 @@ class SignalProcessor:
                             if k not in ['filtered_ppg', 'ppg_sqi']:
                                 result[k] = self.last_good_ppg_result.get(k, result[k])
                 
-                logger.info("PPG processing completed successfully")
+                # logger.info("PPG processing completed successfully")
                 return result
                 
             except Exception as e:
@@ -521,7 +521,7 @@ class SignalProcessor:
                 logger.warning(f"Insufficient ACC data points: {len(buffer_data)} < 30")
                 return None
             
-            logger.info(f"Processing {len(buffer_data)} ACC samples")
+            # logger.info(f"Processing {len(buffer_data)} ACC samples")
             
             # Extract data from buffer
             x_data = np.array([float(d.get('x', 0)) for d in buffer_data])
@@ -571,7 +571,7 @@ class SignalProcessor:
                 'z_change_mean': float(np.mean(z_change))
             }
             
-            logger.info("ACC processing completed successfully")
+            # logger.info("ACC processing completed successfully")
             return result
 
         except Exception as e:
@@ -589,7 +589,7 @@ class SignalProcessor:
             if not self.should_process("bat"):
                 return None
             
-            logger.info("Processing battery data at scheduled interval")
+            # logger.info("Processing battery data at scheduled interval")
             
             # Get data from buffer
             buffer_data = self.get_buffer_data("bat")
