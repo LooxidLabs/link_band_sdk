@@ -1,0 +1,79 @@
+{
+  "session_name": "session_20250526_094142",
+  "start_time": "2025-05-26T09:41:42.920125",
+  "files": [
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "path": "data/session_20250526_094142/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "size": 961042,
+      "record_count": 6250,
+      "created_at": "2025-05-26T09:42:08.065134"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "path": "data/session_20250526_094142/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "size": 1089233,
+      "record_count": 45,
+      "created_at": "2025-05-26T09:42:08.091790"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "path": "data/session_20250526_094142/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "size": 92955,
+      "record_count": 1232,
+      "created_at": "2025-05-26T09:42:08.094812"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "path": "data/session_20250526_094142/015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "size": 57343,
+      "record_count": 630,
+      "created_at": "2025-05-26T09:42:08.096511"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "path": "data/session_20250526_094142/015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "size": 123698,
+      "record_count": 21,
+      "created_at": "2025-05-26T09:42:08.099319"
+    }
+  ],
+  "status": "stopped",
+  "end_time": "2025-05-26T09:42:08.036018",
+  "stats": {
+    "total_files": 5,
+    "type_details": {
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+        "record_count": 6250,
+        "size_bytes": 961042
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+        "record_count": 45,
+        "size_bytes": 1089233
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+        "record_count": 1232,
+        "size_bytes": 92955
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+        "record_count": 630,
+        "size_bytes": 57343
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+        "record_count": 21,
+        "size_bytes": 123698
+      }
+    },
+    "total_records": 8178
+  }
+}

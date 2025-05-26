@@ -26,7 +26,7 @@ export const FileList: React.FC<FileListProps> = ({
       title: '파일명',
       dataIndex: 'filename',
       key: 'filename',
-      render: (text: string, record: FileInfo) => (
+      render: (text: string) => (
         <Space>
           <FileOutlined />
           <span>{text}</span>

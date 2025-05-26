@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Form, DatePicker, Select, Progress, message, Button } from 'antd';
-import type { RangePickerProps } from 'antd/es/date-picker';
 import type { ExportParams } from '../../types/data-center';
 import styles from './DataCenter.module.css';
 

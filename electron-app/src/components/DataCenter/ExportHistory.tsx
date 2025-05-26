@@ -2,7 +2,6 @@ import React from 'react';
 import { Table, Button, Space } from 'antd';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import type { ExportHistory as ExportHistoryType } from '../../types/data-center';
-import { openFolder } from '../../api/dataCenter';
 import styles from './DataCenter.module.css';
 
 interface ExportHistoryProps {
@@ -16,7 +15,11 @@ export const ExportHistory: React.FC<ExportHistoryProps> = ({
 }) => {
   const handleOpenFolder = async (path: string) => {
     try {
-      await openFolder(path);
+      if ((window as any).electron && (window as any).electron.shell && (window as any).electron.shell.openPath) {
+        await (window as any).electron.shell.openPath(path);
+      } else {
+        console.error('Electron shell.openPath API not available.');
+      }
     } catch (error) {
       console.error('Failed to open folder:', error);
     }

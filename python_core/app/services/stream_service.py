@@ -1,12 +1,13 @@
 from typing import Dict, Any
 from app.core.stream_engine import StreamEngine
+from app.core.server import WebSocketServer
 
 class StreamService:
-    def __init__(self):
-        self._engine = StreamEngine()
+    def __init__(self, ws_server: WebSocketServer):
+        self._engine = StreamEngine(ws_server_instance=ws_server)
     
     async def init_stream(self, host: str = "localhost", port: int = 18765) -> bool:
-        """Initialize the streaming server"""
+        """Initialize the streaming engine (server is managed externally)."""
         return await self._engine.init_stream(host, port)
     
     async def start_stream(self) -> bool:

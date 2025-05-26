@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Card, Typography } from '@mui/material';
+import { Card } from '@mui/material';
 import * as echarts from 'echarts';
 import { useSensorStore } from '../stores/sensor';
 
@@ -8,14 +8,24 @@ const ACCGraph: React.FC = () => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  const data = useMemo(() => {
-    if (!acc?.x_change || !acc?.y_change || !acc?.z_change) return { x: [], y: [], z: [] };
+  // Calculate magnitude: sqrt(x^2 + y^2 + z^2)
+  const magnitudeData = useMemo(() => {
+    if (!acc?.x_change || !acc?.y_change || !acc?.z_change) return [];
     
-    return {
-      x: acc.x_change,
-      y: acc.y_change,
-      z: acc.z_change,
-    };
+    const xData = acc.x_change;
+    const yData = acc.y_change;
+    const zData = acc.z_change;
+    
+    // Ensure all arrays have the same length to avoid errors
+    const minLength = Math.min(xData.length, yData.length, zData.length);
+    const magnitudes = [];
+    for (let i = 0; i < minLength; i++) {
+      const x = xData[i] || 0; // Default to 0 if undefined (should not happen with minLength)
+      const y = yData[i] || 0;
+      const z = zData[i] || 0;
+      magnitudes.push(Math.sqrt(x*x + y*y + z*z));
+    }
+    return magnitudes;
   }, [acc]);
 
   useEffect(() => {
@@ -43,26 +53,28 @@ const ACCGraph: React.FC = () => {
       xAxis: {
         type: 'category',
         show: false,
-        boundaryGap: false
+        data: magnitudeData.map((_, index) => index) // Generate category data for x-axis
       },
       yAxis: {
         type: 'value',
-        name: 'Acceleration',
-        min: -2000,
-        max: 2000,
+        max: 5000,
+        name: 'Acceleration Magnitude', // Updated Y-axis name
+        min: 0, // Magnitude is always non-negative
+        // max: 3500, // Optional: Adjust max based on expected magnitude range or let ECharts auto-scale
         axisLine: {
           lineStyle: {
             color: 'rgba(255, 255, 255, 0.3)'
           }
         },
         axisLabel: {
-          color: 'rgba(255, 255, 255, 0.7)'
+          color: 'rgba(255, 255, 255, 0.7)',
+          show: false
         },
         nameTextStyle: {
           color: 'rgba(255, 255, 255, 0.7)'
         },
         splitLine: {
-          show: true,
+          show: false,
           lineStyle: {
             color: 'rgba(255, 255, 255, 0.1)'
           }
@@ -70,55 +82,29 @@ const ACCGraph: React.FC = () => {
       },
       series: [
         {
-          name: 'X-axis',
-          type: 'line',
-          data: data.x,
-          showSymbol: false,
-          lineStyle: {
-            width: 1,
-            color: '#ff0000'
-          }
-        },
-        {
-          name: 'Y-axis',
-          type: 'line',
-          data: data.y,
-          showSymbol: false,
-          lineStyle: {
-            width: 1,
-            color: '#00ff00'
-          }
-        },
-        {
-          name: 'Z-axis',
-          type: 'line',
-          data: data.z,
-          showSymbol: false,
-          lineStyle: {
-            width: 1,
-            color: '#0000ff'
-          }
+          name: 'Magnitude', // Updated series name
+          type: 'bar', // Changed to bar chart
+          data: magnitudeData,
+          itemStyle: { // Style for bars
+            color: '#5470C6' // Example bar color, can be customized
+          },
+          barWidth: '60%' // Adjust bar width as needed
         }
       ],
       title: {
-        text: 'Accelerometer Data',
+        text: 'Accelerometer Magnitude', // Updated title
         textStyle: {
           color: 'rgba(255, 255, 255, 0.7)'
         },
         left: 'center'
       },
       legend: {
-        data: ['X-axis', 'Y-axis', 'Z-axis'],
-        textStyle: {
-          color: 'rgba(255, 255, 255, 0.7)'
-        },
-        left: '80%',
-        top: 5
+        show: false // Hide legend as there is only one series now
       }
     };
 
     chartInstance.current.setOption(option);
-  }, [data]);
+  }, [magnitudeData]); // Changed dependency to magnitudeData
 
   useEffect(() => {
     const handleResize = () => {

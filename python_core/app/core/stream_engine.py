@@ -5,7 +5,6 @@ import json
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
-from app.core.ws_singleton import ws_server
 from app.core.server import WebSocketServer
 from app.core.signal_processing import SignalProcessor
 from app.core.event_types import EventType
@@ -34,15 +33,19 @@ class StreamStats:
 class StreamEngine:
     """Singleton class for managing streaming functionality."""
     _instance = None
-    _initialized = False
+    _initialized_engines = {}
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(StreamEngine, cls).__new__(cls)
-        return cls._instance
+    def __new__(cls, ws_server_instance: WebSocketServer):
+        if ws_server_instance not in cls._initialized_engines:
+            instance = super(StreamEngine, cls).__new__(cls)
+            instance.ws_server = ws_server_instance
+            instance._initialized_internally = False
+            cls._initialized_engines[ws_server_instance] = instance
+            return instance
+        return cls._initialized_engines[ws_server_instance]
 
-    def __init__(self):
-        if StreamEngine._initialized:
+    def __init__(self, ws_server_instance: WebSocketServer):
+        if hasattr(self, '_initialized_internally') and self._initialized_internally:
             return
 
         self.status = StreamStatus.STOPPED
@@ -50,36 +53,30 @@ class StreamEngine:
         self.connected_clients: Dict[str, Any] = {}
         self.data_callbacks: List[callable] = []
         self._update_task: Optional[asyncio.Task] = None
-        self.signal_processor = SignalProcessor()  # Initialize signal processor
-        StreamEngine._initialized = True
+        self.signal_processor = SignalProcessor()
+        self._initialized_internally = True
 
     async def init_stream(self, host: str = "localhost", port: int = 18765) -> bool:
-        """Initialize the streaming server"""
-        return await ws_server.initialize()
+        logger.info("StreamEngine.init_stream called. WebSocketServer is managed externally.")
+        return True
     
     async def start_stream(self) -> bool:
-        """Start streaming"""
-        return await ws_server.start_streaming()
+        return await self.ws_server.start_streaming()
     
     async def stop_stream(self) -> bool:
-        """Stop streaming"""
-        return await ws_server.stop_streaming()
+        return await self.ws_server.stop_streaming()
     
     async def health_check(self) -> Dict[str, Any]:
-        """Check streaming server health"""
-        return ws_server.health_check()
+        return self.ws_server.health_check()
     
     def get_stream_status(self) -> Dict[str, Any]:
-        """Get streaming status and statistics"""
-        return ws_server.get_stream_status()
+        return self.ws_server.get_stream_status()
     
     def get_connection_info(self) -> Dict[str, Any]:
-        """Get WebSocket server connection information"""
-        return ws_server.get_connection_info()
+        return self.ws_server.get_connection_info()
     
     def get_device_info(self) -> Dict[str, Any]:
-        """Get current device information"""
-        return ws_server.get_device_info()
+        return self.ws_server.get_device_info()
 
     async def start(self):
         """Start the streaming engine."""
@@ -152,20 +149,14 @@ class StreamEngine:
     async def broadcast_data(self, data: Dict[str, Any]):
         """Broadcast data to all connected clients."""
         if not self.connected_clients:
+            logger.warning("StreamEngine: No connected clients to broadcast data to.")
             return
 
-        disconnected_clients = []
-        for client_id, client_info in self.connected_clients.items():
-            try:
-                await client_info['websocket'].send_json(data)
-                client_info['last_activity'] = time.time()
-            except Exception as e:
-                logger.error(f"Error broadcasting to client {client_id}: {e}")
-                disconnected_clients.append(client_id)
-
-        # Remove disconnected clients
-        for client_id in disconnected_clients:
-            self.remove_client(client_id)
+        try:
+            await self.ws_server.broadcast(json.dumps(data))
+            logger.info(f"StreamEngine broadcasted data via ws_server: {data.get('type')}")
+        except Exception as e:
+            logger.error(f"Error in StreamEngine broadcasting data via ws_server: {e}")
 
     def update_stats(self, eeg: int = 0, ppg: int = 0, acc: int = 0, bat: int = 0, bat_level: Optional[int] = None):
         """Update streaming statistics."""
@@ -180,25 +171,23 @@ class StreamEngine:
         """Periodically update and broadcast statistics."""
         while True:
             try:
-                # Calculate rates
                 elapsed = time.time() - self.stats.start_time
-                if elapsed > 0:
+                if elapsed > 0 and self.status == StreamStatus.RUNNING:
                     eeg_rate = self.stats.eeg_samples / elapsed
                     ppg_rate = self.stats.ppg_samples / elapsed
                     acc_rate = self.stats.acc_samples / elapsed
                     bat_rate = self.stats.bat_samples / elapsed
 
                     stats_data = {
-                        'type': 'stats',
+                        'type': 'engine_stats',
                         'timestamp': time.time(),
                         'eeg_rate': round(eeg_rate, 2),
                         'ppg_rate': round(ppg_rate, 2),
                         'acc_rate': round(acc_rate, 2),
                         'bat_rate': round(bat_rate, 2),
                         'bat_level': self.stats.bat_level,
-                        'connected_clients': len(self.connected_clients)
+                        'engine_connected_clients': len(self.connected_clients)
                     }
-
                     await self.broadcast_data(stats_data)
             except Exception as e:
                 logger.error(f"Error updating stats: {e}")
@@ -227,18 +216,14 @@ class StreamEngine:
                 logger.warning(f"No processed data to send for {data_type}")
                 return
 
-            # Create message with processed data
             message = {
                 'type': 'processed_data',
                 'sensor_type': data_type,
                 'data': processed_data
             }
-
-            logger.info(f"Attempting to broadcast {data_type} data")
-            
-            # Broadcast through ws_server
-            await ws_server.broadcast(json.dumps(message))
-            logger.info(f"Successfully broadcast {data_type} data through ws_server")
+            logger.info(f"Attempting to broadcast {data_type} data via StreamEngine's ws_server")
+            await self.ws_server.broadcast(json.dumps(message))
+            logger.info(f"Successfully broadcast {data_type} data through StreamEngine's ws_server")
 
         except Exception as e:
             logger.error(f"Error sending processed {data_type} data: {e}", exc_info=True)

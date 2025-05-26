@@ -41,6 +41,8 @@ const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const child_process_1 = require("child_process");
 const electron_store_1 = __importDefault(require("electron-store"));
+const axios_1 = __importDefault(require("axios"));
+const fs_extra_1 = __importDefault(require("fs-extra"));
 let win = null;
 let tray = null;
 let quitting = false;
@@ -51,6 +53,9 @@ const store = new electron_store_1.default({
         savedCredentials: null
     }
 });
+// Define the backend API base URL (replace with your actual URL if different)
+// It's good practice to get this from an environment variable or config
+const API_BASE_URL = process.env.VITE_LINK_ENGINE_SERVER_URL || 'http://localhost:8121';
 function showWindow() {
     if (win && !win.isVisible()) {
         win.show();
@@ -63,24 +68,16 @@ function createWindow() {
         height: 800,
         title: 'LINK BAND SDK',
         webPreferences: {
-            nodeIntegration: true,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js')
         },
     });
-    if (process.env.NODE_ENV === 'development') {
-        win.loadURL('http://http://dev.linkcloud.co');
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    console.log('Loading application from:', indexPath);
+    win.loadFile(indexPath);
+    if (process.env.NODE_ENV === 'development' || true) {
         win.webContents.openDevTools();
     }
-    else {
-        // 수정된 경로: dist 폴더의 index.html
-        const indexPath = path.join(__dirname, '../dist/index.html');
-        console.log('Loading index from:', indexPath);
-        win.loadFile(indexPath);
-        // 프로덕션 환경에서도 디버깅을 위해 개발자 도구 활성화
-        win.webContents.openDevTools();
-    }
-    // 창을 닫아도 종료하지 않고 숨김 처리
     win.on('close', (event) => {
         if (quitting) {
             win = null;
@@ -90,9 +87,8 @@ function createWindow() {
             win?.hide();
         }
     });
-    // IPC 이벤트 리스너 등록
     electron_1.ipcMain.on('show-window', () => {
-        console.log('Received show-window event'); // 디버깅용 로그 추가
+        console.log('Received show-window event');
         showWindow();
     });
 }
@@ -104,7 +100,6 @@ function createTray() {
     else {
         iconPath = path.join(__dirname, 'trayIcon.png');
     }
-    // 아이콘 파일이 없으면 기본 아이콘 생성
     if (!fs.existsSync(iconPath)) {
         console.warn('Tray icon not found at:', iconPath, 'Using default icon');
         const defaultIcon = electron_1.nativeImage.createEmpty();
@@ -116,7 +111,6 @@ function createTray() {
     }
     else {
         const trayIcon = electron_1.nativeImage.createFromPath(iconPath);
-        // macOS에서는 템플릿 이미지 사용
         if (process.platform === 'darwin') {
             trayIcon.setTemplateImage(true);
         }
@@ -149,7 +143,6 @@ function createTray() {
         },
     ]);
     tray.setContextMenu(contextMenu);
-    // macOS에서는 더블클릭으로 윈도우 표시/숨김
     if (process.platform === 'darwin') {
         tray.on('double-click', () => {
             if (win) {
@@ -164,7 +157,6 @@ function createTray() {
         });
     }
     else {
-        // 다른 플랫폼에서는 싱글 클릭으로 처리
         tray.on('click', () => {
             if (win) {
                 if (win.isVisible()) {
@@ -191,9 +183,7 @@ function startPythonServer() {
     pythonProcess.stdout?.on('data', (data) => {
         const output = data.toString();
         console.log('Python server output:', output);
-        // Python 서버 로그를 renderer로 전달
         win?.webContents.send('python-log', output);
-        // WebSocket 서버가 초기화되면 renderer에 알림
         if (output.includes('WebSocket server initialized')) {
             console.log('Python server is ready');
             win?.webContents.send('python-server-ready');
@@ -201,8 +191,6 @@ function startPythonServer() {
     });
     pythonProcess.stderr?.on('data', (data) => {
         const error = data.toString();
-        // console.error('Python server error:', error);
-        // 에러 로그도 renderer로 전달
         win?.webContents.send('python-log', `ERROR: ${error}`);
     });
     pythonProcess.on('close', (code) => {
@@ -217,14 +205,12 @@ function stopPythonServer() {
         pythonProcess = null;
     }
 }
-// macOS에서 open-url 이벤트 핸들러
 electron_1.app.on('open-url', (event, url) => {
-    event.preventDefault(); // 기본 동작 방지
+    event.preventDefault();
     try {
         const parsedUrl = new URL(url);
         if (parsedUrl.hostname === 'auth' && parsedUrl.searchParams.has('token')) {
             const token = parsedUrl.searchParams.get('token');
-            // 렌더러 프로세스에 토큰 전달
             if (win && win.webContents) {
                 console.log('Sending token to renderer:', token);
                 win.webContents.send('custom-token-received', token);
@@ -235,22 +221,17 @@ electron_1.app.on('open-url', (event, url) => {
         console.error('Failed to parse custom URL or extract token:', e);
     }
 });
-// Windows/Linux에서 이미 앱 인스턴스가 실행 중일 때 두 번째 인스턴스로 URL 전달 처리
-// app.requestSingleInstanceLock() 호출이 필요합니다.
 const gotTheLock = electron_1.app.requestSingleInstanceLock();
 if (!gotTheLock) {
     electron_1.app.quit();
 }
 else {
     electron_1.app.on('second-instance', (event, commandLine, workingDirectory) => {
-        // commandLine 배열에서 URL을 찾습니다.
-        // 사용자가 두 번째 인스턴스를 시작하려고 할 때 mainWindow가 존재하면 포커스합니다.
         if (win) {
             if (win.isMinimized())
                 win.restore();
             win.focus();
         }
-        // commandLine은 일반적으로 [electron 실행 파일 경로, 현재 디렉토리, 전달된 URL] 형태입니다.
         const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL_SCHEME}://`));
         if (url) {
             handleCustomUrl(url);
@@ -266,7 +247,6 @@ function handleCustomUrl(url) {
             if (token) {
                 console.log('Extracted token:', token);
                 if (win && win.webContents) {
-                    // mainWindow가 로드된 후 토큰을 보내도록 보장
                     if (win.webContents.isLoading()) {
                         win.webContents.once('did-finish-load', () => {
                             win?.webContents.send('custom-token-received', token);
@@ -278,7 +258,6 @@ function handleCustomUrl(url) {
                 }
                 else {
                     console.error('mainWindow is not available to send token.');
-                    // TODO: mainWindow가 없을 때 토큰을 임시 저장했다가 나중에 보내는 로직 고려
                 }
             }
         }
@@ -287,10 +266,21 @@ function handleCustomUrl(url) {
         console.error('Failed to parse custom URL or extract token:', e);
     }
 }
-// 서비스 시작 시 Python 서버 실행 (예: 앱 시작 시 자동 실행)
 electron_1.app.whenReady().then(() => {
-    // 프로토콜 클라이언트 등록 (앱이 패키징된 후 macOS에서 처음 실행 시에만 효과가 있을 수 있음)
-    // 개발 중에는 Info.plist 수동 설정 또는 재시작이 필요할 수 있음
+    electron_1.session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Content-Security-Policy': [
+                    "default-src 'self'; " +
+                        "script-src 'self'; " +
+                        "style-src 'self' 'unsafe-inline'; " +
+                        "connect-src 'self' http://localhost:8121 ws://localhost:18765; " +
+                        "img-src 'self' data:;"
+                ]
+            }
+        });
+    });
     if (process.defaultApp) {
         if (process.argv.length >= 2) {
             electron_1.app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
@@ -304,7 +294,6 @@ electron_1.app.whenReady().then(() => {
     if (!win) {
         createWindow();
     }
-    // 앱 시작 시 Python 서버 실행
     startPythonServer();
 });
 electron_1.app.on('window-all-closed', () => {
@@ -317,9 +306,7 @@ electron_1.app.on('activate', () => {
         createWindow();
     }
 });
-// 웹 로그인 페이지를 여는 IPC 핸들러 (렌더러에서 요청 시)
 electron_1.ipcMain.on('open-web-login', () => {
-    // shell.openExternal('http://localhost:5173/login?from=electron');
     const loginWin = new electron_1.BrowserWindow({
         width: 600,
         height: 800,
@@ -330,7 +317,6 @@ electron_1.ipcMain.on('open-web-login', () => {
         },
     });
     loginWin.loadURL('http://dev.linkcloud.co/login?from=electron');
-    // URL 변경 감지
     loginWin.webContents.on('will-navigate', (event, url) => {
         if (url.startsWith('linkbandapp://')) {
             event.preventDefault();
@@ -350,13 +336,9 @@ electron_1.ipcMain.on('open-web-login', () => {
         }
     });
 });
-// Python 서버 종료 IPC 핸들러
 electron_1.ipcMain.on('stop-python-server', () => {
     stopPythonServer();
 });
-// 개발자 도구에서 로그 확인을 위해 ipcMain 이벤트도 추가 가능
-// win.webContents.on('ipc-message', (event, channel, ...args) => { ... });
-// Handle store operations
 electron_1.ipcMain.handle('get-saved-credentials', () => {
     return store.get('savedCredentials');
 });
@@ -367,4 +349,155 @@ electron_1.ipcMain.handle('set-saved-credentials', (_, credentials) => {
 electron_1.ipcMain.handle('clear-saved-credentials', () => {
     store.delete('savedCredentials');
     return true;
+});
+async function getSessionDataPath(sessionId) {
+    try {
+        const response = await axios_1.default.get(`${API_BASE_URL}/data/sessions/${sessionId}`);
+        if (response.data && typeof response.data.data_path === 'string') {
+            return response.data.data_path;
+        }
+        console.error('Failed to get data_path from session response or data_path is not a string:', response.data);
+        return null;
+    }
+    catch (error) {
+        console.error(`Error fetching session data for ${sessionId}:`, error);
+        return null;
+    }
+}
+electron_1.ipcMain.handle('open-session-folder', async (event, sessionId) => {
+    if (!sessionId) {
+        return { success: false, message: 'Session ID is required.' };
+    }
+    console.log(`[IPC] Received open-session-folder request for session ID: ${sessionId}`);
+    const sessionRelativePathFromBackend = await getSessionDataPath(sessionId);
+    if (sessionRelativePathFromBackend && typeof sessionRelativePathFromBackend === 'string') {
+        const projectRoot = path.resolve(__dirname, '../../');
+        // 백엔드가 "data/session_XYZ" 형태로 반환한다고 가정합니다.
+        // 만약 백엔드가 "session_XYZ" (data/ 접두사 없이)만 반환한다면,
+        // 아래 줄은 path.join(projectRoot, 'python_core', 'data', sessionRelativePathFromBackend)가 되어야 합니다.
+        const absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+        console.log(`[IPC] Backend session relative path: ${sessionRelativePathFromBackend}`);
+        console.log(`[IPC] Assumed project root: ${projectRoot}`);
+        console.log(`[IPC] Attempting to open absolute path: ${absoluteDataPath}`);
+        try {
+            if (await fs_extra_1.default.pathExists(absoluteDataPath)) {
+                await electron_1.shell.openPath(absoluteDataPath);
+                console.log(`[IPC] Successfully opened folder: ${absoluteDataPath}`);
+                return { success: true, message: `Folder ${absoluteDataPath} opened.` };
+            }
+            else {
+                console.error(`[IPC] Data path does not exist: ${absoluteDataPath}`);
+                return { success: false, message: `Data path not found: ${absoluteDataPath}` };
+            }
+        }
+        catch (error) {
+            console.error(`[IPC] Error opening folder ${absoluteDataPath}: `, error);
+            return { success: false, message: `Failed to open folder: ${error.message}` };
+        }
+    }
+    else {
+        const errorMessage = `Could not retrieve or validate data path for session ${sessionId}. Path from backend: ${sessionRelativePathFromBackend}`;
+        console.error(`[IPC] ${errorMessage}`);
+        return { success: false, message: errorMessage };
+    }
+});
+electron_1.ipcMain.handle('export-session', async (event, sessionId) => {
+    if (!sessionId) {
+        return { success: false, message: 'Session ID is required.' };
+    }
+    const sessionName = sessionId;
+    console.log(`Received export-session request for session name: ${sessionName}`);
+    try {
+        const prepareExportUrl = `${API_BASE_URL}/data/sessions/${sessionName}/prepare-export`;
+        console.log(`Calling backend to prepare export: ${prepareExportUrl}`);
+        const prepareResponse = await axios_1.default.post(prepareExportUrl);
+        if (prepareResponse.data && prepareResponse.data.status === 'success') {
+            const { zip_filename: zipFilename, download_url: downloadUrlPath } = prepareResponse.data;
+            if (!zipFilename || !downloadUrlPath) {
+                console.error('Backend did not return zip_filename or download_url:', prepareResponse.data);
+                return { success: false, message: 'Failed to get export details from server.' };
+            }
+            const defaultSavePath = path.join(electron_1.app.getPath('downloads'), zipFilename);
+            const currentWindow = electron_1.BrowserWindow.getFocusedWindow() || win;
+            if (!currentWindow) {
+                console.error('No focused window available for save dialog.');
+                return { success: false, message: 'No active window to show save dialog.' };
+            }
+            const { filePath } = await electron_1.dialog.showSaveDialog(currentWindow, {
+                title: 'Export Session Data',
+                defaultPath: defaultSavePath,
+                filters: [{ name: 'Zip Files', extensions: ['zip'] }],
+            });
+            if (filePath) {
+                const fullDownloadUrl = `${API_BASE_URL}${downloadUrlPath}`;
+                console.log(`User selected path: ${filePath}. Downloading from ${fullDownloadUrl}`);
+                const writer = fs_extra_1.default.createWriteStream(filePath);
+                const response = await (0, axios_1.default)({
+                    method: 'get',
+                    url: fullDownloadUrl,
+                    responseType: 'stream',
+                });
+                const readableStream = response.data;
+                readableStream.pipe(writer);
+                return new Promise((resolve, reject) => {
+                    writer.on('finish', () => {
+                        console.log(`Session ${sessionName} exported to ${filePath}`);
+                        resolve({ success: true, message: `Session exported to ${filePath}`, exportPath: filePath });
+                    });
+                    writer.on('error', (err) => {
+                        console.error(`Error writing downloaded zip file ${filePath}:`, err);
+                        fs_extra_1.default.unlink(filePath).catch(e => console.error('Failed to delete partial file during cleanup:', e));
+                        reject({ success: false, message: `Failed to save exported session: ${err.message}` });
+                    });
+                    readableStream.on('error', (err) => {
+                        console.error(`Error downloading file stream from ${fullDownloadUrl}:`, err);
+                        writer.close();
+                        fs_extra_1.default.unlink(filePath).catch(e => console.error('Failed to delete partial file during stream error cleanup:', e));
+                        reject({ success: false, message: `Failed to download session data: ${err.message}` });
+                    });
+                });
+            }
+            else {
+                console.log('Export cancelled by user.');
+                return { success: false, message: 'Export cancelled by user.' };
+            }
+        }
+        else {
+            console.error('Backend failed to prepare export:', prepareResponse.data);
+            const errorMessage = prepareResponse.data?.message || 'Server failed to prepare export.';
+            return { success: false, message: errorMessage };
+        }
+    }
+    catch (error) {
+        console.error(`Error exporting session ${sessionName}:`, error.response?.data || error.message);
+        let detailMessage = 'Unknown error during export.';
+        if (error.response && error.response.data && error.response.data.detail) {
+            detailMessage = error.response.data.detail;
+        }
+        else if (error.message) {
+            detailMessage = error.message;
+        }
+        return { success: false, message: `Failed to export session: ${detailMessage}` };
+    }
+});
+electron_1.ipcMain.handle('open-specific-file', async (event, filePath) => {
+    if (!filePath || typeof filePath !== 'string') {
+        console.error('Invalid file path received for open-specific-file:', filePath);
+        return { success: false, message: 'Valid file path is required.' };
+    }
+    try {
+        if (await fs_extra_1.default.pathExists(filePath)) {
+            await electron_1.shell.openPath(filePath);
+            console.log(`Successfully opened: ${filePath}`);
+            return { success: true, message: `Path ${filePath} opened.` };
+        }
+        else {
+            console.error(`Path does not exist: ${filePath}`);
+            return { success: false, message: `Path not found: ${filePath}` };
+        }
+    }
+    catch (error) {
+        console.error(`Error opening path ${filePath}: `, error);
+        return { success: false, message: `Failed to open path: ${error.message}` };
+    }
 });

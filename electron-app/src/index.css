@@ -1,5 +1,5 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* font-family: system-ui, Avenir, Helvetica, Arial, sans-serif; */ /* Removed to allow MUI theme to control font */
   line-height: 1.5;
   font-weight: 400;
 
@@ -24,10 +24,11 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  /* display: flex; */ /* Potentially problematic for full-page app layout */
+  /* place-items: center; */ /* Potentially problematic for full-page app layout */
   min-width: 320px;
   min-height: 100vh;
+  /* Ensure body takes up full height and MUI can control layout */
 }
 
 h1 {
@@ -41,7 +42,7 @@ button {
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
-  font-family: inherit;
+  font-family: inherit; /* This will inherit from body/:root or MUI theme */
   background-color: #1a1a1a;
   cursor: pointer;
   transition: border-color 0.25s;
