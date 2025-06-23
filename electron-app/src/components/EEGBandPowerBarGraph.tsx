@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Card } from '@mui/material';
+import { Card } from './ui/card';
 import * as echarts from 'echarts';
 
 interface BandPowers {
@@ -39,6 +39,7 @@ const EEGBandPowerBarGraph: React.FC<EEGBandPowerBarGraphProps> = ({ channel, ba
     const bands = ['delta', 'theta', 'alpha', 'beta', 'gamma'];
     const values = bands.map(b => bandPowers[b as keyof BandPowers] || 0);
     const option = {
+      backgroundColor: '#161822',
       animation: false,
       grid: { top: 20, right: 20, bottom: 10, left: 30, containLabel: true },
       xAxis: {
@@ -81,7 +82,7 @@ const EEGBandPowerBarGraph: React.FC<EEGBandPowerBarGraphProps> = ({ channel, ba
   }, [bandPowers, channel]);
 
   return (
-    <Card sx={{ p: 1, height: '190px', width: '100%' }}>
+    <Card className="bg-card p-2 h-[190px] w-full">
       <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
     </Card>
   );

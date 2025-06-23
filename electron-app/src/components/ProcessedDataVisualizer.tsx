@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Card, Typography, Box, ToggleButton } from '@mui/material';
+import { Card, CardContent } from './ui/card';
+import { Button } from './ui/button';
 import { useSensorStore } from '../stores/sensor';
 import EEGPreprocessedGraph from './EEGPreprocessedGraph';
 import EEGPSDGraph from './EEGPSDGraph';
@@ -8,16 +9,18 @@ import ACCGraph from './ACCGraph';
 import EEGBandPowerBarGraph from './EEGBandPowerBarGraph';
 import EEGSQIGraph from './EEGSQIGraph';
 import PPGSQIGraph from './PPGSQIGraph';
-import DashboardIcon from '@mui/icons-material/BarChart';
+import { Eye } from 'lucide-react';
 
 const SingleValueCard: React.FC<{ title: string; value: number | string }> = ({ title, value }) => (
-  <Card sx={{ p: 2, height: '100%' }}>
-    <Typography variant="subtitle2" color="text.secondary" sx={{ fontSize: 12, fontWeight: 600 }}>
-      {title}
-    </Typography>
-    <Typography variant="h6" sx={{ fontSize: 12, fontWeight: 600 }}>
-      {typeof value === 'number' ? value.toFixed(2) : value}
-    </Typography>
+  <Card className="bg-card h-full">
+    <CardContent className="p-4">
+      <div className="text-xs font-semibold text-muted-foreground mb-1">
+        {title}
+      </div>
+      <div className="text-sm font-semibold text-foreground">
+        {typeof value === 'number' ? value.toFixed(2) : value}
+      </div>
+    </CardContent>
   </Card>
 );
 
@@ -91,407 +94,185 @@ export const ProcessedDataVisualizer: React.FC = () => {
     setACCVisible({ raw: newState, index: newState });
   };
 
+  const ToggleButton: React.FC<{ 
+    selected: boolean; 
+    onClick: () => void; 
+    children: React.ReactNode;
+  }> = ({ selected, onClick, children }) => (
+    <Button
+      variant={selected ? "default" : "outline"}
+      size="sm"
+      onClick={onClick}
+      className={`
+        rounded-full px-4 py-1 text-xs font-semibold transition-all
+        ${selected 
+          ? 'bg-green-600 hover:bg-green-700 text-white border-green-600' 
+          : 'bg-muted hover:bg-muted/80 text-muted-foreground border-border'
+        }
+      `}
+    >
+      {children}
+    </Button>
+  );
+
   return (
-    <Box sx={{ p: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', ml: 2, mb: 2 }}>
-        <DashboardIcon sx={{ fontSize: 32, color: '#fff', mr: 1 }} />
-        <Typography variant="h6" gutterBottom sx={{ width: '100%', fontWeight: 600, fontSize: 28 }}>
+    <div className="h-full overflow-auto p-6">
+      <div className="flex items-center gap-2 mb-6">
+        <Eye className="w-8 h-8 text-foreground" />
+        <h1 className="text-2xl font-semibold text-foreground">
           Processed Data Visualizer
-        </Typography>
-      </Box>
+        </h1>
+      </div>
 
       {/* EEG Section Toggle Buttons */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0 }}>
-        <Typography variant="h6" gutterBottom sx={{ mt: 1, mb: 1, ml: 2, fontWeight: 600, color: '#FFF' }}>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold text-foreground">
           EEG Graphs
-        </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-          <ToggleButton
-            value="all"
-            selected={allOn}
-            onClick={handleAllToggle}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: allOn ? '#4CAF50' : '#222',
-              color: allOn ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <ToggleButton selected={allOn} onClick={handleAllToggle}>
             All
           </ToggleButton>
-          <ToggleButton
-            value="raw"
-            selected={visible.raw}
-            onClick={() => handleToggle('raw')}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: visible.raw ? '#4CAF50' : '#222',
-              color: visible.raw ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={visible.raw} onClick={() => handleToggle('raw')}>
             Raw Data
           </ToggleButton>
-          <ToggleButton
-            value="sqi"
-            selected={visible.sqi}
-            onClick={() => handleToggle('sqi')}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: visible.sqi ? '#4CAF50' : '#222',
-              color: visible.sqi ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={visible.sqi} onClick={() => handleToggle('sqi')}>
             SQI
           </ToggleButton>
-          <ToggleButton
-            value="psd"
-            selected={visible.psd}
-            onClick={() => handleToggle('psd')}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: visible.psd ? '#4CAF50' : '#222',
-              color: visible.psd ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={visible.psd} onClick={() => handleToggle('psd')}>
             PSD
           </ToggleButton>
-          <ToggleButton
-            value="band"
-            selected={visible.band}
-            onClick={() => handleToggle('band')}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: visible.band ? '#4CAF50' : '#222',
-              color: visible.band ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={visible.band} onClick={() => handleToggle('band')}>
             Band Power
           </ToggleButton>
-          <ToggleButton
-            value="index"
-            selected={visible.index}
-            onClick={() => handleToggle('index')}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: visible.index ? '#4CAF50' : '#222',
-              color: visible.index ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={visible.index} onClick={() => handleToggle('index')}>
             Index
           </ToggleButton>
-        </Box>
-      </Box>
+        </div>
+      </div>
 
       {/* 1행: Filtered EEG (Raw Data) */}
       {visible.raw && (
-        <Box sx={{ display: 'flex', gap: 2, width: '100%', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-              <EEGPreprocessedGraph channel="ch1" />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-              <EEGPreprocessedGraph channel="ch2" />
-          </Box>
-        </Box>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <EEGPreprocessedGraph channel="ch1" />
+          <EEGPreprocessedGraph channel="ch2" />
+        </div>
       )}
+
       {/* SQI 그래프 */}
       {visible.sqi && (
-        <Box sx={{ display: 'flex', gap: 2, width: '100%', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-              <EEGSQIGraph channel="ch1" />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-              <EEGSQIGraph channel="ch2" />
-          </Box>
-        </Box>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <EEGSQIGraph channel="ch1" />
+          <EEGSQIGraph channel="ch2" />
+        </div>
       )}
+
       {/* 2행: Power Spectrum */}
       {visible.psd && (
-        <Box sx={{ display: 'flex', gap: 2, width: '100%', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <EEGPSDGraph channel="ch1" frequencies={frequencies} power={ch1Power} color="#8884d8" />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <EEGPSDGraph channel="ch2" frequencies={frequencies} power={ch2Power} color="#82ca9d" />
-          </Box>
-        </Box>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <EEGPSDGraph channel="ch1" frequencies={frequencies} power={ch1Power} color="#8884d8" />
+          <EEGPSDGraph channel="ch2" frequencies={frequencies} power={ch2Power} color="#82ca9d" />
+        </div>
       )}
+
       {/* 3행: Band Power BarGraph */}
       {visible.band && (
-        <Box sx={{ display: 'flex', gap: 2, width: '100%', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <EEGBandPowerBarGraph channel="ch1" bandPowers={ch1BandPowers} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <EEGBandPowerBarGraph channel="ch2" bandPowers={ch2BandPowers} />
-          </Box>
-        </Box>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          <EEGBandPowerBarGraph channel="ch1" bandPowers={ch1BandPowers} />
+          <EEGBandPowerBarGraph channel="ch2" bandPowers={ch2BandPowers} />
+        </div>
       )}
+
       {/* 4행: EEG 지표 카드 7개 */}
       {visible.index && (
-        <Box sx={{ display: 'flex', gap: 2, width: '100%', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Cognitive Load" value={eeg?.cognitive_load ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Emotional Stability" value={eeg?.emotional_stability ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Focus Index" value={eeg?.focus_index ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Hemispheric Balance" value={eeg?.hemispheric_balance ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Relaxation Index" value={eeg?.relaxation_index ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Stress Index" value={eeg?.stress_index ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Total Power" value={eeg?.total_power ?? 'N/A'} />
-          </Box>
-        </Box>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+          <SingleValueCard title="Cognitive Load" value={eeg?.cognitive_load ?? 'N/A'} />
+          <SingleValueCard title="Emotional Stability" value={eeg?.emotional_stability ?? 'N/A'} />
+          <SingleValueCard title="Focus Index" value={eeg?.focus_index ?? 'N/A'} />
+          <SingleValueCard title="Hemispheric Balance" value={eeg?.hemispheric_balance ?? 'N/A'} />
+          <SingleValueCard title="Relaxation Index" value={eeg?.relaxation_index ?? 'N/A'} />
+          <SingleValueCard title="Stress Index" value={eeg?.stress_index ?? 'N/A'} />
+          <SingleValueCard title="Total Power" value={eeg?.total_power ?? 'N/A'} />
+        </div>
       )}
 
       {/* PPG Section */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0 }}>
-        <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 1, ml: 2, fontWeight: 600, color: '#FFF' }}>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold text-foreground">
           PPG Graphs
-        </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-          <ToggleButton
-            value="all"
-            selected={ppgAllOn}
-            onClick={handlePPGAllToggle}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: ppgAllOn ? '#4CAF50' : '#222',
-              color: ppgAllOn ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <ToggleButton selected={ppgAllOn} onClick={handlePPGAllToggle}>
             All
           </ToggleButton>
-          <ToggleButton
-            value="raw"
-            selected={ppgVisible.raw}
-            onClick={() => setPPGVisible(v => ({ ...v, raw: !v.raw }))}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: ppgVisible.raw ? '#4CAF50' : '#222',
-              color: ppgVisible.raw ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={ppgVisible.raw} onClick={() => setPPGVisible(v => ({ ...v, raw: !v.raw }))}>
             Raw Data
           </ToggleButton>
-          <ToggleButton
-            value="sqi"
-            selected={ppgVisible.sqi}
-            onClick={() => setPPGVisible(v => ({ ...v, sqi: !v.sqi }))}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: ppgVisible.sqi ? '#4CAF50' : '#222',
-              color: ppgVisible.sqi ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={ppgVisible.sqi} onClick={() => setPPGVisible(v => ({ ...v, sqi: !v.sqi }))}>
             SQI
           </ToggleButton>
-          <ToggleButton
-            value="index"
-            selected={ppgVisible.index}
-            onClick={() => setPPGVisible(v => ({ ...v, index: !v.index }))}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: ppgVisible.index ? '#4CAF50' : '#222',
-              color: ppgVisible.index ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={ppgVisible.index} onClick={() => setPPGVisible(v => ({ ...v, index: !v.index }))}>
             Index
           </ToggleButton>
-        </Box>
-      </Box>
+        </div>
+      </div>
+
       {/* PPG 그래프/카드 조건부 렌더링 */}
       {ppgVisible.raw && (
-        <Box sx={{ flex: 1, width: '100%', mb: 2 }}>
+        <div className="mb-6">
           <PPGGraph />
-        </Box>
+        </div>
       )}
       {ppgVisible.sqi && (
-        <Box sx={{ flex: 1, width: '100%', mb: 2 }}>
-            <PPGSQIGraph />
-        </Box>
+        <div className="mb-6">
+          <PPGSQIGraph />
+        </div>
       )}
       {ppgVisible.index && (
-        <Box sx={{ display: 'flex', gap: 2, width: '100%', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="BPM" value={ppg?.bpm ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="SDNN" value={ppg?.sdnn ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="RMSSD" value={ppg?.rmssd ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="LF" value={ppg?.lf ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="HF" value={ppg?.hf ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="LF/HF" value={ppg?.lf_hf_ratio ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="PNN50" value={ppg?.pnn50 ?? 'N/A'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="SDSD" value={ppg?.sdsd ?? 'N/A'} />
-          </Box>
-        </Box>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
+          <SingleValueCard title="BPM" value={ppg?.bpm ?? 'N/A'} />
+          <SingleValueCard title="SDNN" value={ppg?.sdnn ?? 'N/A'} />
+          <SingleValueCard title="RMSSD" value={ppg?.rmssd ?? 'N/A'} />
+          <SingleValueCard title="LF" value={ppg?.lf ?? 'N/A'} />
+          <SingleValueCard title="HF" value={ppg?.hf ?? 'N/A'} />
+          <SingleValueCard title="LF/HF" value={ppg?.lf_hf_ratio ?? 'N/A'} />
+          <SingleValueCard title="PNN50" value={ppg?.pnn50 ?? 'N/A'} />
+          <SingleValueCard title="SDSD" value={ppg?.sdsd ?? 'N/A'} />
+        </div>
       )}
 
       {/* ACC Section */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-        <Typography variant="h6" gutterBottom sx={{ mt: 3, mb: 1, ml: 2, fontWeight: 600, color: '#FFF' }}>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold text-foreground">
           ACC Graphs
-        </Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-          <ToggleButton
-            value="all"
-            selected={accAllOn}
-            onClick={handleACCAllToggle}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: accAllOn ? '#4CAF50' : '#222',
-              color: accAllOn ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+        </h2>
+        <div className="flex flex-wrap gap-2">
+          <ToggleButton selected={accAllOn} onClick={handleACCAllToggle}>
             All
           </ToggleButton>
-          <ToggleButton
-            value="raw"
-            selected={accVisible.raw}
-            onClick={() => setACCVisible(v => ({ ...v, raw: !v.raw }))}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: accVisible.raw ? '#4CAF50' : '#222',
-              color: accVisible.raw ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={accVisible.raw} onClick={() => setACCVisible(v => ({ ...v, raw: !v.raw }))}>
             Raw Data
           </ToggleButton>
-          <ToggleButton
-            value="index"
-            selected={accVisible.index}
-            onClick={() => setACCVisible(v => ({ ...v, index: !v.index }))}
-            sx={{
-              borderRadius: '20px',
-              px: 2,
-              py: 0.7,
-              backgroundColor: accVisible.index ? '#4CAF50' : '#222',
-              color: accVisible.index ? '#fff' : '#aaa',
-              border: 'none',
-              fontWeight: 600,
-              fontSize: 10,
-              transition: 'background 0.2s, color 0.2s',
-            }}
-          >
+          <ToggleButton selected={accVisible.index} onClick={() => setACCVisible(v => ({ ...v, index: !v.index }))}>
             Index
           </ToggleButton>
-        </Box>
-      </Box>
+        </div>
+      </div>
+
       {/* ACC 그래프/카드 조건부 렌더링 */}
       {accVisible.raw && (
-        <Box sx={{ flex: 1, width: '100%', mb: 2 }}>
+        <div className="mb-6">
           <ACCGraph />
-        </Box>
+        </div>
       )}
       {accVisible.index && (
-        <Box sx={{ display: 'flex', gap: 2, width: '100%', mb: 2 }}>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Activity State" value={acc?.activity_state || 'Unknown'} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Average Movement" value={acc?.avg_movement || 0} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Standard Deviation Movement" value={acc?.std_movement || 0} />
-          </Box>
-          <Box sx={{ flex: 1 }}>
-            <SingleValueCard title="Max Movement" value={acc?.max_movement || 0} />
-          </Box>
-        </Box>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <SingleValueCard title="Activity State" value={acc?.activity_state || 'Unknown'} />
+          <SingleValueCard title="Average Movement" value={acc?.avg_movement || 0} />
+          <SingleValueCard title="Standard Deviation Movement" value={acc?.std_movement || 0} />
+          <SingleValueCard title="Max Movement" value={acc?.max_movement || 0} />
+        </div>
       )}
-    </Box>
+    </div>
   );
 }; 

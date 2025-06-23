@@ -1,21 +1,19 @@
 import React, { useEffect } from 'react';
-import { Box, Card, Typography, Button, Stack, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, CircularProgress, Link, IconButton, Paper, Divider } from '@mui/material';
-import { TabContext, TabList, TabPanel } from '@mui/lab'; // For Tab management
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import StopIcon from '@mui/icons-material/Stop';
-import FileOpenIcon from '@mui/icons-material/FileOpen';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Button } from '../ui/button';
+import { Separator } from '../ui/separator';
+import { Play, Square, FolderOpen, Copy } from 'lucide-react';
 import { RecordingStatus } from './RecordingStatus.tsx';
 import { SessionList } from './SessionList.tsx';
 import { SearchFilters } from './SearchFilters.tsx';
 import { useDataCenterStore } from '../../stores/dataCenter';
-import { useMetricsStore } from '../../stores/metrics'; // Import metrics store
+import { useMetricsStore } from '../../stores/metrics';
 import type { FileInfo } from '../../types/data-center';
 
 const DataCenter: React.FC = () => {
   const {
     activeTab,
-    recordingStatus, // This no longer contains device_connected
+    recordingStatus,
     setActiveTab,
     fetchRecordingStatus,
     startRecording,
@@ -26,9 +24,7 @@ const DataCenter: React.FC = () => {
     copyFilePath
   } = useDataCenterStore();
 
-  const isDeviceConnected = useMetricsStore((state) => state.deviceStatus?.status === 'connected'); // Get from metricsStore
-  // fetchRecordingStatus from dataCenterStore will still be called periodically.
-  // The metricsStore's deviceStatus is assumed to be updated elsewhere (e.g., by a WebSocket connection manager or similar)
+  const isDeviceConnected = useMetricsStore((state) => state.deviceStatus?.status === 'connected');
 
   useEffect(() => {
     fetchRecordingStatus();
@@ -36,150 +32,177 @@ const DataCenter: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchRecordingStatus]);
 
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
+  const handleTabChange = (newValue: string) => {
     setActiveTab(newValue);
   };
 
-  const isStartRecordingDisabled = recordingStatus.is_recording || !isDeviceConnected; // Use isDeviceConnected from metricsStore
+  const isStartRecordingDisabled = recordingStatus.is_recording || !isDeviceConnected;
 
-  // Handler for opening a file, now passes filePath to the store action
   const handleOpenFileClick = (file: FileInfo) => {
     if (file.is_accessible && file.file_path) {
-      openFile(file.file_path); // Pass file_path to the store action
+      openFile(file.file_path);
     } else {
-      // Optionally, show a message if path is not available or not accessible
       console.warn('File path is not available or file is not accessible.');
     }
   };
 
   return (
-    <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3, color: 'common.white' }}>
-      <Card sx={{ bgcolor: 'grey.900', p: 2 }}>
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
-          <Typography variant="h6" sx={{ color: 'common.white' }}>Recording Controls</Typography>
-          <Button
-            variant="contained"
-            color="success"
-            sx={{ borderRadius: 5, fontSize: 14 }}
-            startIcon={<PlayArrowIcon />}
-            onClick={startRecording}
-            disabled={isStartRecordingDisabled}
-          >
-            Start Recording
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            startIcon={<StopIcon />}
-            onClick={stopRecording}
-            disabled={!recordingStatus.is_recording}
-          >
-            Stop Recording
-          </Button>
-        </Stack>
-        {!isDeviceConnected && !recordingStatus.is_recording && ( // Use isDeviceConnected from metricsStore
-          <Typography sx={{ color: 'warning.light', fontSize: '0.875rem', mt: 1, mb: 1 }}>
-            Please connect LINK BAND first to start recording.
-          </Typography>
-        )}
-        <Divider sx={{ my: 1, borderColor: 'grey.700' }} />
-        <RecordingStatus status={{ 
+    <div className="p-6 space-y-6">
+      {/* Recording Controls */}
+      <Card className="bg-card p-4" style={{ backgroundColor: '#161822' }}>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-white text-base font-semibold">Recording Controls</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2 mb-4">
+            <Button
+              variant="default"
+              onClick={startRecording}
+              disabled={isStartRecordingDisabled}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Start Recording
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={stopRecording}
+              disabled={!recordingStatus.is_recording}
+            >
+              <Square className="w-4 h-4 mr-2" />
+              Stop Recording
+            </Button>
+          </div>
+          
+          {!isDeviceConnected && !recordingStatus.is_recording && (
+            <div className="text-yellow-400 text-xs mb-2">
+              Please connect LINK BAND first to start recording.
+            </div>
+          )}
+          
+          <Separator className="my-4" />
+          
+          <RecordingStatus status={{ 
             is_recording: recordingStatus.is_recording,
             current_session: recordingStatus.current_session,
             start_time: recordingStatus.start_time
-         }} />
+          }} />
+        </CardContent>
       </Card>
 
-      <Card sx={{ bgcolor: 'grey.900', p: 2 }}>
-        <TabContext value={activeTab}>
-          <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-            <TabList
-              onChange={handleTabChange}
-              aria-label="Data Center Tabs"
-              textColor="inherit" // Corrected from textColor="white" to a valid Theme V5 value
-              indicatorColor="primary" // Or "secondary" or other theme color
-            >
-              <Tab label="Recording Status" value="recording" sx={{ color: 'common.white' }} />
-              <Tab label="Sessions" value="sessions" sx={{ color: 'common.white' }} />
-              <Tab label="Search Files" value="search" sx={{ color: 'common.white' }} />
-            </TabList>
-          </Box>
-          <TabPanel value="recording" sx={{ p: 0, pt: 2 }}>
+      {/* Tabs */}
+      <Card className="bg-card p-4" style={{ backgroundColor: '#161822' }}>
+        <CardHeader className="pb-3">
+          <div className="flex space-x-4 border-b border-gray-600">
+            {[
+              { id: 'recording', label: 'Recording Status' },
+              { id: 'sessions', label: 'Sessions' },
+              { id: 'search', label: 'Search Files' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`px-3 py-2 text-base font-medium border-b-2 transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-primary text-white'
+                    : 'border-transparent text-gray-400 hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {activeTab === 'recording' && (
             <RecordingStatus status={recordingStatus} />
-          </TabPanel>
-          <TabPanel value="sessions" sx={{ p: 0, pt: 2 }}>
+          )}
+          
+          {activeTab === 'sessions' && (
             <SessionList />
-          </TabPanel>
-          <TabPanel value="search" sx={{ p: 0, pt: 2 }}>
-            <SearchFilters />
-            {loading && files.length === 0 && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
-                <CircularProgress />
-              </Box>
-            )}
-            {!loading && files.length === 0 && activeTab === 'search' && (
-              <Typography sx={{ color: 'text.secondary', textAlign: 'center', mt: 3, p: 2 }}>
-                No files found for the current search criteria. Or perform a new search.
-              </Typography>
-            )}
-            {files.length > 0 && (
-              <Paper sx={{ p: 2, bgcolor: 'grey.800', borderRadius: 2, color: 'common.white', overflow: 'hidden', elevation: 1 }}>
-                <Typography variant="h6" gutterBottom sx={{ mb: 2, fontWeight: 'medium' }}>
-                  Search Results
-                </Typography>
-                <TableContainer component={Box}>
-                  <Table sx={{ minWidth: 650 }} aria-label="search results table">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell sx={{ color: 'grey.400', fontWeight: 'medium', borderBottomColor: 'grey.700', py: 1 }}>Filename</TableCell>
-                        <TableCell sx={{ color: 'grey.400', fontWeight: 'medium', borderBottomColor: 'grey.700', py: 1 }}>Type</TableCell>
-                        <TableCell sx={{ color: 'grey.400', fontWeight: 'medium', borderBottomColor: 'grey.700', py: 1 }}>Size (KB)</TableCell>
-                        <TableCell sx={{ color: 'grey.400', fontWeight: 'medium', borderBottomColor: 'grey.700', py: 1 }}>Created At</TableCell>
-                        <TableCell sx={{ color: 'grey.400', fontWeight: 'medium', borderBottomColor: 'grey.700', py: 1 }} align="right">Actions</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {files.map((file: FileInfo) => (
-                        <TableRow
-                          key={file.file_id}
-                          sx={{
-                            '&:last-child td, &:last-child th': { border: 0 },
-                            '&:hover': { bgcolor: 'grey.700' },
-                          }}
-                        >
-                          <TableCell component="th" scope="row" sx={{ color: 'common.white', py: 1.5, borderBottomColor: 'grey.700' }}>
-                            {file.is_accessible ? (
-                              <Link component="button" variant="body2" onClick={() => handleOpenFileClick(file)} sx={{ color: 'primary.light', '&:hover': { color: 'primary.main' } }}>
-                                {file.filename}
-                              </Link>
-                            ) : (
-                              file.filename
-                            )}
-                          </TableCell>
-                          <TableCell sx={{ color: 'common.white', py: 1.5, borderBottomColor: 'grey.700' }}>{file.file_type}</TableCell>
-                          <TableCell sx={{ color: 'common.white', py: 1.5, borderBottomColor: 'grey.700' }}>{(file.file_size / 1024).toFixed(2)}</TableCell>
-                          <TableCell sx={{ color: 'common.white', py: 1.5, borderBottomColor: 'grey.700' }}>{new Date(file.created_at).toLocaleString()}</TableCell>
-                          <TableCell align="right" sx={{ py: 1.5, borderBottomColor: 'grey.700' }}>
-                            <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                              <IconButton size="small" onClick={() => handleOpenFileClick(file)} disabled={!file.is_accessible} title="Open File">
-                                <FileOpenIcon sx={{ color: file.is_accessible ? 'secondary.light' : 'grey.600', '&:hover': { color: file.is_accessible ? 'secondary.main' : 'grey.500'} }} />
-                              </IconButton>
-                              <IconButton size="small" onClick={() => copyFilePath(file)} title="Copy Path">
-                                <ContentCopyIcon sx={{ color: 'secondary.light', '&:hover': {color: 'secondary.main'} }} />
-                              </IconButton>
-                            </Stack>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Paper>
-            )}
-          </TabPanel>
-        </TabContext>
+          )}
+          
+          {activeTab === 'search' && (
+            <div className="space-y-4">
+              <SearchFilters />
+              
+              {loading && files.length === 0 && (
+                <div className="flex justify-center items-center h-48">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              )}
+              
+              {!loading && files.length === 0 && (
+                <div className="text-center text-gray-400 py-8 text-xs">
+                  No files found for the current search criteria. Or perform a new search.
+                </div>
+              )}
+              
+              {files.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-white">Search Results</h3>
+                  <div className="rounded-md border border-gray-600 overflow-hidden" style={{ backgroundColor: '#1a1d29' }}>
+                    <table className="w-full">
+                      <thead style={{ backgroundColor: '#222530' }}>
+                        <tr className="border-b border-gray-600">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-300">Filename</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-300">Type</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-300">Size (KB)</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-300">Created At</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-300">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {files.map((file: FileInfo) => (
+                          <tr key={file.file_id} className="border-b border-gray-700 hover:bg-gray-800/30">
+                            <td className="px-3 py-2 text-xs">
+                              {file.is_accessible ? (
+                                <button
+                                  onClick={() => handleOpenFileClick(file)}
+                                  className="text-blue-400 hover:text-blue-300 hover:underline"
+                                >
+                                  {file.filename}
+                                </button>
+                              ) : (
+                                <span className="text-gray-300">{file.filename}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-300">{file.file_type}</td>
+                            <td className="px-3 py-2 text-xs text-gray-300">{(file.file_size / 1024).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-xs text-gray-300">{new Date(file.created_at).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenFileClick(file)}
+                                  disabled={!file.is_accessible}
+                                  className="h-6 w-6 p-0 text-gray-400 hover:text-white hover:bg-gray-700"
+                                >
+                                  <FolderOpen className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copyFilePath(file)}
+                                  className="h-6 w-6 p-0 text-gray-400 hover:text-white hover:bg-gray-700"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
       </Card>
-    </Box>
+    </div>
   );
 };
 

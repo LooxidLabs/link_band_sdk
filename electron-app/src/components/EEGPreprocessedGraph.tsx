@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Card } from '@mui/material';
+import { Card } from './ui/card';
 import * as echarts from 'echarts';
 import { useSensorStore } from '../stores/sensor';
 
@@ -37,6 +37,7 @@ const EEGPreprocessedGraph: React.FC<EEGPreprocessedGraphProps> = ({ channel }) 
   useEffect(() => {
     if (!chartInstance.current) return;
     const option = {
+      backgroundColor: '#161822',
       animation: false,
       grid: {
         top: 23,
@@ -111,7 +112,7 @@ const EEGPreprocessedGraph: React.FC<EEGPreprocessedGraphProps> = ({ channel }) 
   }, []);
 
   return (
-    <Card sx={{ p: 2, height: '150px', width: '100%' }}>
+    <Card className="bg-card p-4 h-[150px] w-full">
       <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
     </Card>
   );

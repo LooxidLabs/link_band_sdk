@@ -1,98 +1,75 @@
-import { Box, List, ListItemButton, ListItemIcon, ListItemText, IconButton } from '@mui/material';
-import MemoryIcon from '@mui/icons-material/Memory';
-import DashboardIcon from '@mui/icons-material/BarChart';
-import PsychologyIcon from '@mui/icons-material/Psychology';
-import StorageIcon from '@mui/icons-material/Storage';
-import CloudIcon from '@mui/icons-material/CloudQueue';
-import SettingsIcon from '@mui/icons-material/Settings';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import { useState } from 'react';
+import { Brain, Cpu, Eye, Database, FileText, Settings, ChevronLeft } from 'lucide-react';
+import { Button } from './ui/button';
+import { cn } from './ui/utils';
+import { useUIStore } from '../stores/uiStore';
+import type { MenuId } from '../stores/uiStore';
 
 const menuItems = [
-  { label: 'Engine', icon: <MemoryIcon /> },
-  { label: 'Link Band', icon: <PsychologyIcon /> },
-  { label: 'Visualizer', icon: <DashboardIcon /> },
-  { label: 'Data Center', icon: <StorageIcon /> },
-  { label: 'Link Cloud Manager', icon: <CloudIcon /> },
-  { label: 'Settings', icon: <SettingsIcon /> },
+  { icon: Cpu, label: 'Engine', id: 'engine' as MenuId },
+  { icon: Brain, label: 'Link Band', id: 'linkband' as MenuId },
+  { icon: Eye, label: 'Visualizer', id: 'visualizer' as MenuId },
+  { icon: Database, label: 'Data Center', id: 'datacenter' as MenuId },
+  { icon: FileText, label: 'Documents', id: 'cloudmanager' as MenuId },
+  { icon: Settings, label: 'Settings', id: 'settings' as MenuId },
 ];
 
-export const Sidebar = ({
-  selected,
-  onSelect,
-  minimized,
-  setMinimized,
-}: {
-  selected: string;
-  onSelect: (label: string) => void;
-  minimized: boolean;
-  setMinimized: React.Dispatch<React.SetStateAction<boolean>>;
-}) => {
-  const width = minimized ? 60 : 220;
+export function Sidebar() {
+  const { activeMenu, setActiveMenu } = useUIStore();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
-    <Box
-      sx={{
-        position: 'fixed',
-        left: 0,
-        top: '64px',
-        height: 'calc(100vh - 64px)',
-        zIndex: 1200,
-        width,
-        minWidth: minimized ? 60 : 120,
-        maxWidth: 320,
-        bgcolor: 'background.paper',
-        borderRight: '1px solid #23263a',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: 2,
-        fontSize: 12,
-        transition: 'width 0.2s',
-        overflow: 'hidden',
-      }}
-    >
-      <IconButton
-        onClick={() => setMinimized((v) => !v)}
-        size="small"
-        sx={{
-          color: 'primary.main',
-          position: 'absolute',
-          top: 12,
-          right: 8,
-          zIndex: 10,
-          bgcolor: 'background.paper',
-          boxShadow: 1,
-          '&:hover': { bgcolor: 'rgba(100,108,255,0.08)' },
-        }}
-      >
-        {minimized ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
-      </IconButton>
-      <List sx={{ pt: 5 }}>
-        {menuItems.map((item) => (
-          <ListItemButton
-            key={item.label}
-            selected={selected === item.label}
-            onClick={() => onSelect(item.label)}
-            sx={{
-              borderRadius: 2,
-              mb: 1,
-              mx: 1,
-              color: selected === item.label ? 'primary.main' : 'inherit',
-              background: selected === item.label ? 'rgba(100,108,255,0.08)' : 'none',
-              fontSize: 12,
-              justifyContent: minimized ? 'center' : 'flex-start',
-              px: minimized ? 1 : 2,
-            }}
+    <div className={cn(
+      "bg-sidebar border-r border-sidebar-border transition-all duration-300 h-screen flex flex-col",
+      isCollapsed ? "w-16" : "w-64"
+    )}>
+      {/* Header - 고정 */}
+      <div className="flex-shrink-0 p-6 border-b border-sidebar-border">
+        <div className="flex items-center justify-between">
+          {!isCollapsed && (
+            <h1 className="text-sidebar-foreground font-semibold text-left">
+              LINK BAND SDK
+            </h1>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="text-sidebar-foreground hover:bg-sidebar-accent"
           >
-            <ListItemIcon sx={{ color: selected === item.label ? 'primary.main' : 'inherit', minWidth: 32, justifyContent: 'center', display: 'flex' }}>
-              {item.icon}
-            </ListItemIcon>
-            {!minimized && <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 12 }} />}
-          </ListItemButton>
-        ))}
-      </List>
-      <Box sx={{ flex: 1 }} />
-    </Box>
+            <ChevronLeft className={cn(
+              "h-4 w-4 transition-transform",
+              isCollapsed && "rotate-180"
+            )} />
+          </Button>
+        </div>
+      </div>
+
+      {/* Navigation - 스크롤 가능 (필요시) */}
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeMenu === item.id;
+          
+          return (
+            <Button
+              key={item.id}
+              variant={isActive ? "default" : "ghost"}
+              className={cn(
+                "w-full gap-3 h-12 !justify-start",
+                isActive 
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground" 
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                isCollapsed && "!justify-center"
+              )}
+              onClick={() => setActiveMenu(item.id)}
+            >
+              <Icon className="h-5 w-5 flex-shrink-0" />
+              {!isCollapsed && <span className="flex-1 text-left">{item.label}</span>}
+            </Button>
+          );
+        })}
+      </nav>
+    </div>
   );
-};
-export default Sidebar; 
+} 

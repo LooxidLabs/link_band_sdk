@@ -1,37 +1,36 @@
 import React from 'react';
-import { TextField, Button, Stack, Select, MenuItem, FormControl, InputLabel, CircularProgress, Typography, Paper } from '@mui/material';
-import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import SearchIcon from '@mui/icons-material/Search';
+import { Button } from '../ui/button';
+import { Search } from 'lucide-react';
 import { useDataCenterStore } from '../../stores/dataCenter';
 // import type { SearchParams } from '../../types/data-center';
-import dayjs, { Dayjs } from 'dayjs';
+// import dayjs, { Dayjs } from 'dayjs'; // Temporarily commented out
 
 export const SearchFilters: React.FC = () => {
   const { searchParams, setSearchParams, searchFiles, loading } = useDataCenterStore();
 
-  const handleDateChange = (date: Dayjs | null, part: 'start' | 'end') => {
+  const handleDateChange = (value: string, part: 'start' | 'end') => {
     const currentRange = searchParams.dateRange ? [...searchParams.dateRange] : [null, null];
+    const date = value ? new Date(value) : null;
+    
     if (part === 'start') {
-      currentRange[0] = date ? date.toDate() : null;
+      currentRange[0] = date;
     } else {
-      currentRange[1] = date ? date.toDate() : null;
+      currentRange[1] = date;
     }
-    // Ensure start date is not after end date, basic validation
-    if (currentRange[0] && currentRange[1] && dayjs(currentRange[0]).isAfter(dayjs(currentRange[1]))) {
-      // Optionally, show an error or reset one of the dates
-      // For simplicity, we allow it for now, API or further validation should handle it
-      // Or, reset the conflicting date, e.g.:
-      // if (part === 'start') currentRange[1] = null; else currentRange[0] = null;
-    }
+    
     setSearchParams({
       ...searchParams,
       dateRange: (currentRange[0] || currentRange[1]) ? [currentRange[0], currentRange[1]] : null,
     });
   };
 
-  const handleFileTypeChange = (event: any) => {
-    setSearchParams({ ...searchParams, fileTypes: event.target.value as string[] });
+  const handleFileTypeChange = (value: string) => {
+    const currentTypes = searchParams.fileTypes || [];
+    const newTypes = currentTypes.includes(value)
+      ? currentTypes.filter(type => type !== value)
+      : [...currentTypes, value];
+    
+    setSearchParams({ ...searchParams, fileTypes: newTypes });
   };
 
   const handleSearchTextChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,88 +38,82 @@ export const SearchFilters: React.FC = () => {
   };
 
   const handleSearch = () => {
-    searchFiles(searchParams); // searchParams.dateRange is now [Date|null, Date|null]|null
+    searchFiles(searchParams);
+  };
+
+  const formatDateForInput = (date: Date | null) => {
+    if (!date) return '';
+    return date.toISOString().split('T')[0];
   };
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Paper sx={{ display: 'flex', flexDirection: 'column', gap: 2, p: 2, bgcolor: 'grey.800', borderRadius: 1, color: 'common.white'}}>
-        <Typography variant="h6" gutterBottom sx={{ mb: 0, fontSize: 16, color: 'common.white' }}>Search Files & Filters</Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
-          <DatePicker
-            label="Start Date"
-            value={searchParams.dateRange?.[0] ? dayjs(searchParams.dateRange[0]) : null}
-            onChange={(date) => handleDateChange(date, 'start')}
-            slotProps={{
-              textField: {
-                sx: {
-                  '& .MuiInputBase-input': { color: 'common.white' },
-                  '& .MuiInputLabel-root': { color: 'text.secondary' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'grey.600' },
-                  flexGrow: 1
-                }
-              }
-            }}
+    <div className="flex flex-col gap-4 p-4" style={{ backgroundColor: '#161822' }}>
+      <h3 className="text-sm font-semibold text-white mb-0">Search Files & Filters</h3>
+      <div className="flex flex-col sm:flex-row gap-3 items-center">
+        <div className="flex-1">
+          <label className="block text-xs text-gray-300 mb-1">Start Date</label>
+          <input
+            type="date"
+            value={formatDateForInput(searchParams.dateRange?.[0] || null)}
+            onChange={(e) => handleDateChange(e.target.value, 'start')}
+            className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-600 rounded text-white focus:border-blue-500 focus:outline-none"
           />
-          <DatePicker
-            label="End Date"
-            value={searchParams.dateRange?.[1] ? dayjs(searchParams.dateRange[1]) : null}
-            onChange={(date) => handleDateChange(date, 'end')}
-            minDate={searchParams.dateRange?.[0] ? dayjs(searchParams.dateRange[0]) : undefined} // Prevent end date before start date
-            slotProps={{
-              textField: {
-                sx: {
-                  '& .MuiInputBase-input': { color: 'common.white' },
-                  '& .MuiInputLabel-root': { color: 'text.secondary' },
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'grey.600' },
-                  flexGrow: 1
-                }
-              }
-            }}
+        </div>
+        <div className="flex-1">
+          <label className="block text-xs text-gray-300 mb-1">End Date</label>
+          <input
+            type="date"
+            value={formatDateForInput(searchParams.dateRange?.[1] || null)}
+            onChange={(e) => handleDateChange(e.target.value, 'end')}
+            min={formatDateForInput(searchParams.dateRange?.[0] || null)}
+            className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-600 rounded text-white focus:border-blue-500 focus:outline-none"
           />
-          <FormControl sx={{ m: 1, minWidth: 120, flexGrow: 1 }}>
-            <InputLabel id="file-type-select-label" sx={{color: 'text.secondary'}}>File Types</InputLabel>
-            <Select
-              labelId="file-type-select-label"
-              multiple
-              value={searchParams.fileTypes || []}
-              onChange={handleFileTypeChange}
-              label="File Types"
-              sx={{
-                color: 'common.white',
-                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'grey.600' },
-                '& .MuiSvgIcon-root': { color: 'common.white' }
-              }}
-            >
-              <MenuItem value="eeg">EEG</MenuItem>
-              <MenuItem value="ppg">PPG</MenuItem>
-              <MenuItem value="acc">ACC</MenuItem>
-              <MenuItem value="meta">Meta</MenuItem>
-            </Select>
-          </FormControl>
-          <TextField
-            label="Search Text"
-            variant="outlined"
-            value={searchParams.searchText}
+        </div>
+        <div className="flex-1">
+          <label className="block text-xs text-gray-300 mb-1">File Types</label>
+          <div className="flex gap-2 flex-wrap">
+            {['eeg', 'ppg', 'acc', 'meta'].map((type) => (
+              <button
+                key={type}
+                onClick={() => handleFileTypeChange(type)}
+                className={`px-2 py-1 text-xs rounded border ${
+                  (searchParams.fileTypes || []).includes(type)
+                    ? 'bg-blue-600 border-blue-500 text-white'
+                    : 'bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                {type.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex-2">
+          <label className="block text-xs text-gray-300 mb-1">Search Text</label>
+          <input
+            type="text"
+            placeholder="Search in filenames..."
+            value={searchParams.searchText || ''}
             onChange={handleSearchTextChange}
-            sx={{
-              flexGrow: 2,
-              input: { color: 'common.white' },
-              label: { color: 'text.secondary' },
-              '& .MuiOutlinedInput-notchedOutline': { borderColor: 'grey.600' }
-            }}
+            className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-600 rounded text-white focus:border-blue-500 focus:outline-none"
           />
+        </div>
+        <div className="flex-shrink-0">
+          <label className="block text-xs text-transparent mb-1">Search</label>
           <Button
-            variant="contained"
-            startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SearchIcon />}
+            variant="default"
             onClick={handleSearch}
             disabled={loading}
-            sx={{height: '56px'}}
+            className="h-8 px-4 text-xs bg-blue-600 hover:bg-blue-700"
           >
+            {loading ? (
+              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-2"></div>
+            ) : (
+              <Search className="w-3 h-3 mr-2" />
+            )}
             Search
           </Button>
-        </Stack>
-      </Paper>
-    </LocalizationProvider>
+        </div>
+      </div>
+    </div>
   );
 }; 

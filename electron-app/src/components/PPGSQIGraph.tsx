@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import * as echarts from 'echarts';
 import { useSensorStore } from '../stores/sensor';
-import { Card } from '@mui/material';
+import { Card } from './ui/card';
 
 const PPGSQIGraph: React.FC = () => {
   const { ppg } = useSensorStore();
@@ -30,6 +30,7 @@ const PPGSQIGraph: React.FC = () => {
   useEffect(() => {
     if (!chartInstance.current) return;
     const option = {
+      backgroundColor: '#161822',
       animation: false,
       grid: {
         top: 20,
@@ -87,7 +88,7 @@ const PPGSQIGraph: React.FC = () => {
   }, [data]);
 
   return (
-    <Card sx={{ p: 2, height: '150px' }}>
+    <Card className="bg-card p-4 h-[150px] w-full">
       <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
     </Card>
   );

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Card } from '@mui/material';
+import { Card } from './ui/card';
 import * as echarts from 'echarts';
 import { useSensorStore } from '../stores/sensor';
 
@@ -27,6 +27,7 @@ const PPGGraph: React.FC = () => {
     if (!chartInstance.current) return;
 
     const option = {
+      backgroundColor: '#161822',
       animation: false,
       grid: {
         top: 40,
@@ -43,8 +44,8 @@ const PPGGraph: React.FC = () => {
       yAxis: {
         type: 'value',
         name: 'Filtered PPG',
-        min: -150,
-        max: 150,
+        min: -300,
+        max: 300,
         axisLine: {
           lineStyle: {
             color: 'rgba(255, 255, 255, 0.3)'
@@ -97,7 +98,7 @@ const PPGGraph: React.FC = () => {
   }, []);
 
   return (
-    <Card sx={{ p: 2, height: '200px' }}>
+    <Card className="bg-card p-4 h-[200px] w-full">
       <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
     </Card>
   );
