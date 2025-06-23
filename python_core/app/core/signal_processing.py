@@ -143,7 +143,7 @@ class SignalProcessor:
         """Combine amplitude and frequency SQI"""
         return 1.0 * amplitude_sqi + 0.0 * frequency_sqi
 
-    def calculate_ppg_sqi(self, data: np.ndarray, threshold: float = 50) -> np.ndarray:
+    def calculate_ppg_sqi(self, data: np.ndarray, threshold: float = 250) -> np.ndarray:
         """Calculate amplitude-based SQI for PPG"""
         window_size = 25
         sqi_values = np.zeros_like(data)

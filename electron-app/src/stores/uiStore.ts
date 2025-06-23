@@ -16,4 +16,16 @@ export const useUiStore = create<SnackbarState>((set) => ({
   showSnackbar: ({ message, severity = 'info' }) =>
     set({ open: true, message, severity }),
   hideSnackbar: () => set({ open: false, message: '' }), // Clear message on hide
+}));
+
+export type MenuId = 'engine' | 'linkband' | 'visualizer' | 'datacenter' | 'cloudmanager' | 'settings';
+
+interface UIState {
+  activeMenu: MenuId;
+  setActiveMenu: (menu: MenuId) => void;
+}
+
+export const useUIStore = create<UIState>((set) => ({
+  activeMenu: 'engine',
+  setActiveMenu: (menu) => set({ activeMenu: menu }),
 })); 

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Card } from '@mui/material';
+import { Card } from './ui/card';
 import * as echarts from 'echarts';
 
 interface EEGPSDGraphProps {
@@ -31,6 +31,7 @@ const EEGPSDGraph: React.FC<EEGPSDGraphProps> = ({ channel, frequencies, power, 
   useEffect(() => {
     if (!chartInstance.current) return;
     const option = {
+      backgroundColor: '#161822',
       animation: false,
       grid: {
         top: 25,
@@ -83,7 +84,7 @@ const EEGPSDGraph: React.FC<EEGPSDGraphProps> = ({ channel, frequencies, power, 
   }, [frequencies, power, color, channel]);
 
   return (
-    <Card sx={{ p: 2, height: '200px', width: '100%' }}>
+    <Card className="bg-card p-4 h-[200px] w-full">
       <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
     </Card>
   );

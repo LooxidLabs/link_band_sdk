@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Card } from '@mui/material';
+import { Card } from './ui/card';
 import * as echarts from 'echarts';
 import { useSensorStore } from '../stores/sensor';
 
@@ -42,6 +42,7 @@ const ACCGraph: React.FC = () => {
     if (!chartInstance.current) return;
 
     const option = {
+      backgroundColor: '#161822',
       animation: false,
       grid: {
         top: 50,
@@ -116,7 +117,7 @@ const ACCGraph: React.FC = () => {
   }, []);
 
   return (
-    <Card sx={{ p: 1, height: '150px' }}>
+    <Card className="bg-card p-2 h-[150px] w-full">
       <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
     </Card>
   );

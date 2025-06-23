@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Card, CardContent, Typography, Button, Stack, CircularProgress, Snackbar, Alert } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import StopIcon from '@mui/icons-material/Stop';
-import PeopleIcon from '@mui/icons-material/People';
-import MemoryIcon from '@mui/icons-material/Memory';
-import LinkIcon from '@mui/icons-material/Link';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Separator } from '../components/ui/separator';
+import { Play, Square, Users, Cpu, Link, Link2Off, Server, RotateCcw, Trash2, Loader2 } from 'lucide-react';
 import { useEngineStore } from '../stores/engine';
 import { useMetricsStore } from '../stores/metrics';
+import { usePythonServerStore, setupPythonServerEventListeners } from '../stores/pythonServerStore';
 
 const EngineModule: React.FC = () => {
   const { 
@@ -28,23 +27,30 @@ const EngineModule: React.FC = () => {
   const {
     deviceStatus,
     engineStatus,
-    // systemMetrics,
     isEngineStopped,
     connectionInfo,
-    isLoading: metricsLoading,
-    errors: metricsErrors,
     startPolling: startMetricsPolling,
     stopPolling: stopMetricsPolling
   } = useMetricsStore();
 
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' | 'warning' }>({ open: false, message: '', severity: 'success' });
+  // Python Server Store
+  const {
+    status: serverStatus,
+    logs: serverLogs,
+    isLoading: serverLoading,
+    lastMessage: serverMessage,
+    startServer,
+    stopServer,
+    restartServer,
+    clearLogs
+  } = usePythonServerStore();
 
-  // Add state for smooth transitions
-  const [isEngineLoading, setIsEngineLoading] = useState(false);
-  const [isDeviceLoading, setIsDeviceLoading] = useState(false);
-  const [isConnectionLoading, setIsConnectionLoading] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' }>({ message: '', type: 'success' });
 
   useEffect(() => {
+    // Setup event listeners for Python server
+    setupPythonServerEventListeners();
+    
     startPolling();
     startMetricsPolling();
     return () => {
@@ -53,381 +59,394 @@ const EngineModule: React.FC = () => {
     };
   }, []);
 
-  // Handle loading state transitions
-  useEffect(() => {
-    if (metricsLoading.engine) {
-      setIsEngineLoading(true);
-      const timer = setTimeout(() => setIsEngineLoading(false), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [metricsLoading.engine]);
-
-  useEffect(() => {
-    if (metricsLoading.device) {
-      setIsDeviceLoading(true);
-      const timer = setTimeout(() => setIsDeviceLoading(false), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [metricsLoading.device]);
-
-  useEffect(() => {
-    if (metricsLoading.engine) {
-      setIsConnectionLoading(true);
-      const timer = setTimeout(() => setIsConnectionLoading(false), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [metricsLoading.engine]);
-
   useEffect(() => {
     if (error?.connection) {
-      setSnackbar({ open: true, message: error.connection, severity: 'error' });
+      setNotification({ message: error.connection, type: 'error' });
     }
   }, [error?.connection]);
 
-  // // Add logging to check samplingRates
-  // useEffect(() => {
-  //   console.log('EngineModule samplingRates:', samplingRates);
-  // }, [samplingRates]);
+  useEffect(() => {
+    if (serverMessage) {
+      setNotification({ message: serverMessage, type: 'info' });
+    }
+  }, [serverMessage]);
 
   const handleInit = async () => {
     try {
       await initEngine();
-      setSnackbar({ open: true, message: 'Engine initialized', severity: 'success' });
+      setNotification({ message: 'Engine initialized', type: 'success' });
     } catch (e) {
-      setSnackbar({ open: true, message: 'Init failed', severity: 'error' });
+      setNotification({ message: 'Init failed', type: 'error' });
     }
   };
 
   const handleStart = async () => {
     try {
       await startEngine();
-      setSnackbar({ open: true, message: 'Engine started', severity: 'success' });
+      setNotification({ message: 'Engine started', type: 'success' });
     } catch (e) {
-      setSnackbar({ open: true, message: 'Start failed', severity: 'error' });
+      setNotification({ message: 'Start failed', type: 'error' });
     }
   };
 
   const handleStop = async () => {
     try {
       await stopEngine();
-      setSnackbar({ open: true, message: 'Engine stopped', severity: 'success' });
+      setNotification({ message: 'Engine stopped', type: 'success' });
     } catch (e) {
-      setSnackbar({ open: true, message: 'Stop failed', severity: 'error' });
+      setNotification({ message: 'Stop failed', type: 'error' });
     }
   };
 
   const handleConnect = () => {
     connectWebSocket();
-    setSnackbar({ open: true, message: 'Connecting to WebSocket...', severity: 'info' });
+    setNotification({ message: 'Connecting to WebSocket...', type: 'info' });
   };
 
   const handleDisconnect = () => {
     disconnectWebSocket();
-    setSnackbar({ open: true, message: 'Disconnected from WebSocket', severity: 'info' });
+    setNotification({ message: 'Disconnected from WebSocket', type: 'info' });
+  };
+
+  const handleServerStart = async () => {
+    try {
+      await startServer();
+    } catch (e) {
+      setNotification({ message: 'Failed to start Python server', type: 'error' });
+    }
+  };
+
+  const handleServerStop = async () => {
+    try {
+      await stopServer();
+    } catch (e) {
+      setNotification({ message: 'Failed to stop Python server', type: 'error' });
+    }
+  };
+
+  const handleServerRestart = async () => {
+    try {
+      await restartServer();
+    } catch (e) {
+      setNotification({ message: 'Failed to restart Python server', type: 'error' });
+    }
+  };
+
+  const getStatusBadge = (status: string, isConnected?: boolean) => {
+    if (isConnected === false) {
+      return <Badge variant="destructive">Disconnected</Badge>;
+    }
+    
+    switch (status) {
+      case 'running':
+        return <Badge className="bg-green-600">Running</Badge>;
+      case 'starting':
+        return <Badge className="bg-yellow-600">Starting</Badge>;
+      case 'stopping':
+        return <Badge className="bg-orange-600">Stopping</Badge>;
+      case 'stopped':
+        return <Badge variant="secondary">Stopped</Badge>;
+      case 'error':
+        return <Badge variant="destructive">Error</Badge>;
+      case 'connected':
+        return <Badge className="bg-green-600">Connected</Badge>;
+      default:
+        return <Badge variant="outline">Unknown</Badge>;
+    }
   };
 
   return (
-    <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {/* Engine Status Card */}
-      <Card sx={{ width: '100%', mx: 'auto', bgcolor: 'grey.900', color: 'common.white' }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              <MemoryIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-              Engine Status
-            </Typography>
-            <Stack direction="row" spacing={2}>
+    <div className="p-6 space-y-6 bg-[#0a0a0a] min-h-screen">
+      {/* Python Server Control Card */}
+      <Card className="bg-[#161822] border-gray-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-white">
+            <Server className="w-5 h-5" />
+            Python Server Control
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Status:</span>
+                {getStatusBadge(serverStatus.status)}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Port:</span>
+                <span className="text-sm text-white font-mono">{serverStatus.port}</span>
+              </div>
+              {serverStatus.pid && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">PID:</span>
+                  <span className="text-sm text-white font-mono">{serverStatus.pid}</span>
+                </div>
+              )}
+              {serverStatus.uptime && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">Uptime:</span>
+                  <span className="text-sm text-white">{serverStatus.uptime}s</span>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2">
               <Button
-                variant="outlined"
-                color="info"
-                size="small"
+                variant="outline"
+                size="sm"
+                onClick={handleServerStart}
+                disabled={serverLoading || serverStatus.status === 'running' || serverStatus.status === 'starting'}
+              >
+                {serverLoading && serverStatus.status === 'starting' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Start
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleServerStop}
+                disabled={serverLoading || serverStatus.status === 'stopped' || serverStatus.status === 'stopping'}
+              >
+                {serverLoading && serverStatus.status === 'stopping' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                Stop
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleServerRestart}
+                disabled={serverLoading}
+              >
+                {serverLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="w-4 h-4" />
+                )}
+                Restart
+              </Button>
+            </div>
+          </div>
+          
+          {serverStatus.lastError && (
+            <div className="p-3 bg-red-900/20 border border-red-800 rounded-md">
+              <p className="text-sm text-red-400">Error: {serverStatus.lastError}</p>
+            </div>
+          )}
+
+          {/* Server Logs */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-300">Server Logs</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearLogs}
+                disabled={serverLogs.length === 0}
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear
+              </Button>
+            </div>
+            <div className="bg-[#1a1d29] border border-gray-700 rounded-md p-3 h-32 overflow-y-auto">
+              {serverLogs.length === 0 ? (
+                <p className="text-xs text-gray-500">No logs available</p>
+              ) : (
+                <div className="space-y-1">
+                  {serverLogs.slice(-10).map((log, index) => (
+                    <p key={index} className="text-xs text-gray-300 font-mono">
+                      {log}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Engine Status Card */}
+      <Card className="bg-[#161822] border-gray-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-white">
+            <Cpu className="w-5 h-5" />
+            Engine Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Engine Status:</span>
+                {getStatusBadge(!isEngineStopped ? 'running' : 'stopped')}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Device Connection:</span>
+                {getStatusBadge(deviceStatus?.status || 'disconnected', deviceStatus?.status === 'connected')}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Streaming Service:</span>
+                {getStatusBadge(engineStatus?.status || 'stopped')}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleInit}
                 disabled={isLoading.init}
-                startIcon={isLoading.init ? <CircularProgress size={16} /> : null}
               >
-                Init
+                {isLoading.init ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Init'}
               </Button>
               <Button
-                variant="contained"
-                color="success"
-                size="small"
+                variant="outline"
+                size="sm"
                 onClick={handleStart}
                 disabled={isEngineStopped || deviceStatus?.status !== 'connected' || engineStatus?.status === 'running'}
-                startIcon={isLoading.start ? <CircularProgress size={16} /> : <PlayArrowIcon />}
               >
-                Streaming Start
+                {isLoading.start ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Start
               </Button>
               <Button
-                variant="contained"
-                color="error"
-                size="small"
+                variant="outline"
+                size="sm"
                 onClick={handleStop}
                 disabled={isEngineStopped || deviceStatus?.status !== 'connected' || engineStatus?.status !== 'running'}
-                startIcon={isLoading.stop ? <CircularProgress size={16} /> : <StopIcon />}
               >
-                Streaming Stop
+                {isLoading.stop ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                Stop
               </Button>
-            </Stack>
-          </Box>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            {/* Status */}
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
-                Engine Status
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 24 }}>
-                {isEngineLoading && !engineStatus ? (
-                  <CircularProgress size={16} />
-                ) : (
-                  <Box sx={{ display: 'flex', alignItems: 'center', color: !isEngineStopped ? 'success.main' : 'error.main' }}>
-                    {!isEngineStopped ? (
-                      <PlayArrowIcon fontSize="small" sx={{ mr: 1 }} />
-                    ) : (
-                      <StopIcon fontSize="small" sx={{ mr: 1 }} />
-                    )}
-                    <Typography variant="body2" sx={{ fontWeight: 600, fontSize: 14 }}>
-                      {!isEngineStopped ? 'Running' : 'Stopped'}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            </Box>
-            {/* Device Connection Status */}
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
-                Device Connection Status
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minHeight: 24 }}>
-                {isDeviceLoading && !deviceStatus ? (
-                  <CircularProgress size={16} />
-                ) : (
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {deviceStatus?.status === 'connected' ? (
-                      <LinkIcon fontSize="small" color="success" sx={{ mr: 1 }} />
-                    ) : (
-                      <LinkOffIcon fontSize="small" color="error" sx={{ mr: 1 }} />
-                    )}
-                    <Typography variant="body2" sx={{ color: deviceStatus?.status === 'connected' ? 'success.main' : 'error.main', fontSize: 14 }}>
-                      {deviceStatus?.status === 'connected' ? 'Connected' : 'Disconnected'}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            </Box>
-            {/* Streaming */}
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
-                Streaming Service Status
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 24 }}>
-                {isEngineLoading && !engineStatus ? (
-                  <CircularProgress size={16} />
-                ) : (
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {engineStatus?.status === 'running' ? (
-                      <>
-                        <PlayArrowIcon fontSize="small" color="success" sx={{ mr: 1 }} />
-                        <Typography variant="body2" sx={{ color: 'success.main', fontSize: 14 }}>Running</Typography>
-                      </>
-                    ) : (
-                      <>
-                        <StopIcon fontSize="small" color="disabled" sx={{ mr: 1 }} />
-                        <Typography variant="body2" sx={{ color: 'text.disabled', fontSize: 14 }}>Stopped</Typography>
-                      </>
-                    )}
-                  </Box>
-                )}
-              </Box>
-            </Box>
-            {/* Data Processing Status Section */}
-            <Box>
-              <Typography variant="subtitle2" color="white" sx={{ mb: 1 , fontSize: 12, fontWeight: 800 }}>
-                Data Processing Status
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                    EEG
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 12 }}>
-                    {deviceStatus?.eeg_sampling_rate ? deviceStatus.eeg_sampling_rate.toFixed(1) : '-'} Hz
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                    PPG
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 12 }}>
-                    {deviceStatus?.ppg_sampling_rate ? deviceStatus.ppg_sampling_rate.toFixed(1) : '-'} Hz
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                    Accelerometer
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 12 }}>
-                    {deviceStatus?.acc_sampling_rate ? deviceStatus.acc_sampling_rate.toFixed(1) : '-'} Hz
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                    Battery
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 14 }}>
-                    {deviceStatus?.bat_sampling_rate ? deviceStatus.bat_sampling_rate.toFixed(1) : '-'} Hz
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Box>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Data Processing Status */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-300">Data Processing Status</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">EEG</span>
+                <span className="text-xs text-white">{deviceStatus?.eeg_sampling_rate?.toFixed(1) || '-'} Hz</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">PPG</span>
+                <span className="text-xs text-white">{deviceStatus?.ppg_sampling_rate?.toFixed(1) || '-'} Hz</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">Accelerometer</span>
+                <span className="text-xs text-white">{deviceStatus?.acc_sampling_rate?.toFixed(1) || '-'} Hz</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">Battery</span>
+                <span className="text-xs text-white">{deviceStatus?.bat_sampling_rate?.toFixed(1) || '-'} Hz</span>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
       {/* Connection Status Card */}
-      <Card sx={{ width: "100%", mx: 'auto', bgcolor: 'grey.900', color: 'common.white' }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              <MemoryIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-              Connection Status
-            </Typography>
-            <Stack direction="row" spacing={1}>
+      <Card className="bg-[#161822] border-gray-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-white">
+            <Link className="w-5 h-5" />
+            Connection Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">WebSocket Status:</span>
+                {getStatusBadge(isWebSocketConnected ? 'connected' : 'disconnected', isWebSocketConnected)}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Connected Clients:</span>
+                <div className="flex items-center gap-1">
+                  <Users className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm text-white">{engineStatus?.clients_connected ?? 0}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">WebSocket URL:</span>
+                <span className="text-xs text-white font-mono">{connectionInfo?.ws_url ?? 'Not available'}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
               <Button
-                variant="contained"
-                color="success"
-                size="small"
+                variant="outline"
+                size="sm"
                 onClick={handleConnect}
                 disabled={isWebSocketConnected}
-                startIcon={<LinkIcon />}
               >
+                <Link className="w-4 h-4" />
                 Connect
               </Button>
               <Button
-                variant="contained"
-                color="error"
-                size="small"
+                variant="outline"
+                size="sm"
                 onClick={handleDisconnect}
                 disabled={!isWebSocketConnected}
-                startIcon={<LinkOffIcon />}
               >
+                <Link2Off className="w-4 h-4" />
                 Disconnect
               </Button>
-            </Stack>
-          </Box>
+            </div>
+          </div>
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {/* Websocket Status Section */}
-            <Box>
-              <Typography variant="subtitle2" color="white" sx={{ mb: 1 , fontSize: 14, fontWeight: 800 }}>
-                Websocket Status
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                    Websocket address
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontSize: 14, fontFamily: 'monospace' }}>
-                    {isConnectionLoading && !connectionInfo ? (
-                      <CircularProgress size={14} />
-                    ) : metricsErrors.connection ? (
-                      <Typography color="error" sx={{ fontSize: 12 }}>Connection Error</Typography>
-                    ) : (
-                      connectionInfo?.ws_url ?? 'Not available'
-                    )}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                    Connected Clients
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 40, justifyContent: 'flex-end' }}>
-                    {isEngineLoading && !engineStatus ? (
-                      <CircularProgress size={14} />
-                    ) : (
-                      <>
-                        <PeopleIcon fontSize="small" sx={{ mr: 1 }} />
-                        <Typography variant="body2" sx={{ fontSize: 14 }}>
-                          {engineStatus?.clients_connected ?? 0}
-                        </Typography>
-                      </>
-                    )}
-                  </Box>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                    Websocket connection status
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {isWebSocketConnected ? (
-                      <>
-                        <LinkIcon fontSize="small" color="success" sx={{ mr: 1 }} />
-                        <Typography variant="body2" sx={{ color: 'success.main', fontSize: 12 }}>Connected</Typography>
-                      </>
-                    ) : (
-                      <>
-                        <LinkOffIcon fontSize="small" color="error" sx={{ mr: 1 }} />
-                        <Typography variant="body2" sx={{ color: 'error.main', fontSize: 12 }}>Disconnected</Typography>
-                      </>
-                    )}
-                  </Box>
-                </Box>
-                {/* Data Streaming Status Section */}
-                <Box>
-                  <Typography variant="subtitle2" color="grey.400" sx={{ mb: 2 }}>
-                    Data Streaming Status
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                        EEG
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 12 }}>
-                        {isStreamingIdle ? '-' : (samplingRates.eeg ? samplingRates.eeg.toFixed(1) : '-')} Hz
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                        PPG
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 12 }}>
-                        {isStreamingIdle ? '-' : (samplingRates.ppg ? samplingRates.ppg.toFixed(1) : '-')} Hz
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                        Accelerometer
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 12 }}>
-                        {isStreamingIdle ? '-' : (samplingRates.acc ? samplingRates.acc.toFixed(1) : '-')} Hz
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>
-                        Battery
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontSize: 12 }}>
-                        {isStreamingIdle ? '-' : (samplingRates.bat ? samplingRates.bat.toFixed(1) : '-')} Hz
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Box>
-              </Box>
-            </Box>
-          </Box>
+          <Separator />
+
+          {/* Data Streaming Status */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-300">Data Streaming Status</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">EEG</span>
+                <span className="text-xs text-white">{isStreamingIdle ? '-' : (samplingRates.eeg?.toFixed(1) || '-')} Hz</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">PPG</span>
+                <span className="text-xs text-white">{isStreamingIdle ? '-' : (samplingRates.ppg?.toFixed(1) || '-')} Hz</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">Accelerometer</span>
+                <span className="text-xs text-white">{isStreamingIdle ? '-' : (samplingRates.acc?.toFixed(1) || '-')} Hz</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-gray-400">Battery</span>
+                <span className="text-xs text-white">{isStreamingIdle ? '-' : (samplingRates.bat?.toFixed(1) || '-')} Hz</span>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={2000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={snackbar.severity} sx={{ width: '100%' }}>
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+      {/* Notification */}
+      {notification.message && (
+        <div className="fixed bottom-4 right-4 max-w-sm">
+          <div className={`p-3 rounded-md border ${
+            notification.type === 'success' ? 'bg-green-900/20 border-green-800 text-green-400' :
+            notification.type === 'error' ? 'bg-red-900/20 border-red-800 text-red-400' :
+            'bg-blue-900/20 border-blue-800 text-blue-400'
+          }`}>
+            <p className="text-sm">{notification.message}</p>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

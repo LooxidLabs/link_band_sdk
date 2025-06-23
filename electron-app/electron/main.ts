@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, session, shell, dialog } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
@@ -15,9 +16,34 @@ type StoreSchema = {
 }
 
 let win: BrowserWindow | null = null;
-let tray: Tray | null = null;
-let quitting = false;
+// let tray: Tray | null = null; // Not needed for standalone app
+// let quitting = false; // Not needed for standalone app
 let pythonProcess: ChildProcessWithoutNullStreams | null = null;
+let isQuitting = false; // Flag to track if app is quitting
+
+// Server status tracking
+interface ServerStatus {
+  status: 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
+  pid?: number;
+  port: number;
+  uptime?: number;
+  lastError?: string;
+  logs: string[];
+}
+
+interface ServerControlResponse {
+  success: boolean;
+  message: string;
+  status?: ServerStatus;
+}
+
+let serverStatus: ServerStatus = {
+  status: 'stopped',
+  port: 8121,
+  logs: []
+};
+
+let serverStartTime: Date | null = null;
 
 const PROTOCOL_SCHEME = 'linkbandapp';
 const store = new Store({
@@ -51,6 +77,8 @@ function createWindow() {
     width: 1200,
     height: 800,
     title: 'LINK BAND SDK',
+    show: true, // Show window immediately
+    center: true, // Center the window on screen
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
@@ -62,16 +90,14 @@ function createWindow() {
 
   win.loadFile(indexPath);
 
-  if (process.env.NODE_ENV === 'development' || true) {
+  if (process.env.NODE_ENV === 'development') {
     win.webContents.openDevTools();
   }
 
   win.on('close', (event) => {
-    if (quitting) {
-      win = null;
-    } else {
+    if (!isQuitting) {
       event.preventDefault();
-      win?.hide();
+      gracefulShutdown();
     }
   });
 
@@ -81,127 +107,276 @@ function createWindow() {
   });
 }
 
-function createTray() {
-  let iconPath;
-  if (process.env.NODE_ENV === 'development') {
-    iconPath = path.join(__dirname, '../resources/trayIcon.png');
-  } else {
-    iconPath = path.join(__dirname, 'trayIcon.png');
-  }
-
-  if (!fs.existsSync(iconPath)) {
-    console.warn('Tray icon not found at:', iconPath, 'Using default icon');
-    const defaultIcon = nativeImage.createEmpty();
-    defaultIcon.resize({
-      width: 16,
-      height: 16
-    });
-    tray = new Tray(defaultIcon);
-  } else {
-    const trayIcon = nativeImage.createFromPath(iconPath);
-    if (process.platform === 'darwin') {
-      trayIcon.setTemplateImage(true);
-    }
-    tray = new Tray(trayIcon);
-  }
-
-  tray.setToolTip('Link Band SDK');
+// Graceful shutdown function
+async function gracefulShutdown() {
+  if (isQuitting) return;
   
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show/Hide Window',
-      click: () => {
-        if (win) {
-          if (win.isVisible()) {
-            win.hide();
-          } else {
-            win.show();
-            win.focus();
-          }
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        quitting = true;
-        stopPythonServer();
-        app.quit();
-      },
-    },
-  ]);
-
-  tray.setContextMenu(contextMenu);
-
-  if (process.platform === 'darwin') {
-    tray.on('double-click', () => {
-      if (win) {
-        if (win.isVisible()) {
-          win.hide();
-        } else {
-          win.show();
-          win.focus();
-        }
+  isQuitting = true;
+  console.log('Starting graceful shutdown...');
+  
+  try {
+    // Stop Python server with timeout
+    await stopPythonServerGracefully();
+    
+    // Close all windows
+    BrowserWindow.getAllWindows().forEach(window => {
+      if (!window.isDestroyed()) {
+        window.destroy();
       }
     });
-  } else {
-    tray.on('click', () => {
-      if (win) {
-        if (win.isVisible()) {
-          win.hide();
-        } else {
-          win.show();
-          win.focus();
-        }
-      }
-    });
+    
+    // Quit the app
+    app.quit();
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+    app.quit();
   }
 }
 
-function startPythonServer() {
-  if (pythonProcess) {
-    console.log('Python server is already running');
-    return;
-  }
-
-  const pythonPath = path.join(__dirname, '../../python_core/run_server.py');
-  console.log('Starting Python server from:', pythonPath);
-
-  pythonProcess = spawn('python3', [pythonPath], {
-    stdio: ['pipe', 'pipe', 'pipe']
+// Auto-updater configuration
+function configureAutoUpdater() {
+  // Configure autoUpdater
+  autoUpdater.checkForUpdatesAndNotify();
+  
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Checking for update...');
+    win?.webContents.send('update-checking');
   });
 
-  pythonProcess.stdout?.on('data', (data) => {
-    const output = data.toString();
-    console.log('Python server output:', output);
-    
-    win?.webContents.send('python-log', output);
+  autoUpdater.on('update-available', (info) => {
+    console.log('Update available:', info);
+    win?.webContents.send('update-available', info);
+  });
 
-    if (output.includes('WebSocket server initialized')) {
-      console.log('Python server is ready');
-      win?.webContents.send('python-server-ready');
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('Update not available:', info);
+    win?.webContents.send('update-not-available', info);
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.log('Error in auto-updater:', err);
+    win?.webContents.send('update-error', err);
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = "Download speed: " + progressObj.bytesPerSecond;
+    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
+    log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
+    console.log(log_message);
+    win?.webContents.send('update-download-progress', progressObj);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('Update downloaded:', info);
+    win?.webContents.send('update-downloaded', info);
+    
+    // Show dialog to restart and install update
+    const dialogOpts = {
+      type: 'info' as const,
+      buttons: ['Restart', 'Later'],
+      title: 'Application Update',
+      message: 'A new version has been downloaded. Restart the application to apply the update?',
+      detail: 'The update will be applied when you restart the application.'
+    };
+
+    dialog.showMessageBox(dialogOpts).then((returnValue) => {
+      if (returnValue.response === 0) autoUpdater.quitAndInstall();
+    });
+  });
+
+  // IPC handlers for manual update check
+  ipcMain.handle('check-for-updates', async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return result;
+    } catch (error) {
+      console.error('Error checking for updates:', error);
+      throw error;
     }
   });
 
-  pythonProcess.stderr?.on('data', (data) => {
-    const error = data.toString();
-    win?.webContents.send('python-log', `ERROR: ${error}`);
-  });
-
-  pythonProcess.on('close', (code) => {
-    console.log('Python server stopped with code:', code);
-    pythonProcess = null;
-    win?.webContents.send('python-server-stopped');
+  ipcMain.handle('quit-and-install', () => {
+    autoUpdater.quitAndInstall();
   });
 }
 
-function stopPythonServer() {
-  if (pythonProcess) {
-    pythonProcess.kill();
-    pythonProcess = null;
+// Tray functionality disabled for standalone desktop app
+// function createTray() {
+//   // Tray functionality removed for standard desktop app behavior
+// }
+
+function updateServerStatus(newStatus: Partial<ServerStatus>) {
+  serverStatus = { ...serverStatus, ...newStatus };
+  if (serverStatus.status === 'running' && serverStartTime) {
+    serverStatus.uptime = Math.floor((Date.now() - serverStartTime.getTime()) / 1000);
+  }
+  win?.webContents.send('python-server-status', serverStatus);
+}
+
+function addServerLog(log: string) {
+  serverStatus.logs.push(`[${new Date().toISOString()}] ${log}`);
+  // Keep only last 100 logs
+  if (serverStatus.logs.length > 100) {
+    serverStatus.logs = serverStatus.logs.slice(-100);
   }
 }
+
+function startPythonServer(): Promise<ServerControlResponse> {
+  return new Promise((resolve) => {
+    if (pythonProcess) {
+      console.log('Python server is already running');
+      resolve({ success: false, message: 'Python server is already running', status: serverStatus });
+      return;
+    }
+
+    const pythonPath = path.join(__dirname, '../../python_core/run_server.py');
+    const venvPythonPath = path.join(__dirname, '../../venv/bin/python3');
+    console.log('Starting Python server from:', pythonPath);
+    console.log('Using Python from virtual environment:', venvPythonPath);
+
+    updateServerStatus({ status: 'starting', lastError: undefined });
+    serverStartTime = new Date();
+
+    pythonProcess = spawn(venvPythonPath, [pythonPath], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    if (pythonProcess.pid) {
+      updateServerStatus({ pid: pythonProcess.pid });
+    }
+
+    pythonProcess.stdout?.on('data', (data) => {
+      const output = data.toString();
+      console.log('Python server output:', output);
+      addServerLog(output);
+      
+      win?.webContents.send('python-log', output);
+
+      if (output.includes('WebSocket server initialized')) {
+        console.log('Python server is ready');
+        updateServerStatus({ status: 'running' });
+        win?.webContents.send('python-server-ready');
+        resolve({ success: true, message: 'Python server started successfully', status: serverStatus });
+      }
+    });
+
+    pythonProcess.stderr?.on('data', (data) => {
+      const error = data.toString();
+      console.error('Python server error:', error);
+      addServerLog(`ERROR: ${error}`);
+      updateServerStatus({ lastError: error });
+      win?.webContents.send('python-log', `ERROR: ${error}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      console.log('Python server stopped with code:', code);
+      pythonProcess = null;
+      serverStartTime = null;
+      updateServerStatus({ status: 'stopped', pid: undefined, uptime: undefined });
+      win?.webContents.send('python-server-stopped', { code, signal: null });
+    });
+
+    pythonProcess.on('error', (error) => {
+      console.error('Python server error:', error);
+      pythonProcess = null;
+      serverStartTime = null;
+      updateServerStatus({ status: 'error', lastError: error.message, pid: undefined });
+      resolve({ success: false, message: `Failed to start Python server: ${error.message}`, status: serverStatus });
+    });
+
+    // Timeout for server start
+    setTimeout(() => {
+      if (serverStatus.status === 'starting') {
+        resolve({ success: false, message: 'Python server start timeout', status: serverStatus });
+      }
+    }, 30000); // 30 second timeout
+  });
+}
+
+// Improved Python server stopping with timeout
+async function stopPythonServerGracefully(): Promise<ServerControlResponse> {
+  return new Promise((resolve) => {
+    if (!pythonProcess) {
+      updateServerStatus({ status: 'stopped' });
+      resolve({ success: true, message: 'Python server is already stopped', status: serverStatus });
+      return;
+    }
+
+    console.log('Stopping Python server gracefully...');
+    updateServerStatus({ status: 'stopping' });
+    
+    const timeout = setTimeout(() => {
+      console.log('Python server shutdown timeout, force killing...');
+      if (pythonProcess) {
+        pythonProcess.kill('SIGKILL');
+        pythonProcess = null;
+        serverStartTime = null;
+        updateServerStatus({ status: 'stopped', pid: undefined, uptime: undefined });
+      }
+      resolve({ success: true, message: 'Python server stopped (force killed)', status: serverStatus });
+    }, 5000); // 5 second timeout
+
+    pythonProcess.on('close', () => {
+      clearTimeout(timeout);
+      console.log('Python server stopped gracefully');
+      pythonProcess = null;
+      serverStartTime = null;
+      updateServerStatus({ status: 'stopped', pid: undefined, uptime: undefined });
+      resolve({ success: true, message: 'Python server stopped successfully', status: serverStatus });
+    });
+
+    pythonProcess.on('error', (error) => {
+      clearTimeout(timeout);
+      console.error('Error stopping Python server:', error);
+      pythonProcess = null;
+      serverStartTime = null;
+      updateServerStatus({ status: 'error', lastError: error.message, pid: undefined });
+      resolve({ success: false, message: `Error stopping Python server: ${error.message}`, status: serverStatus });
+    });
+
+    // Try graceful shutdown first
+    pythonProcess.kill('SIGTERM');
+  });
+}
+
+function stopPythonServer(): Promise<ServerControlResponse> {
+  return stopPythonServerGracefully();
+}
+
+async function restartPythonServer(): Promise<ServerControlResponse> {
+  console.log('Restarting Python server...');
+  
+  // Stop the server first
+  const stopResult = await stopPythonServerGracefully();
+  if (!stopResult.success) {
+    return { success: false, message: `Failed to stop server: ${stopResult.message}`, status: serverStatus };
+  }
+
+  // Wait a moment before starting
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  // Start the server
+  const startResult = await startPythonServer();
+  return startResult;
+}
+
+function getPythonServerStatus(): ServerStatus {
+  if (serverStatus.status === 'running' && serverStartTime) {
+    serverStatus.uptime = Math.floor((Date.now() - serverStartTime.getTime()) / 1000);
+  }
+  return { ...serverStatus };
+}
+
+// Handle uncaught exceptions to prevent crashes
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit the process, just log the error
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+});
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
@@ -288,17 +463,34 @@ app.whenReady().then(() => {
   }
 
   createWindow();
-  createTray();
+  // Remove tray functionality for standalone desktop app
+  // createTray();
   if (!win) {
     createWindow();
   }
 
-  startPythonServer();
+  // Configure auto-updater after window is created
+  configureAutoUpdater();
+
+  // Start Python server on app startup
+  startPythonServer().then(result => {
+    console.log('Python server startup result:', result);
+  }).catch(error => {
+    console.error('Failed to start Python server on startup:', error);
+  });
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
+  // Standard desktop app behavior - quit when all windows are closed
+  if (!isQuitting) {
+    gracefulShutdown();
+  }
+});
+
+app.on('before-quit', async (event) => {
+  if (!isQuitting) {
+    event.preventDefault();
+    await gracefulShutdown();
   }
 });
 
@@ -339,6 +531,36 @@ ipcMain.on('open-web-login', () => {
   });
 });
 
+// Python Server Control IPC Handlers
+ipcMain.handle('start-python-server', async (): Promise<ServerControlResponse> => {
+  try {
+    return await startPythonServer();
+  } catch (error: any) {
+    return { success: false, message: `Failed to start server: ${error.message}`, status: serverStatus };
+  }
+});
+
+ipcMain.handle('stop-python-server', async (): Promise<ServerControlResponse> => {
+  try {
+    return await stopPythonServer();
+  } catch (error: any) {
+    return { success: false, message: `Failed to stop server: ${error.message}`, status: serverStatus };
+  }
+});
+
+ipcMain.handle('restart-python-server', async (): Promise<ServerControlResponse> => {
+  try {
+    return await restartPythonServer();
+  } catch (error: any) {
+    return { success: false, message: `Failed to restart server: ${error.message}`, status: serverStatus };
+  }
+});
+
+ipcMain.handle('get-python-server-status', async (): Promise<ServerStatus> => {
+  return getPythonServerStatus();
+});
+
+// Legacy event handler for backward compatibility
 ipcMain.on('stop-python-server', () => {
   stopPythonServer();
 });

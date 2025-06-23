@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, Chip, Stack } from '@mui/material';
+import { Badge } from '../ui/badge';
 import type { RecordingStatusResponse } from '../../types/data-center';
 import { useMetricsStore } from '../../stores/metrics';
 
@@ -9,46 +9,50 @@ interface RecordingStatusProps {
 
 // Helper for each info row
 const InfoRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%' }}>
-    <Typography variant="subtitle2" sx={{ color: 'text.secondary', fontWeight: 'bold', minWidth: { xs: '80px', sm: '100px' } }}>
+  <div className="flex items-center gap-3 w-full">
+    <span className="text-sm font-medium text-gray-300 min-w-[80px]">
       {label}:
-    </Typography>
-    <Box sx={{ color: 'common.white' }}>{children}</Box>
-  </Stack>
+    </span>
+    <div className="text-white">{children}</div>
+  </div>
 );
 
 export const RecordingStatus: React.FC<RecordingStatusProps> = ({ status }) => {
   const isDeviceConnected = useMetricsStore((state) => state.deviceStatus?.status === 'connected');
 
   return (
-    <Box sx={{ width: '100%', color: 'common.white', mt: 1 }}>
-      <Stack spacing={1}>
+    <div className="w-full text-white mt-1">
+      <div className="space-y-2">
         <InfoRow label="Device">
-          <Chip
-            label={isDeviceConnected ? 'LINK BAND Connected' : 'LINK BAND Disconnected'}
-            color={isDeviceConnected ? 'success' : 'error'}
-            size="small"
-          />
+          <Badge 
+            variant={isDeviceConnected ? "default" : "destructive"}
+            className={`text-xs ${isDeviceConnected ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {isDeviceConnected ? 'LINK BAND Connected' : 'LINK BAND Disconnected'}
+          </Badge>
         </InfoRow>
         <InfoRow label="Recording">
-          <Chip
-            label={status.is_recording ? 'Active' : 'Inactive'}
-            color={status.is_recording ? 'error' : 'success'}
-            size="small"
-          />
+          <Badge 
+            variant={status.is_recording ? "destructive" : "default"}
+            className={`text-xs ${status.is_recording ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+          >
+            {status.is_recording ? 'Active' : 'Inactive'}
+          </Badge>
         </InfoRow>
 
         {status.is_recording && (
           <>
             <InfoRow label="Session ID">
-              {status.current_session || 'N/A'}
+              <span className="text-xs text-gray-300">{status.current_session || 'N/A'}</span>
             </InfoRow>
             <InfoRow label="Started At">
-              {status.start_time ? new Date(status.start_time).toLocaleString() : 'N/A'}
+              <span className="text-xs text-gray-300">
+                {status.start_time ? new Date(status.start_time).toLocaleString() : 'N/A'}
+              </span>
             </InfoRow>
           </>
         )}
-      </Stack>
-    </Box>
+      </div>
+    </div>
   );
 }; 

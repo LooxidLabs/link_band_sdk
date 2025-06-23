@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo } from 'react';
-import { Card } from '@mui/material';
+import { Card } from './ui/card';
 import * as echarts from 'echarts';
 import { useSensorStore } from '../stores/sensor';
 
@@ -37,6 +37,7 @@ const EEGSQIGraph: React.FC<EEGSQIGraphProps> = ({ channel }) => {
   useEffect(() => {
     if (!chartInstance.current) return;
     const option = {
+      backgroundColor: '#161822',
       animation: false,
       grid: {
         top: 20,
@@ -111,7 +112,7 @@ const EEGSQIGraph: React.FC<EEGSQIGraphProps> = ({ channel }) => {
   }, []);
 
   return (
-    <Card sx={{ p: 1, height: '120px' }}>
+    <Card className="bg-card p-2 h-[120px] w-full">
       <div ref={chartRef} style={{ width: '100%', height: '100px' }} />
     </Card>
   );

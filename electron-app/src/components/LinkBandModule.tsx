@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Card, Typography, Button, CircularProgress, List, ListItem, ListItemText, Radio } from '@mui/material';
-import LinkIcon from '@mui/icons-material/Link';
-import LinkOffIcon from '@mui/icons-material/LinkOff';
-import PsychologyIcon from '@mui/icons-material/Psychology';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Separator } from './ui/separator';
+import { Progress } from './ui/progress';
+import { Brain, Link, Link2Off, Loader2, RadioIcon as Radio } from 'lucide-react';
 import { useDeviceStore } from '../stores/device';
 
 const LinkBandModule: React.FC = () => {
@@ -23,29 +25,20 @@ const LinkBandModule: React.FC = () => {
   } = useDeviceStore();
 
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
-  // const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     startPolling();
     return () => stopPolling();
   }, [startPolling, stopPolling]);
 
-  // useEffect(() => {
-  //   if (deviceStatus?.status === 'connected') {
-  //     setIsConnecting(false);
-  //   }
-  // }, [deviceStatus?.status]);
-
   const handleConnect = async () => {
     if (deviceStatus?.status === 'connected') {
-      // setIsConnecting(true);
       await disconnectDevice(deviceStatus.address);
     } else if (registeredDevices.length > 0) {
       try {
         await connectDevice(registeredDevices[0].address);
       } catch (error) {
         console.error('Failed to connect:', error);
-        // setIsConnecting(false);
       }
     }
   };
@@ -80,177 +73,202 @@ const LinkBandModule: React.FC = () => {
   };
 
   return (
-    <Card sx={{p:5,  width: '100%', mx: 'auto', bgcolor: 'grey.900', color: 'common.white' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-        <PsychologyIcon sx={{ mr: 1 }} />
-        <Typography variant="h6">Link Band Status</Typography>
-      </Box>
-      
-      {isLoading.connect ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 1 }}>
-          <CircularProgress size={16} />
-        </Box>
-      ) : (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {/* Registered Device Information */}
-          <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="subtitle2" color="grey.400" sx={{ fontWeight: 'bold', color: 'white', fontSize: 14 }}>Registered Device</Typography>
-              <Button
-                variant="contained"
-                color="error"
-                size="small"
-                onClick={handleUnregister}
-                disabled={registeredDevices.length === 0}
-                sx={{ fontSize: 12, mb: 2 }}
-              >
-                Unregister
-              </Button>
-            </Box>
-            {registeredDevices.length > 0 ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, ml: 4 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2" color="grey.400" fontSize={12}>Name</Typography>
-                  <Typography variant="body2" fontSize={12}>{registeredDevices[0].name || '-'}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2" color="grey.400" fontSize={12}>Address</Typography>
-                  <Typography variant="body2" fontSize={12}>{registeredDevices[0].address || '-'}</Typography>
-                </Box>
-              </Box>
-            ) : (
-              <Typography variant="body2" color="grey.500" fontSize={12}>No registered device</Typography>
-            )}
-          </Box>
+    <div className="h-full">
+      <Card className="bg-card h-full flex flex-col m-6">
+        <CardHeader className="flex-shrink-0">
+          <CardTitle className="flex items-center gap-2 text-foreground">
+            <Brain className="w-5 h-5" />
+            Link Band Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-auto min-h-0">
+          {isLoading.connect ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="w-6 h-6 animate-spin" />
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Registered Device Information */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-base font-semibold text-foreground">Registered Device</h3>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleUnregister}
+                    disabled={registeredDevices.length === 0}
+                  >
+                    Unregister
+                  </Button>
+                </div>
+                
+                {registeredDevices.length > 0 ? (
+                  <div className="bg-muted rounded-lg p-4 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Name</span>
+                      <span className="text-sm font-medium">{registeredDevices[0].name || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Address</span>
+                      <span className="text-sm font-mono">{registeredDevices[0].address || '-'}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground text-sm">
+                    No registered device
+                  </div>
+                )}
+              </div>
 
-          {/* Current Device Status */}
-          <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="subtitle2" color="grey.400" sx={{ fontWeight: 'bold', color: 'white', fontSize: 14 }}>Current Status</Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  variant="contained"
-                  size="small"
-                  color="success"
-                  onClick={handleConnect}
-                  disabled={registeredDevices.length === 0 || deviceStatus?.status === 'connected' || deviceStatus?.status === 'disconnected'}
-                  sx={{ fontSize: 12, mb: 2}}
-                >
-                  {deviceStatus?.status === 'disconnected' ? <CircularProgress size={16} /> : 'Connect'}
-                </Button>
-                <Button
-                  variant="contained"
-                  size="small"
-                  color="error"
-                  onClick={handleConnect}
-                  disabled={registeredDevices.length === 0 || deviceStatus?.status !== 'connected'}
-                  sx={{ fontSize: 12, mb: 2}}
-                >
-                  Disconnect
-                </Button>
-              </Box>
-            </Box>
-            {deviceStatus ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, ml: 4 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2" color="grey.400" fontSize={12}>Serial Number</Typography>
-                  <Typography variant="body2" fontSize={12}>{deviceStatus.name || '-'}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2" color="grey.400" fontSize={12}>BLE Address</Typography>
-                  <Typography variant="body2" fontSize={12}>{deviceStatus.address || '-'}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2" color="grey.400" fontSize={12}>Connection Status</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {deviceStatus.status === 'connected' ? (
-                      <LinkIcon color="success" sx={{ mr: 1 }} />
+              <Separator />
+
+              {/* Current Device Status */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-base font-semibold text-foreground">Current Status</h3>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleConnect}
+                      disabled={registeredDevices.length === 0 || deviceStatus?.status === 'connected' || deviceStatus?.status === 'disconnected'}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {deviceStatus?.status === 'disconnected' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        'Connect'
+                      )}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleConnect}
+                      disabled={registeredDevices.length === 0 || deviceStatus?.status !== 'connected'}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+                
+                {deviceStatus ? (
+                  <div className="bg-muted rounded-lg p-4 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Serial Number</span>
+                      <span className="text-sm font-medium">{deviceStatus.name || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">BLE Address</span>
+                      <span className="text-sm font-mono">{deviceStatus.address || '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Connection Status</span>
+                      <div className="flex items-center gap-2">
+                        {deviceStatus.status === 'connected' ? (
+                          <>
+                            <Link className="w-4 h-4 text-green-500" />
+                            <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                              Connected
+                            </Badge>
+                          </>
+                        ) : (
+                          <>
+                            <Link2Off className="w-4 h-4 text-red-500" />
+                            <Badge variant="destructive">
+                              Disconnected
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Battery Level</span>
+                      <div className="flex items-center gap-2">
+                        <Progress value={deviceStatus.bat_level || 0} className="w-16" />
+                        <span className="text-sm font-medium">{deviceStatus.bat_level || 0}%</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground text-sm">
+                    No device connected
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Scan Devices Section */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-base font-semibold text-foreground">Scan Devices</h3>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleScan}
+                    disabled={isLoading.scan || registeredDevices.length > 0}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {isLoading.scan ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <LinkOffIcon color="error" sx={{ mr: 1 }} />
+                      'Scan'
                     )}
-                    <Typography variant="body2" color={deviceStatus.status === 'connected' ? 'success.main' : 'error.main'} fontSize={12}>
-                      {deviceStatus.status === 'connected' ? 'Connected' : 'Disconnected'}
-                    </Typography>
-                  </Box>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography variant="body2" color="grey.400" fontSize={12}>Battery Level</Typography>
-                  <Typography variant="body2" fontSize={12}>{deviceStatus.bat_level || '-'}%</Typography>
-                </Box>
-              </Box>
-            ) : (
-              <Typography variant="body2" color="grey.500" fontSize={12}>No device connected</Typography>
-            )}
-          </Box>
+                  </Button>
+                </div>
+                
+                {isLoading.scan ? (
+                  <div className="text-center py-4 text-muted-foreground text-sm">
+                    Scanning for devices...
+                  </div>
+                ) : scannedDevices.length > 0 ? (
+                  <div className="space-y-2">
+                    {scannedDevices.map((device) => (
+                      <div key={device.address} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="p-0 h-auto"
+                          onClick={() => handleDeviceSelect(device.address)}
+                          disabled={registeredDevices.length > 0}
+                        >
+                          <Radio className={`w-4 h-4 ${selectedDevice === device.address ? 'text-primary' : 'text-muted-foreground'}`} />
+                        </Button>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">{device.name}</div>
+                          <div className="text-xs text-muted-foreground">{device.address}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground text-sm">
+                    No devices found
+                  </div>
+                )}
+                
+                <div className="flex justify-end">
+                  <Button
+                    variant="default"
+                    onClick={handleRegister}
+                    disabled={!selectedDevice || registeredDevices.length > 0}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    Register Link Band
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
-          {/* Scan Devices Section */}
-          <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography variant="subtitle2" color="grey.400" sx={{ fontWeight: 'bold', color: 'white', fontSize: 14 }}>Scan Devices</Typography>
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                onClick={handleScan}
-                disabled={isLoading.scan || registeredDevices.length > 0}
-                sx={{ fontSize: 12, maxHeight: 28, minWidth: 50 }}
-
-              >
-                {isLoading.scan ? <CircularProgress size={16} /> : 'Scan'}
-              </Button>
-            </Box>
-            {isLoading.scan ? (
-              <Typography variant="body2" color="grey.500" sx={{ ml: 4, fontSize: 12 }}>
-                Scanning...
-              </Typography>
-            ) : scannedDevices.length > 0 ? (
-              <List sx={{ ml: 2 }}>
-                {scannedDevices.map((device) => (
-                  <ListItem key={device.address} sx={{ py: 0.5, fontSize: 12 }}>
-                    <Radio
-                      checked={selectedDevice === device.address}
-                      onChange={() => handleDeviceSelect(device.address)}
-                      disabled={registeredDevices.length > 0}
-                    />
-                    <ListItemText
-                      primary={
-                        <Typography variant="body2" sx={{ fontSize: 12 }}>
-                          {}
-                          <Typography component="span" sx={{ fontWeight: 'bold' , fontSize: 12}}>
-                            {device.name}
-                          </Typography>
-                          <Typography component="span" sx={{ color: 'grey.500' , fontSize: 12}}>
-                            {`  (${device.address})`}
-                          </Typography>
-                        </Typography>
-                      }
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            ) : (
-              <Typography variant="body2" color="grey.500" sx={{ ml: 4 , fontSize: 12}}>
-                No devices found
-              </Typography>
-            )}
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 , fontSize: 12}}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleRegister}
-                disabled={!selectedDevice || registeredDevices.length > 0}
-              >
-                Register Link Band
-              </Button>
-            </Box>
-          </Box>
-        </Box>
-      )}
-
-      {errors.connect && (
-        <Typography color="error" sx={{ mt: 1 }}>{errors.connect}</Typography>
-      )}
-    </Card>
+          {errors.connect && (
+            <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive">{errors.connect}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 
