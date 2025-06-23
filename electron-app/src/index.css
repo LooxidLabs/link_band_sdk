@@ -1,68 +1,232 @@
+@custom-variant dark (&:is(.dark *));
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --font-size: 14px;
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #0f172a;
+  --primary-foreground: #f8fafc;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #dc2626;
+  --destructive-foreground: #f8fafc;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #94a3b8;
+  --radius: 0.5rem;
+  --chart-1: #3b82f6;
+  --chart-2: #8b5cf6;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #ef4444;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+/* Force dark theme for the entire app */
+*, html, body, #root {
+  /* Refined Professional Theme */
+  --background: #0f0f14 !important;
+  --foreground: #e2e4e9 !important;
+  --card: #161822 !important;
+  --card-foreground: #e2e4e9 !important;
+  --popover: #161822 !important;
+  --popover-foreground: #e2e4e9 !important;
+  --primary: #4f8cc9 !important;
+  --primary-foreground: #ffffff !important;
+  --secondary: #1e2028 !important;
+  --secondary-foreground: #9ca3af !important;
+  --muted: #1e2028 !important;
+  --muted-foreground: #6b7280 !important;
+  --accent: #252a35 !important;
+  --accent-foreground: #d1d5db !important;
+  --destructive: #dc2626 !important;
+  --destructive-foreground: #ffffff !important;
+  --border: #374151 !important;
+  --input: #1e2028 !important;
+  --ring: #4f8cc9 !important;
+  
+  /* Refined chart colors for professional look */
+  --chart-1: #4f8cc9 !important; /* Calm Blue - EEG */
+  --chart-2: #8b5cf6 !important; /* Muted Purple - PPG */
+  --chart-3: #059669 !important; /* Professional Green - Accelerometer */
+  --chart-4: #d97706 !important; /* Warm Orange - Battery */
+  --chart-5: #dc2626 !important; /* Alert Red - Error states */
+  
+  /* Professional sidebar */
+  --sidebar: #131620 !important;
+  --sidebar-foreground: #e2e4e9 !important;
+  --sidebar-primary: #4f8cc9 !important;
+  --sidebar-primary-foreground: #ffffff !important;
+  --sidebar-accent: #1e2028 !important;
+  --sidebar-accent-foreground: #9ca3af !important;
+  --sidebar-border: #374151 !important;
+  --sidebar-ring: #4f8cc9 !important;
+  
+  /* Subtle status colors */
+  --connection-active: #10b981 !important;
+  --connection-inactive: #6b7280 !important;
+  --system-error: #dc2626 !important;
+  --system-warning: #d97706 !important;
+  --system-success: #059669 !important;
 }
 
-body {
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    background-color: #0f0f14 !important;
+    color: #e2e4e9 !important;
+    overflow: hidden !important;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background-color: #0f0f14 !important;
+    color: #e2e4e9 !important;
+    overflow: hidden !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    height: 100% !important;
+    background-color: #0f0f14 !important;
+    color: #e2e4e9 !important;
+  }
+  
+  /* Force dark colors for all elements */
+  * {
+    color: #e2e4e9 !important;
+  }
+  
+  /* Override specific element colors */
+  .text-chart-1 { color: #4f8cc9 !important; }
+  .text-chart-2 { color: #8b5cf6 !important; }
+  .text-chart-3 { color: #059669 !important; }
+  .text-chart-4 { color: #d97706 !important; }
+  .text-chart-5 { color: #dc2626 !important; }
+  .text-muted-foreground { color: #6b7280 !important; }
+  .text-destructive { color: #dc2626 !important; }
+  .text-primary { color: #4f8cc9 !important; }
+  .text-foreground { color: #e2e4e9 !important; }
+  .text-sidebar-foreground { color: #e2e4e9 !important; }
+  .text-sidebar-primary-foreground { color: #ffffff !important; }
+  
+  /* Background colors */
+  .bg-background { background-color: #0f0f14 !important; }
+  .bg-card { background-color: #161822 !important; }
+  .bg-sidebar { background-color: #131620 !important; }
+  .bg-primary { background-color: #4f8cc9 !important; }
+  .bg-secondary { background-color: #1e2028 !important; }
+  .bg-muted { background-color: #1e2028 !important; }
+  .bg-sidebar-primary { background-color: #4f8cc9 !important; }
+  .bg-sidebar-accent { background-color: #1e2028 !important; }
+  
+  /* Border colors */
+  .border-border { border-color: #374151 !important; }
+  .border-sidebar-border { border-color: #374151 !important; }
+  
+  /* Subtle pulse animation for active states */
+  .subtle-pulse {
+    animation: subtle-pulse 3s ease-in-out infinite;
+  }
+  
+  @keyframes subtle-pulse {
+    0%, 100% { 
+      opacity: 1; 
+    }
+    50% { 
+      opacity: 0.8; 
+    }
+  }
+  
+  /* Gentle data flow indicator */
+  .data-flow {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .data-flow::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(79, 140, 201, 0.3), transparent);
+    animation: data-flow 4s ease-in-out infinite;
+  }
+  
+  @keyframes data-flow {
+    0% { 
+      left: -100%; 
+    }
+    50% { 
+      left: 100%; 
+    }
+    100% { 
+      left: 100%; 
+    }
+  }
+}
+
+html, body, #root {
+  height: 100%;
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  padding: 0;
+  overflow: hidden; /* 전체 창 스크롤 방지 */
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+:where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
+  h1 {
+    @apply scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl;
   }
-  a:hover {
-    color: #747bff;
+
+  h2 {
+    @apply scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight first:mt-0;
   }
+
+  h3 {
+    @apply scroll-m-20 text-2xl font-semibold tracking-tight;
+  }
+
+  h4 {
+    @apply scroll-m-20 text-xl font-semibold tracking-tight;
+  }
+
+  p {
+    @apply leading-7 [&:not(:first-child)]:mt-6;
+  }
+
+  label {
+    @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
+  }
+
   button {
-    background-color: #f9f9f9;
+    @apply inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
   }
+
+  input {
+    @apply flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}
+
+html {
+  font-size: var(--font-size);
 }
