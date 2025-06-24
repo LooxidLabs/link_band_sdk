@@ -1,83 +1,89 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
-electron_1.contextBridge.exposeInMainWorld('electron', {
+const { contextBridge, ipcRenderer, shell } = require('electron');
+contextBridge.exposeInMainWorld('electron', {
     ipcRenderer: {
-        send: (channel, data) => electron_1.ipcRenderer.send(channel, data),
-        invoke: (channel, ...args) => electron_1.ipcRenderer.invoke(channel, ...args),
+        send: (channel, data) => ipcRenderer.send(channel, data),
+        invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
         on: (channel, func) => {
             const subscription = (event, ...args) => func(...args);
-            electron_1.ipcRenderer.on(channel, subscription);
-            return () => electron_1.ipcRenderer.removeListener(channel, subscription); // Return a cleanup function
+            ipcRenderer.on(channel, subscription);
+            return () => ipcRenderer.removeListener(channel, subscription); // Return a cleanup function
         },
-        removeAllListeners: (channel) => electron_1.ipcRenderer.removeAllListeners(channel),
+        removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
     },
     shell: {
-        openExternal: (url) => electron_1.shell.openExternal(url),
-        openPath: (path) => electron_1.shell.openPath(path), // Already exposed, good.
+        openExternal: (url) => shell.openExternal(url),
+        openPath: (path) => shell.openPath(path), // Already exposed, good.
     },
     // Specific handlers for data center operations
     dataCenter: {
-        exportSession: (sessionId) => electron_1.ipcRenderer.invoke('export-session', sessionId),
-        openSessionFolder: (sessionId) => electron_1.ipcRenderer.invoke('open-session-folder', sessionId),
-        searchFiles: (params) => electron_1.ipcRenderer.invoke('search-files', params),
-        exportDataRaw: (params) => electron_1.ipcRenderer.invoke('export-data-raw', params),
-        openSpecificFile: (fileId) => electron_1.ipcRenderer.invoke('open-specific-file', fileId),
+        exportSession: (sessionId) => ipcRenderer.invoke('export-session', sessionId),
+        openSessionFolder: (sessionId) => ipcRenderer.invoke('open-session-folder', sessionId),
+        searchFiles: (params) => ipcRenderer.invoke('search-files', params),
+        exportDataRaw: (params) => ipcRenderer.invoke('export-data-raw', params),
+        openSpecificFile: (fileId) => ipcRenderer.invoke('open-specific-file', fileId),
     },
     store: {
-        getSavedCredentials: () => electron_1.ipcRenderer.invoke('get-saved-credentials'),
-        setSavedCredentials: (credentials) => electron_1.ipcRenderer.invoke('set-saved-credentials', credentials),
-        clearSavedCredentials: () => electron_1.ipcRenderer.invoke('clear-saved-credentials'),
+        getSavedCredentials: () => ipcRenderer.invoke('get-saved-credentials'),
+        setSavedCredentials: (credentials) => ipcRenderer.invoke('set-saved-credentials', credentials),
+        clearSavedCredentials: () => ipcRenderer.invoke('clear-saved-credentials'),
     },
     // Update related APIs
     updater: {
         onUpdateChecking: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('update-checking', callback);
+            const unsubscribe = ipcRenderer.on('update-checking', callback);
             return unsubscribe;
         },
         onUpdateAvailable: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('update-available', (_, info) => callback(info));
+            const unsubscribe = ipcRenderer.on('update-available', (_, info) => callback(info));
             return unsubscribe;
         },
         onUpdateNotAvailable: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('update-not-available', (_, info) => callback(info));
+            const unsubscribe = ipcRenderer.on('update-not-available', (_, info) => callback(info));
             return unsubscribe;
         },
         onUpdateError: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('update-error', (_, error) => callback(error));
+            const unsubscribe = ipcRenderer.on('update-error', (_, error) => callback(error));
             return unsubscribe;
         },
         onUpdateDownloadProgress: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('update-download-progress', (_, progress) => callback(progress));
+            const unsubscribe = ipcRenderer.on('update-download-progress', (_, progress) => callback(progress));
             return unsubscribe;
         },
         onUpdateDownloaded: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('update-downloaded', (_, info) => callback(info));
+            const unsubscribe = ipcRenderer.on('update-downloaded', (_, info) => callback(info));
             return unsubscribe;
         },
-        checkForUpdates: () => electron_1.ipcRenderer.invoke('check-for-updates'),
-        quitAndInstall: () => electron_1.ipcRenderer.invoke('quit-and-install'),
+        checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+        quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
+    },
+    // File system operations
+    fs: {
+        readMarkdownFile: (filePath) => ipcRenderer.invoke('read-markdown-file', filePath),
+        selectDirectory: () => ipcRenderer.invoke('select-directory'),
+        getDefaultDataPath: () => ipcRenderer.invoke('get-default-data-path'),
+        checkDirectory: (path) => ipcRenderer.invoke('check-directory', path),
     },
     // Python Server Control APIs
     pythonServer: {
-        start: () => electron_1.ipcRenderer.invoke('start-python-server'),
-        stop: () => electron_1.ipcRenderer.invoke('stop-python-server'),
-        restart: () => electron_1.ipcRenderer.invoke('restart-python-server'),
-        getStatus: () => electron_1.ipcRenderer.invoke('get-python-server-status'),
+        start: () => ipcRenderer.invoke('start-python-server'),
+        stop: () => ipcRenderer.invoke('stop-python-server'),
+        restart: () => ipcRenderer.invoke('restart-python-server'),
+        getStatus: () => ipcRenderer.invoke('get-python-server-status'),
         onStatusChange: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('python-server-status', (_, status) => callback(status));
+            const unsubscribe = ipcRenderer.on('python-server-status', (_, status) => callback(status));
             return unsubscribe;
         },
         onLog: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('python-log', (_, log) => callback(log));
+            const unsubscribe = ipcRenderer.on('python-log', (_, log) => callback(log));
             return unsubscribe;
         },
         onReady: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('python-server-ready', callback);
+            const unsubscribe = ipcRenderer.on('python-server-ready', callback);
             return unsubscribe;
         },
         onStopped: (callback) => {
-            const unsubscribe = electron_1.ipcRenderer.on('python-server-stopped', (_, info) => callback(info));
+            const unsubscribe = ipcRenderer.on('python-server-stopped', (_, info) => callback(info));
             return unsubscribe;
         }
     }

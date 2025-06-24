@@ -1,48 +1,15 @@
-"use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const electron_1 = require("electron");
-const electron_updater_1 = require("electron-updater");
-const path = __importStar(require("path"));
-const child_process_1 = require("child_process");
-const electron_store_1 = __importDefault(require("electron-store"));
-const axios_1 = __importDefault(require("axios"));
-const fs_extra_1 = __importDefault(require("fs-extra"));
+import { app, BrowserWindow, ipcMain, session, shell, dialog } from 'electron';
+// Completely disable electron-updater
+let autoUpdater = null;
+import * as path from 'path';
+import { spawn } from 'child_process';
+import Store from 'electron-store';
+import axios from 'axios';
+import fsExtra from 'fs-extra';
+import { fileURLToPath } from 'url';
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 let win = null;
 // let tray: Tray | null = null; // Not needed for standalone app
 // let quitting = false; // Not needed for standalone app
@@ -55,7 +22,7 @@ let serverStatus = {
 };
 let serverStartTime = null;
 const PROTOCOL_SCHEME = 'linkbandapp';
-const store = new electron_store_1.default({
+const store = new Store({
     defaults: {
         savedCredentials: null
     }
@@ -70,15 +37,17 @@ function showWindow() {
     }
 }
 function createWindow() {
-    win = new electron_1.BrowserWindow({
-        width: 1200,
-        height: 800,
+    win = new BrowserWindow({
+        width: 1280,
+        height: 900,
         title: 'LINK BAND SDK',
+        icon: path.join(__dirname, 'appIcon.png'), // Add custom icon
         show: true, // Show window immediately
         center: true, // Center the window on screen
         webPreferences: {
             contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'preload.js'),
+            webSecurity: false // 외부 CSS 로드를 위해 웹 보안 비활성화
         },
     });
     const indexPath = path.join(__dirname, '../dist/index.html');
@@ -93,7 +62,7 @@ function createWindow() {
             gracefulShutdown();
         }
     });
-    electron_1.ipcMain.on('show-window', () => {
+    ipcMain.on('show-window', () => {
         console.log('Received show-window event');
         showWindow();
     });
@@ -108,47 +77,51 @@ async function gracefulShutdown() {
         // Stop Python server with timeout
         await stopPythonServerGracefully();
         // Close all windows
-        electron_1.BrowserWindow.getAllWindows().forEach(window => {
+        BrowserWindow.getAllWindows().forEach(window => {
             if (!window.isDestroyed()) {
                 window.destroy();
             }
         });
         // Quit the app
-        electron_1.app.quit();
+        app.quit();
     }
     catch (error) {
         console.error('Error during graceful shutdown:', error);
-        electron_1.app.quit();
+        app.quit();
     }
 }
 // Auto-updater configuration
 function configureAutoUpdater() {
+    if (!autoUpdater) {
+        console.warn('Auto-updater not available, skipping configuration');
+        return;
+    }
     // Configure autoUpdater
-    electron_updater_1.autoUpdater.checkForUpdatesAndNotify();
-    electron_updater_1.autoUpdater.on('checking-for-update', () => {
+    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.on('checking-for-update', () => {
         console.log('Checking for update...');
         win?.webContents.send('update-checking');
     });
-    electron_updater_1.autoUpdater.on('update-available', (info) => {
+    autoUpdater.on('update-available', (info) => {
         console.log('Update available:', info);
         win?.webContents.send('update-available', info);
     });
-    electron_updater_1.autoUpdater.on('update-not-available', (info) => {
+    autoUpdater.on('update-not-available', (info) => {
         console.log('Update not available:', info);
         win?.webContents.send('update-not-available', info);
     });
-    electron_updater_1.autoUpdater.on('error', (err) => {
+    autoUpdater.on('error', (err) => {
         console.log('Error in auto-updater:', err);
         win?.webContents.send('update-error', err);
     });
-    electron_updater_1.autoUpdater.on('download-progress', (progressObj) => {
+    autoUpdater.on('download-progress', (progressObj) => {
         let log_message = "Download speed: " + progressObj.bytesPerSecond;
         log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
         log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
         console.log(log_message);
         win?.webContents.send('update-download-progress', progressObj);
     });
-    electron_updater_1.autoUpdater.on('update-downloaded', (info) => {
+    autoUpdater.on('update-downloaded', (info) => {
         console.log('Update downloaded:', info);
         win?.webContents.send('update-downloaded', info);
         // Show dialog to restart and install update
@@ -159,15 +132,18 @@ function configureAutoUpdater() {
             message: 'A new version has been downloaded. Restart the application to apply the update?',
             detail: 'The update will be applied when you restart the application.'
         };
-        electron_1.dialog.showMessageBox(dialogOpts).then((returnValue) => {
+        dialog.showMessageBox(dialogOpts).then((returnValue) => {
             if (returnValue.response === 0)
-                electron_updater_1.autoUpdater.quitAndInstall();
+                autoUpdater.quitAndInstall();
         });
     });
     // IPC handlers for manual update check
-    electron_1.ipcMain.handle('check-for-updates', async () => {
+    ipcMain.handle('check-for-updates', async () => {
+        if (!autoUpdater) {
+            throw new Error('Auto-updater not available');
+        }
         try {
-            const result = await electron_updater_1.autoUpdater.checkForUpdates();
+            const result = await autoUpdater.checkForUpdates();
             return result;
         }
         catch (error) {
@@ -175,8 +151,11 @@ function configureAutoUpdater() {
             throw error;
         }
     });
-    electron_1.ipcMain.handle('quit-and-install', () => {
-        electron_updater_1.autoUpdater.quitAndInstall();
+    ipcMain.handle('quit-and-install', () => {
+        if (!autoUpdater) {
+            throw new Error('Auto-updater not available');
+        }
+        autoUpdater.quitAndInstall();
     });
 }
 // Tray functionality disabled for standalone desktop app
@@ -204,13 +183,28 @@ function startPythonServer() {
             resolve({ success: false, message: 'Python server is already running', status: serverStatus });
             return;
         }
-        const pythonPath = path.join(__dirname, '../../python_core/run_server.py');
-        const venvPythonPath = path.join(__dirname, '../../venv/bin/python3');
+        // Determine if we're in development or production
+        const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+        let pythonPath;
+        let pythonExecutable;
+        if (isDev) {
+            // Development mode - use relative paths
+            pythonPath = path.join(__dirname, '../../python_core/run_server.py');
+            pythonExecutable = path.join(__dirname, '../../venv/bin/python3');
+        }
+        else {
+            // Production mode - use bundled resources and virtual environment
+            const resourcesPath = process.resourcesPath;
+            pythonPath = path.join(resourcesPath, 'python_core/run_server.py');
+            pythonExecutable = path.join(resourcesPath, 'python_core/venv/bin/python3');
+        }
         console.log('Starting Python server from:', pythonPath);
-        console.log('Using Python from virtual environment:', venvPythonPath);
+        console.log('Using Python executable:', pythonExecutable);
+        console.log('Development mode:', isDev);
+        console.log('Resources path:', process.resourcesPath);
         updateServerStatus({ status: 'starting', lastError: undefined });
         serverStartTime = new Date();
-        pythonProcess = (0, child_process_1.spawn)(venvPythonPath, [pythonPath], {
+        pythonProcess = spawn(pythonExecutable, [pythonPath], {
             stdio: ['pipe', 'pipe', 'pipe']
         });
         if (pythonProcess.pid) {
@@ -221,7 +215,10 @@ function startPythonServer() {
             console.log('Python server output:', output);
             addServerLog(output);
             win?.webContents.send('python-log', output);
-            if (output.includes('WebSocket server initialized')) {
+            // Check for multiple possible server ready indicators
+            if (output.includes('WebSocket server initialized') ||
+                output.includes('Link Band SDK Server ready!') ||
+                output.includes('Application startup complete')) {
                 console.log('Python server is ready');
                 updateServerStatus({ status: 'running' });
                 win?.webContents.send('python-server-ready');
@@ -249,8 +246,36 @@ function startPythonServer() {
             updateServerStatus({ status: 'error', lastError: error.message, pid: undefined });
             resolve({ success: false, message: `Failed to start Python server: ${error.message}`, status: serverStatus });
         });
+        // Quick health check to see if server is responding
+        const healthCheckInterval = setInterval(async () => {
+            if (serverStatus.status === 'starting') {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 1000);
+                    const response = await fetch('http://localhost:8121/', {
+                        method: 'GET',
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (response.ok) {
+                        console.log('Python server is responding to HTTP requests');
+                        clearInterval(healthCheckInterval);
+                        updateServerStatus({ status: 'running' });
+                        win?.webContents.send('python-server-ready');
+                        resolve({ success: true, message: 'Python server started successfully', status: serverStatus });
+                    }
+                }
+                catch (error) {
+                    // Server not ready yet, continue checking
+                }
+            }
+            else {
+                clearInterval(healthCheckInterval);
+            }
+        }, 500); // Check every 500ms
         // Timeout for server start
         setTimeout(() => {
+            clearInterval(healthCheckInterval);
             if (serverStatus.status === 'starting') {
                 resolve({ success: false, message: 'Python server start timeout', status: serverStatus });
             }
@@ -328,7 +353,7 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     // Don't exit the process, just log the error
 });
-electron_1.app.on('open-url', (event, url) => {
+app.on('open-url', (event, url) => {
     event.preventDefault();
     try {
         const parsedUrl = new URL(url);
@@ -344,12 +369,12 @@ electron_1.app.on('open-url', (event, url) => {
         console.error('Failed to parse custom URL or extract token:', e);
     }
 });
-const gotTheLock = electron_1.app.requestSingleInstanceLock();
+const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-    electron_1.app.quit();
+    app.quit();
 }
 else {
-    electron_1.app.on('second-instance', (event, commandLine, workingDirectory) => {
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
         if (win) {
             if (win.isMinimized())
                 win.restore();
@@ -389,8 +414,15 @@ function handleCustomUrl(url) {
         console.error('Failed to parse custom URL or extract token:', e);
     }
 }
-electron_1.app.whenReady().then(() => {
-    electron_1.session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+app.whenReady().then(() => {
+    // Set app name for menu bar
+    app.setName('Link Band SDK');
+    // Set Dock icon for macOS
+    if (process.platform === 'darwin' && app.dock) {
+        const dockIconPath = path.join(__dirname, 'appIcon.png');
+        app.dock.setIcon(dockIconPath);
+    }
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
         callback({
             responseHeaders: {
                 ...details.responseHeaders,
@@ -406,11 +438,11 @@ electron_1.app.whenReady().then(() => {
     });
     if (process.defaultApp) {
         if (process.argv.length >= 2) {
-            electron_1.app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
+            app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
         }
     }
     else {
-        electron_1.app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
+        app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
     }
     createWindow();
     // Remove tray functionality for standalone desktop app
@@ -418,8 +450,8 @@ electron_1.app.whenReady().then(() => {
     if (!win) {
         createWindow();
     }
-    // Configure auto-updater after window is created
-    configureAutoUpdater();
+    // Auto-updater completely disabled
+    // configureAutoUpdater();
     // Start Python server on app startup
     startPythonServer().then(result => {
         console.log('Python server startup result:', result);
@@ -427,25 +459,25 @@ electron_1.app.whenReady().then(() => {
         console.error('Failed to start Python server on startup:', error);
     });
 });
-electron_1.app.on('window-all-closed', () => {
+app.on('window-all-closed', () => {
     // Standard desktop app behavior - quit when all windows are closed
     if (!isQuitting) {
         gracefulShutdown();
     }
 });
-electron_1.app.on('before-quit', async (event) => {
+app.on('before-quit', async (event) => {
     if (!isQuitting) {
         event.preventDefault();
         await gracefulShutdown();
     }
 });
-electron_1.app.on('activate', () => {
-    if (electron_1.BrowserWindow.getAllWindows().length === 0) {
+app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
     }
 });
-electron_1.ipcMain.on('open-web-login', () => {
-    const loginWin = new electron_1.BrowserWindow({
+ipcMain.on('open-web-login', () => {
+    const loginWin = new BrowserWindow({
         width: 600,
         height: 800,
         autoHideMenuBar: true,
@@ -475,7 +507,7 @@ electron_1.ipcMain.on('open-web-login', () => {
     });
 });
 // Python Server Control IPC Handlers
-electron_1.ipcMain.handle('start-python-server', async () => {
+ipcMain.handle('start-python-server', async () => {
     try {
         return await startPythonServer();
     }
@@ -483,7 +515,7 @@ electron_1.ipcMain.handle('start-python-server', async () => {
         return { success: false, message: `Failed to start server: ${error.message}`, status: serverStatus };
     }
 });
-electron_1.ipcMain.handle('stop-python-server', async () => {
+ipcMain.handle('stop-python-server', async () => {
     try {
         return await stopPythonServer();
     }
@@ -491,7 +523,7 @@ electron_1.ipcMain.handle('stop-python-server', async () => {
         return { success: false, message: `Failed to stop server: ${error.message}`, status: serverStatus };
     }
 });
-electron_1.ipcMain.handle('restart-python-server', async () => {
+ipcMain.handle('restart-python-server', async () => {
     try {
         return await restartPythonServer();
     }
@@ -499,56 +531,187 @@ electron_1.ipcMain.handle('restart-python-server', async () => {
         return { success: false, message: `Failed to restart server: ${error.message}`, status: serverStatus };
     }
 });
-electron_1.ipcMain.handle('get-python-server-status', async () => {
+ipcMain.handle('get-python-server-status', async () => {
     return getPythonServerStatus();
 });
 // Legacy event handler for backward compatibility
-electron_1.ipcMain.on('stop-python-server', () => {
+ipcMain.on('stop-python-server', () => {
     stopPythonServer();
 });
-electron_1.ipcMain.handle('get-saved-credentials', () => {
+ipcMain.handle('get-saved-credentials', () => {
     return store.get('savedCredentials');
 });
-electron_1.ipcMain.handle('set-saved-credentials', (_, credentials) => {
+ipcMain.handle('set-saved-credentials', (_, credentials) => {
     store.set('savedCredentials', credentials);
     return true;
 });
-electron_1.ipcMain.handle('clear-saved-credentials', () => {
+ipcMain.handle('clear-saved-credentials', () => {
     store.delete('savedCredentials');
     return true;
 });
+// Directory selection handler
+ipcMain.handle('select-directory', async (event) => {
+    try {
+        console.log('select-directory handler called');
+        const currentWindow = BrowserWindow.getFocusedWindow() || win;
+        if (!currentWindow) {
+            console.error('No focused window available for directory dialog.');
+            return { canceled: true, filePaths: [] };
+        }
+        console.log('Showing open dialog...');
+        const result = await dialog.showOpenDialog(currentWindow, {
+            properties: ['openDirectory', 'dontAddToRecent'],
+            title: 'Select Export Path',
+            buttonLabel: 'Select Folder',
+            message: 'Choose a folder for exporting data'
+        });
+        console.log('Dialog result:', JSON.stringify(result, null, 2));
+        console.log('Result canceled:', result.canceled);
+        console.log('Result filePaths:', result.filePaths);
+        console.log('FilePaths length:', result.filePaths ? result.filePaths.length : 'undefined');
+        // 사용자가 취소한 경우
+        if (result.canceled) {
+            console.log('User canceled the dialog');
+            return { canceled: true, filePaths: [] };
+        }
+        // filePaths 배열이 있고 비어있지 않은 경우
+        if (result.filePaths && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
+            console.log('Selected path:', result.filePaths[0]);
+            const finalResult = {
+                canceled: false,
+                filePaths: result.filePaths
+            };
+            console.log('Returning result:', JSON.stringify(finalResult, null, 2));
+            return finalResult;
+        }
+        // 여기에 도달한다는 것은 사용자가 취소하지 않았지만 filePaths가 비어있다는 뜻
+        // 이는 macOS의 알려진 버그입니다
+        console.warn('macOS dialog bug detected - filePaths is empty but not canceled');
+        // 기본 Downloads 폴더를 대안으로 제공
+        const downloadsPath = app.getPath('downloads');
+        console.log('Offering alternative path:', downloadsPath);
+        const alternativeResult = {
+            canceled: false,
+            filePaths: [downloadsPath],
+            isAlternative: true
+        };
+        console.log('Returning alternative result:', JSON.stringify(alternativeResult, null, 2));
+        return alternativeResult;
+    }
+    catch (error) {
+        console.error('Error showing directory dialog:', error);
+        return { canceled: true, filePaths: [] };
+    }
+});
+// Markdown file reading handler
+ipcMain.handle('read-markdown-file', async (event, filePath) => {
+    try {
+        let fullPath;
+        if (app.isPackaged) {
+            // 프로덕션 모드: dist 폴더에서 읽기
+            fullPath = path.join(__dirname, '../docs', filePath);
+        }
+        else {
+            // 개발 모드: public 폴더에서 읽기
+            fullPath = path.join(__dirname, '../public/docs', filePath);
+        }
+        console.log(`Reading markdown file from: ${fullPath}`);
+        if (await fsExtra.pathExists(fullPath)) {
+            const content = await fsExtra.readFile(fullPath, 'utf8');
+            return { success: true, content };
+        }
+        else {
+            console.error(`Markdown file not found: ${fullPath}`);
+            return { success: false, error: `File not found: ${filePath}` };
+        }
+    }
+    catch (error) {
+        console.error(`Error reading markdown file ${filePath}:`, error);
+        return { success: false, error: error.message };
+    }
+});
+// Get default data path handler
+ipcMain.handle('get-default-data-path', async (event) => {
+    try {
+        let dataPath;
+        if (app.isPackaged) {
+            // 프로덕션 모드: 앱 번들 내부의 python_core/data 경로
+            dataPath = path.join(process.resourcesPath, 'python_core', 'data');
+        }
+        else {
+            // 개발 모드: 프로젝트 루트 기준으로 electron-app/data
+            const projectRoot = path.resolve(__dirname, '../../');
+            dataPath = path.join(projectRoot, 'electron-app', 'data');
+        }
+        // 디렉토리가 없으면 생성
+        await fsExtra.ensureDir(dataPath);
+        return dataPath;
+    }
+    catch (error) {
+        console.error('Error getting default data path:', error);
+        return './data';
+    }
+});
 async function getSessionDataPath(sessionId) {
     try {
-        const response = await axios_1.default.get(`${API_BASE_URL}/data/sessions/${sessionId}`);
+        console.log(`[getSessionDataPath] Fetching data for session: ${sessionId}`);
+        console.log(`[getSessionDataPath] API URL: ${API_BASE_URL}/data/sessions/${sessionId}`);
+        const response = await axios.get(`${API_BASE_URL}/data/sessions/${sessionId}`);
+        console.log(`[getSessionDataPath] Response status: ${response.status}`);
+        console.log(`[getSessionDataPath] Response data:`, response.data);
         if (response.data && typeof response.data.data_path === 'string') {
+            console.log(`[getSessionDataPath] Found data_path: ${response.data.data_path}`);
             return response.data.data_path;
         }
-        console.error('Failed to get data_path from session response or data_path is not a string:', response.data);
+        console.error('[getSessionDataPath] Failed to get data_path from session response or data_path is not a string:', response.data);
         return null;
     }
     catch (error) {
-        console.error(`Error fetching session data for ${sessionId}:`, error);
+        console.error(`[getSessionDataPath] Error fetching session data for ${sessionId}:`, error);
+        if (error.response) {
+            console.error(`[getSessionDataPath] Response status: ${error.response.status}`);
+            console.error(`[getSessionDataPath] Response data:`, error.response.data);
+        }
         return null;
     }
 }
-electron_1.ipcMain.handle('open-session-folder', async (event, sessionId) => {
+ipcMain.handle('open-session-folder', async (event, sessionId) => {
     if (!sessionId) {
         return { success: false, message: 'Session ID is required.' };
     }
     console.log(`[IPC] Received open-session-folder request for session ID: ${sessionId}`);
     const sessionRelativePathFromBackend = await getSessionDataPath(sessionId);
     if (sessionRelativePathFromBackend && typeof sessionRelativePathFromBackend === 'string') {
-        const projectRoot = path.resolve(__dirname, '../../');
-        // 백엔드가 "data/session_XYZ" 형태로 반환한다고 가정합니다.
-        // 만약 백엔드가 "session_XYZ" (data/ 접두사 없이)만 반환한다면,
-        // 아래 줄은 path.join(projectRoot, 'python_core', 'data', sessionRelativePathFromBackend)가 되어야 합니다.
-        const absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+        let absoluteDataPath;
+        // 개발 모드와 프로덕션 모드 구분
+        if (app.isPackaged) {
+            // 프로덕션 모드: 앱 번들 내부의 python_core 경로 사용
+            const resourcesPath = process.resourcesPath;
+            absoluteDataPath = path.join(resourcesPath, 'python_core', sessionRelativePathFromBackend);
+        }
+        else {
+            // 개발 모드: 프로젝트 루트 기준으로 경로 설정
+            const projectRoot = path.resolve(__dirname, '../../');
+            // 개발 모드에서는 electron-app/data에 저장되므로 경로 조정
+            // sessionRelativePathFromBackend이 "data/session_XXX" 형식이라면
+            const sessionName = sessionRelativePathFromBackend.split('/').pop(); // session_XXX 부분만 추출
+            if (sessionName) {
+                absoluteDataPath = path.join(projectRoot, 'electron-app', 'data', sessionName);
+            }
+            else {
+                // sessionName을 추출할 수 없는 경우 원본 경로 사용
+                absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+            }
+            // 만약 electron-app/data에 없다면 python_core/data도 확인
+            if (!await fsExtra.pathExists(absoluteDataPath)) {
+                absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+            }
+        }
         console.log(`[IPC] Backend session relative path: ${sessionRelativePathFromBackend}`);
-        console.log(`[IPC] Assumed project root: ${projectRoot}`);
         console.log(`[IPC] Attempting to open absolute path: ${absoluteDataPath}`);
         try {
-            if (await fs_extra_1.default.pathExists(absoluteDataPath)) {
-                await electron_1.shell.openPath(absoluteDataPath);
+            if (await fsExtra.pathExists(absoluteDataPath)) {
+                await shell.openPath(absoluteDataPath);
                 console.log(`[IPC] Successfully opened folder: ${absoluteDataPath}`);
                 return { success: true, message: `Folder ${absoluteDataPath} opened.` };
             }
@@ -568,7 +731,7 @@ electron_1.ipcMain.handle('open-session-folder', async (event, sessionId) => {
         return { success: false, message: errorMessage };
     }
 });
-electron_1.ipcMain.handle('export-session', async (event, sessionId) => {
+ipcMain.handle('export-session', async (event, sessionId) => {
     if (!sessionId) {
         return { success: false, message: 'Session ID is required.' };
     }
@@ -577,20 +740,20 @@ electron_1.ipcMain.handle('export-session', async (event, sessionId) => {
     try {
         const prepareExportUrl = `${API_BASE_URL}/data/sessions/${sessionName}/prepare-export`;
         console.log(`Calling backend to prepare export: ${prepareExportUrl}`);
-        const prepareResponse = await axios_1.default.post(prepareExportUrl);
+        const prepareResponse = await axios.post(prepareExportUrl);
         if (prepareResponse.data && prepareResponse.data.status === 'success') {
             const { zip_filename: zipFilename, download_url: downloadUrlPath } = prepareResponse.data;
             if (!zipFilename || !downloadUrlPath) {
                 console.error('Backend did not return zip_filename or download_url:', prepareResponse.data);
                 return { success: false, message: 'Failed to get export details from server.' };
             }
-            const defaultSavePath = path.join(electron_1.app.getPath('downloads'), zipFilename);
-            const currentWindow = electron_1.BrowserWindow.getFocusedWindow() || win;
+            const defaultSavePath = path.join(app.getPath('downloads'), zipFilename);
+            const currentWindow = BrowserWindow.getFocusedWindow() || win;
             if (!currentWindow) {
                 console.error('No focused window available for save dialog.');
                 return { success: false, message: 'No active window to show save dialog.' };
             }
-            const { filePath } = await electron_1.dialog.showSaveDialog(currentWindow, {
+            const { filePath } = await dialog.showSaveDialog(currentWindow, {
                 title: 'Export Session Data',
                 defaultPath: defaultSavePath,
                 filters: [{ name: 'Zip Files', extensions: ['zip'] }],
@@ -598,8 +761,8 @@ electron_1.ipcMain.handle('export-session', async (event, sessionId) => {
             if (filePath) {
                 const fullDownloadUrl = `${API_BASE_URL}${downloadUrlPath}`;
                 console.log(`User selected path: ${filePath}. Downloading from ${fullDownloadUrl}`);
-                const writer = fs_extra_1.default.createWriteStream(filePath);
-                const response = await (0, axios_1.default)({
+                const writer = fsExtra.createWriteStream(filePath);
+                const response = await axios({
                     method: 'get',
                     url: fullDownloadUrl,
                     responseType: 'stream',
@@ -613,13 +776,13 @@ electron_1.ipcMain.handle('export-session', async (event, sessionId) => {
                     });
                     writer.on('error', (err) => {
                         console.error(`Error writing downloaded zip file ${filePath}:`, err);
-                        fs_extra_1.default.unlink(filePath).catch(e => console.error('Failed to delete partial file during cleanup:', e));
+                        fsExtra.unlink(filePath).catch(e => console.error('Failed to delete partial file during cleanup:', e));
                         reject({ success: false, message: `Failed to save exported session: ${err.message}` });
                     });
                     readableStream.on('error', (err) => {
                         console.error(`Error downloading file stream from ${fullDownloadUrl}:`, err);
                         writer.close();
-                        fs_extra_1.default.unlink(filePath).catch(e => console.error('Failed to delete partial file during stream error cleanup:', e));
+                        fsExtra.unlink(filePath).catch(e => console.error('Failed to delete partial file during stream error cleanup:', e));
                         reject({ success: false, message: `Failed to download session data: ${err.message}` });
                     });
                 });
@@ -647,14 +810,14 @@ electron_1.ipcMain.handle('export-session', async (event, sessionId) => {
         return { success: false, message: `Failed to export session: ${detailMessage}` };
     }
 });
-electron_1.ipcMain.handle('open-specific-file', async (event, filePath) => {
+ipcMain.handle('open-specific-file', async (event, filePath) => {
     if (!filePath || typeof filePath !== 'string') {
         console.error('Invalid file path received for open-specific-file:', filePath);
         return { success: false, message: 'Valid file path is required.' };
     }
     try {
-        if (await fs_extra_1.default.pathExists(filePath)) {
-            await electron_1.shell.openPath(filePath);
+        if (await fsExtra.pathExists(filePath)) {
+            await shell.openPath(filePath);
             console.log(`Successfully opened: ${filePath}`);
             return { success: true, message: `Path ${filePath} opened.` };
         }
@@ -666,5 +829,68 @@ electron_1.ipcMain.handle('open-specific-file', async (event, filePath) => {
     catch (error) {
         console.error(`Error opening path ${filePath}: `, error);
         return { success: false, message: `Failed to open path: ${error.message}` };
+    }
+});
+// Directory validation handler
+ipcMain.handle('check-directory', async (event, pathToCheck) => {
+    try {
+        console.log('check-directory handler called with path:', pathToCheck);
+        const fs = await import('fs');
+        const pathModule = await import('path');
+        // 상대 경로를 절대 경로로 변환
+        const absolutePath = pathModule.resolve(pathToCheck);
+        console.log('Resolved absolute path:', absolutePath);
+        try {
+            const stats = await fs.promises.stat(absolutePath);
+            if (stats.isDirectory()) {
+                // 쓰기 권한 확인
+                try {
+                    await fs.promises.access(absolutePath, fs.constants.W_OK);
+                    console.log('Directory exists and is writable');
+                    return {
+                        exists: true,
+                        isDirectory: true,
+                        writable: true,
+                        path: absolutePath
+                    };
+                }
+                catch (writeError) {
+                    console.log('Directory exists but is not writable');
+                    return {
+                        exists: true,
+                        isDirectory: true,
+                        writable: false,
+                        path: absolutePath
+                    };
+                }
+            }
+            else {
+                console.log('Path exists but is not a directory');
+                return {
+                    exists: true,
+                    isDirectory: false,
+                    writable: false,
+                    path: absolutePath
+                };
+            }
+        }
+        catch (statError) {
+            console.log('Path does not exist');
+            return {
+                exists: false,
+                isDirectory: false,
+                writable: false,
+                path: absolutePath
+            };
+        }
+    }
+    catch (error) {
+        console.error('Error checking directory:', error);
+        return {
+            exists: false,
+            isDirectory: false,
+            writable: false,
+            error: error.message
+        };
     }
 });

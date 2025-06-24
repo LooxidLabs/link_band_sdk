@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('electron', {
   // File system operations
   fs: {
     readMarkdownFile: (filePath: string) => ipcRenderer.invoke('read-markdown-file', filePath),
+    selectDirectory: () => ipcRenderer.invoke('select-directory'),
+    getDefaultDataPath: () => ipcRenderer.invoke('get-default-data-path'),
+    checkDirectory: (path: string) => ipcRenderer.invoke('check-directory', path),
   },
   // Python Server Control APIs
   pythonServer: {

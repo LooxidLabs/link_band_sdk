@@ -1,0 +1,92 @@
+{
+  "session_name": "brian_test_20250625_035639",
+  "start_time": "2025-06-25T03:56:39.600377",
+  "files": [
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "path": "data/brian_test_20250625_035639/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "size": 425698,
+      "record_count": 2675,
+      "created_at": "2025-06-25T03:56:50.323560"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "path": "data/brian_test_20250625_035639/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "size": 422724,
+      "record_count": 19,
+      "created_at": "2025-06-25T03:56:50.333706"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "path": "data/brian_test_20250625_035639/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "size": 44523,
+      "record_count": 532,
+      "created_at": "2025-06-25T03:56:50.335663"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "path": "data/brian_test_20250625_035639/015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "size": 24734,
+      "record_count": 270,
+      "created_at": "2025-06-25T03:56:50.336781"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json",
+      "path": "data/brian_test_20250625_035639/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json",
+      "size": 205519,
+      "record_count": 19,
+      "created_at": "2025-06-25T03:56:50.341327"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "path": "data/brian_test_20250625_035639/015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "size": 53021,
+      "record_count": 9,
+      "created_at": "2025-06-25T03:56:50.342614"
+    }
+  ],
+  "status": "stopped",
+  "end_time": "2025-06-25T03:56:50.311727",
+  "stats": {
+    "total_files": 6,
+    "type_details": {
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+        "record_count": 2675,
+        "size_bytes": 425698
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+        "record_count": 19,
+        "size_bytes": 422724
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+        "record_count": 532,
+        "size_bytes": 44523
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+        "record_count": 270,
+        "size_bytes": 24734
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json",
+        "record_count": 19,
+        "size_bytes": 205519
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+        "record_count": 9,
+        "size_bytes": 53021
+      }
+    },
+    "total_records": 3524
+  }
+}
