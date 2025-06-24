@@ -222,13 +222,16 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
   },
 
   openSessionFolder: async (sessionId: string) => {
+    console.log('[Store] openSessionFolder called with sessionId:', sessionId);
     try {
       const response = await dataCenterApi.openSessionFolder(sessionId);
+      console.log('[Store] openSessionFolder response:', response);
       useUiStore.getState().showSnackbar({ 
         message: response.message || `Folder for session ${sessionId} opened successfully.`, 
         severity: 'success' 
       });
     } catch (error: any) {
+      console.error('[Store] openSessionFolder error:', error);
       const detail = error?.response?.data?.detail;
       const msg = error?.response?.data?.message;
       const errorMessage = detail || msg || error?.message || `Failed to open folder for session ${sessionId}`;

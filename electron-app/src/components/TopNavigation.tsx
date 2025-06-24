@@ -21,7 +21,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ menuName }) => {
   
   // Get device connection status
   const deviceStatus = useDeviceStore((state) => state.deviceStatus);
-  const isDeviceConnected = deviceStatus?.status === 'connected';
+  const isDeviceConnected = deviceStatus?.is_connected || false;
   
   // Get sensor leadoff status - only valid when device is connected
   const eegData = useSensorStore((state) => state.eeg);
