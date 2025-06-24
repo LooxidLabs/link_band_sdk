@@ -32,8 +32,8 @@ const LinkBandModule: React.FC = () => {
   }, [startPolling, stopPolling]);
 
   const handleConnect = async () => {
-    if (deviceStatus?.status === 'connected') {
-      await disconnectDevice(deviceStatus.address);
+    if (deviceStatus?.is_connected) {
+      await disconnectDevice(deviceStatus.device_address || '');
     } else if (registeredDevices.length > 0) {
       try {
         await connectDevice(registeredDevices[0].address);
@@ -45,10 +45,10 @@ const LinkBandModule: React.FC = () => {
 
   const handleUnregister = async () => {
     if (deviceStatus) {
-      if (deviceStatus.status === 'connected') {
-        await disconnectDevice(deviceStatus.address);
+      if (deviceStatus.is_connected) {
+        await disconnectDevice(deviceStatus.device_address || '');
       }
-      await unregisterDevice(deviceStatus.address);
+      await unregisterDevice(deviceStatus.device_address || '');
     }
   };
 
@@ -73,21 +73,21 @@ const LinkBandModule: React.FC = () => {
   };
 
   return (
-    <div className="h-full">
-      <Card className="bg-card h-full flex flex-col m-6">
+    <div className="h-full overflow-auto">
+      <Card className="bg-card flex flex-col m-6">
         <CardHeader className="flex-shrink-0">
           <CardTitle className="flex items-center gap-2 text-foreground">
             <Brain className="w-5 h-5" />
             Link Band Status
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex-1 overflow-auto min-h-0">
+        <CardContent className="space-y-4">
           {isLoading.connect ? (
             <div className="flex justify-center py-4">
               <Loader2 className="w-6 h-6 animate-spin" />
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {/* Registered Device Information */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
@@ -97,6 +97,8 @@ const LinkBandModule: React.FC = () => {
                     size="sm"
                     onClick={handleUnregister}
                     disabled={registeredDevices.length === 0}
+                    className="bg-red-800 hover:bg-red-900 border-red-700"
+
                   >
                     Unregister
                   </Button>
@@ -131,10 +133,10 @@ const LinkBandModule: React.FC = () => {
                       variant="default"
                       size="sm"
                       onClick={handleConnect}
-                      disabled={registeredDevices.length === 0 || deviceStatus?.status === 'connected' || deviceStatus?.status === 'disconnected'}
+                      disabled={registeredDevices.length === 0 || deviceStatus?.is_connected || isLoading.connect}
                       className="bg-green-600 hover:bg-green-700"
                     >
-                      {deviceStatus?.status === 'disconnected' ? (
+                      {isLoading.connect ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
                         'Connect'
@@ -144,7 +146,8 @@ const LinkBandModule: React.FC = () => {
                       variant="destructive"
                       size="sm"
                       onClick={handleConnect}
-                      disabled={registeredDevices.length === 0 || deviceStatus?.status !== 'connected'}
+                      disabled={registeredDevices.length === 0 || !deviceStatus?.is_connected}
+                      className="bg-red-800 hover:bg-red-900 border-red-700"
                     >
                       Disconnect
                     </Button>
@@ -155,16 +158,16 @@ const LinkBandModule: React.FC = () => {
                   <div className="bg-muted rounded-lg p-4 space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Serial Number</span>
-                      <span className="text-sm font-medium">{deviceStatus.name || '-'}</span>
+                      <span className="text-sm font-medium">{deviceStatus.device_name || '-'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">BLE Address</span>
-                      <span className="text-sm font-mono">{deviceStatus.address || '-'}</span>
+                      <span className="text-sm font-mono">{deviceStatus.device_address || '-'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Connection Status</span>
                       <div className="flex items-center gap-2">
-                        {deviceStatus.status === 'connected' ? (
+                        {deviceStatus.is_connected ? (
                           <>
                             <Link className="w-4 h-4 text-green-500" />
                             <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
@@ -184,8 +187,8 @@ const LinkBandModule: React.FC = () => {
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Battery Level</span>
                       <div className="flex items-center gap-2">
-                        <Progress value={deviceStatus.bat_level || 0} className="w-16" />
-                        <span className="text-sm font-medium">{deviceStatus.bat_level || 0}%</span>
+                        <Progress value={deviceStatus.battery_level || 0} className="w-16" />
+                        <span className="text-sm font-medium">{deviceStatus.battery_level || 0}%</span>
                       </div>
                     </div>
                   </div>
@@ -224,39 +227,41 @@ const LinkBandModule: React.FC = () => {
                 ) : scannedDevices.length > 0 ? (
                   <div className="space-y-2">
                     {scannedDevices.map((device) => (
-                      <div key={device.address} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="p-0 h-auto"
-                          onClick={() => handleDeviceSelect(device.address)}
-                          disabled={registeredDevices.length > 0}
-                        >
-                          <Radio className={`w-4 h-4 ${selectedDevice === device.address ? 'text-primary' : 'text-muted-foreground'}`} />
-                        </Button>
+                      <div 
+                        key={device.address} 
+                        className={`flex items-center gap-3 p-3 rounded-lg border border-border cursor-pointer transition-colors ${
+                          selectedDevice === device.address 
+                            ? 'bg-blue-700 hover:bg-blue-800' 
+                            : 'hover:bg-muted/50'
+                        } ${registeredDevices.length > 0 ? 'cursor-not-allowed opacity-50' : ''}`}
+                        onClick={() => registeredDevices.length === 0 && handleDeviceSelect(device.address)}
+                      >
+                        <Radio className={`w-4 h-4 ${selectedDevice === device.address ? 'text-white' : 'text-muted-foreground'}`} />
                         <div className="flex-1">
-                          <div className="text-sm font-medium">{device.name}</div>
-                          <div className="text-xs text-muted-foreground">{device.address}</div>
+                          <div className={`text-sm font-medium ${selectedDevice === device.address ? 'text-white' : ''}`}>{device.name}</div>
+                          <div className={`text-xs ${selectedDevice === device.address ? 'text-blue-200' : 'text-muted-foreground'}`}>{device.address}</div>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-4 text-muted-foreground text-sm">
+                  <div className="text-center py-3 text-muted-foreground text-sm">
                     No devices found
                   </div>
                 )}
                 
-                <div className="flex justify-end">
-                  <Button
-                    variant="default"
-                    onClick={handleRegister}
-                    disabled={!selectedDevice || registeredDevices.length > 0}
-                    className="bg-primary hover:bg-primary/90"
-                  >
-                    Register Link Band
-                  </Button>
-                </div>
+                {scannedDevices.length > 0 && (
+                  <div className="flex justify-end pt-2">
+                    <Button
+                      variant="default"
+                      onClick={handleRegister}
+                      disabled={!selectedDevice || registeredDevices.length > 0}
+                      className="bg-primary hover:bg-primary/90"
+                    >
+                      Register Link Band
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}

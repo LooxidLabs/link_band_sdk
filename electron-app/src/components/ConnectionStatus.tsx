@@ -57,7 +57,7 @@ export function ConnectionStatus({
               variant={isConnected ? "destructive" : "default"}
               size="sm"
               onClick={onConnectionToggle}
-              className="gap-2"
+              className={`gap-2 ${isConnected ? 'bg-red-800 hover:bg-red-900 border-red-700' : ''}`}
             >
               <Wifi className="h-4 w-4" />
               {isConnected ? 'Disconnect' : 'Connect'}
