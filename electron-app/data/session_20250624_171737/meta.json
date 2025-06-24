@@ -1,0 +1,105 @@
+{
+  "session_name": "session_20250624_171737",
+  "start_time": "2025-06-24T17:17:37.217931",
+  "files": [
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "path": "data/session_20250624_171737/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "size": 2841242,
+      "record_count": 18075,
+      "created_at": "2025-06-24T17:18:50.060374"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "path": "data/session_20250624_171737/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "size": 2914823,
+      "record_count": 131,
+      "created_at": "2025-06-24T17:18:50.117800"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "path": "data/session_20250624_171737/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "size": 300629,
+      "record_count": 3612,
+      "created_at": "2025-06-24T17:18:50.125516"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json",
+      "path": "data/session_20250624_171737/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json",
+      "size": 1375866,
+      "record_count": 129,
+      "created_at": "2025-06-24T17:18:50.153497"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "path": "data/session_20250624_171737/015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "size": 166912,
+      "record_count": 1830,
+      "created_at": "2025-06-24T17:18:50.158164"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "path": "data/session_20250624_171737/015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "size": 361419,
+      "record_count": 61,
+      "created_at": "2025-06-24T17:18:50.165763"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_bat",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_bat.json",
+      "path": "data/session_20250624_171737/015F2A8E-3772-FB6D-2197-548F305983B0_bat.json",
+      "size": 63,
+      "record_count": 1,
+      "created_at": "2025-06-24T17:18:50.165945"
+    }
+  ],
+  "status": "stopped",
+  "end_time": "2025-06-24T17:18:49.998442",
+  "stats": {
+    "total_files": 7,
+    "type_details": {
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+        "record_count": 18075,
+        "size_bytes": 2841242
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+        "record_count": 131,
+        "size_bytes": 2914823
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+        "record_count": 3612,
+        "size_bytes": 300629
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json",
+        "record_count": 129,
+        "size_bytes": 1375866
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+        "record_count": 1830,
+        "size_bytes": 166912
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+        "record_count": 61,
+        "size_bytes": 361419
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_bat": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_bat.json",
+        "record_count": 1,
+        "size_bytes": 63
+      }
+    },
+    "total_records": 23839
+  }
+}

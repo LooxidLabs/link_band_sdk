@@ -657,6 +657,68 @@ ipcMain.handle('clear-saved-credentials', () => {
   return true;
 });
 
+// Directory selection handler
+ipcMain.handle('select-directory', async (event) => {
+  try {
+    console.log('select-directory handler called');
+    const currentWindow = BrowserWindow.getFocusedWindow() || win;
+    if (!currentWindow) {
+      console.error('No focused window available for directory dialog.');
+      return { canceled: true, filePaths: [] };
+    }
+
+    console.log('Showing open dialog...');
+    const result = await dialog.showOpenDialog(currentWindow, {
+      properties: ['openDirectory', 'dontAddToRecent'],
+      title: 'Select Export Path',
+      buttonLabel: 'Select Folder',
+      message: 'Choose a folder for exporting data'
+    });
+
+    console.log('Dialog result:', JSON.stringify(result, null, 2));
+    console.log('Result canceled:', result.canceled);
+    console.log('Result filePaths:', result.filePaths);
+    console.log('FilePaths length:', result.filePaths ? result.filePaths.length : 'undefined');
+
+    // 사용자가 취소한 경우
+    if (result.canceled) {
+      console.log('User canceled the dialog');
+      return { canceled: true, filePaths: [] };
+    }
+
+    // filePaths 배열이 있고 비어있지 않은 경우
+    if (result.filePaths && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
+      console.log('Selected path:', result.filePaths[0]);
+      const finalResult = {
+        canceled: false,
+        filePaths: result.filePaths
+      };
+      console.log('Returning result:', JSON.stringify(finalResult, null, 2));
+      return finalResult;
+    }
+
+    // 여기에 도달한다는 것은 사용자가 취소하지 않았지만 filePaths가 비어있다는 뜻
+    // 이는 macOS의 알려진 버그입니다
+    console.warn('macOS dialog bug detected - filePaths is empty but not canceled');
+    
+    // 기본 Downloads 폴더를 대안으로 제공
+    const downloadsPath = app.getPath('downloads');
+    console.log('Offering alternative path:', downloadsPath);
+    
+    const alternativeResult = {
+      canceled: false,
+      filePaths: [downloadsPath],
+      isAlternative: true
+    };
+    console.log('Returning alternative result:', JSON.stringify(alternativeResult, null, 2));
+    return alternativeResult;
+
+  } catch (error: any) {
+    console.error('Error showing directory dialog:', error);
+    return { canceled: true, filePaths: [] };
+  }
+});
+
 // Markdown file reading handler
 ipcMain.handle('read-markdown-file', async (event, filePath: string) => {
   try {
@@ -682,6 +744,30 @@ ipcMain.handle('read-markdown-file', async (event, filePath: string) => {
   } catch (error: any) {
     console.error(`Error reading markdown file ${filePath}:`, error);
     return { success: false, error: error.message };
+  }
+});
+
+// Get default data path handler
+ipcMain.handle('get-default-data-path', async (event) => {
+  try {
+    let dataPath: string;
+    
+    if (app.isPackaged) {
+      // 프로덕션 모드: 앱 번들 내부의 python_core/data 경로
+      dataPath = path.join(process.resourcesPath, 'python_core', 'data');
+    } else {
+      // 개발 모드: 프로젝트 루트 기준으로 electron-app/data
+      const projectRoot = path.resolve(__dirname, '../../');
+      dataPath = path.join(projectRoot, 'electron-app', 'data');
+    }
+    
+    // 디렉토리가 없으면 생성
+    await fsExtra.ensureDir(dataPath);
+    
+    return dataPath;
+  } catch (error: any) {
+    console.error('Error getting default data path:', error);
+    return './data';
   }
 });
 
@@ -871,5 +957,69 @@ ipcMain.handle('open-specific-file', async (event, filePath: string) => {
   } catch (error: any) {
     console.error(`Error opening path ${filePath}: `, error);
     return { success: false, message: `Failed to open path: ${error.message}` };
+  }
+});
+
+// Directory validation handler
+ipcMain.handle('check-directory', async (event, pathToCheck: string) => {
+  try {
+    console.log('check-directory handler called with path:', pathToCheck);
+    
+    const fs = await import('fs');
+    const pathModule = await import('path');
+    
+    // 상대 경로를 절대 경로로 변환
+    const absolutePath = pathModule.resolve(pathToCheck);
+    console.log('Resolved absolute path:', absolutePath);
+    
+    try {
+      const stats = await fs.promises.stat(absolutePath);
+      
+      if (stats.isDirectory()) {
+        // 쓰기 권한 확인
+        try {
+          await fs.promises.access(absolutePath, fs.constants.W_OK);
+          console.log('Directory exists and is writable');
+          return {
+            exists: true,
+            isDirectory: true,
+            writable: true,
+            path: absolutePath
+          };
+        } catch (writeError) {
+          console.log('Directory exists but is not writable');
+          return {
+            exists: true,
+            isDirectory: true,
+            writable: false,
+            path: absolutePath
+          };
+        }
+      } else {
+        console.log('Path exists but is not a directory');
+        return {
+          exists: true,
+          isDirectory: false,
+          writable: false,
+          path: absolutePath
+        };
+      }
+    } catch (statError) {
+      console.log('Path does not exist');
+      return {
+        exists: false,
+        isDirectory: false,
+        writable: false,
+        path: absolutePath
+      };
+    }
+  } catch (error: any) {
+    console.error('Error checking directory:', error);
+    return {
+      exists: false,
+      isDirectory: false,
+      writable: false,
+      error: error.message
+    };
   }
 });

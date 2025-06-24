@@ -33,6 +33,15 @@ declare global {
         openExternal: (url: string) => Promise<void>;
         openPath: (path: string) => Promise<string>;
       };
+      dialog: {
+        showOpenDialog: (options: {
+          properties?: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles'>;
+          title?: string;
+          defaultPath?: string;
+          buttonLabel?: string;
+          filters?: Array<{name: string; extensions: string[]}>;
+        }) => Promise<{canceled: boolean; filePaths: string[]}>;
+      };
       dataCenter: {
         exportSession: (sessionId: string) => Promise<any>;
         openSessionFolder: (sessionId: string) => Promise<any>;

@@ -64,9 +64,9 @@ export const getRecordingStatus = async (): Promise<RecordingStatusResponse> => 
   }
 };
 
-export const startRecording = async (): Promise<StartRecordingResponse> => {
+export const startRecording = async (sessionData?: any): Promise<StartRecordingResponse> => {
   try {
-    const response = await axios.post<StartRecordingResponse>(`${API_BASE_URL}/data/start-recording`, {}, { headers });
+    const response = await axios.post<StartRecordingResponse>(`${API_BASE_URL}/data/start-recording`, sessionData || {}, { headers });
     return response.data;
   } catch (error: unknown) {
     if (isAxiosLikeError(error)) {
