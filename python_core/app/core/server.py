@@ -1320,22 +1320,14 @@ class WebSocketServer:
         return self.device_registry.is_device_registered(address)
 
     def get_stream_status(self):
-        # stream_stats가 없으면 기본값 생성
-        stream_stats = getattr(self, 'stream_stats', {
-            'eeg': {'samples_per_sec': 0},
-            'ppg': {'samples_per_sec': 0},
-            'acc': {'samples_per_sec': 0},
-            'bat': {'samples_per_sec': 0},
-            'bat_level': 0
-        })
         return {
             "status": "running" if self.is_streaming else "stopped",
             "clients_connected": self.get_connected_clients(),
-            "eeg_sampling_rate": stream_stats.get('eeg', {}).get('samples_per_sec', 0),
-            "ppg_sampling_rate": stream_stats.get('ppg', {}).get('samples_per_sec', 0),
-            "acc_sampling_rate": stream_stats.get('acc', {}).get('samples_per_sec', 0),
-            "bat_sampling_rate": stream_stats.get('bat', {}).get('samples_per_sec', 0),
-            "bat_level": stream_stats.get('bat_level', 0)
+            "eeg_sampling_rate": self.device_sampling_stats.get('eeg', {}).get('samples_per_sec', 0),
+            "ppg_sampling_rate": self.device_sampling_stats.get('ppg', {}).get('samples_per_sec', 0),
+            "acc_sampling_rate": self.device_sampling_stats.get('acc', {}).get('samples_per_sec', 0),
+            "bat_sampling_rate": self.device_sampling_stats.get('bat', {}).get('samples_per_sec', 0),
+            "bat_level": self.device_sampling_stats.get('bat_level', 0)
         }
 
     def health_check(self):
@@ -1374,30 +1366,50 @@ class WebSocketServer:
             self.stream_stats['bat']['samples_per_sec'] = bat
 
     def get_device_status(self):
-        info = self.device_manager.get_device_info()
-        status = {}
+        try:
+            logger.info("get_device_status called")
+            info = self.device_manager.get_device_info()
+            logger.info(f"device_info: {info}")
+            status = {}
 
-        if info:
-            status = {
-                "is_connected": True,
-                "device_address": info.get("address"),
-                "device_name": info.get("name"),
-                "connection_time": info.get("connection_time"),
-                "battery_level": self.device_sampling_stats.get('bat_level'),
-                "eeg_sampling_rate": self.device_sampling_stats['eeg']['samples_per_sec'],
-                "ppg_sampling_rate": self.device_sampling_stats['ppg']['samples_per_sec'],
-                "acc_sampling_rate": self.device_sampling_stats['acc']['samples_per_sec'],
-                "bat_sampling_rate": self.device_sampling_stats['bat']['samples_per_sec']
-            }
-        else:
-            status = {
+            if info:
+                logger.info("Device info exists, getting stream status")
+                # 스트림 상태에서 샘플링 레이트 가져오기
+                stream_status = self.get_stream_status()
+                logger.info(f"stream_status: {stream_status}")
+                
+                status = {
+                    "is_connected": True,
+                    "device_address": info.get("address"),
+                    "device_name": info.get("name"),
+                    "connection_time": info.get("connection_time"),
+                    "battery_level": stream_status.get('bat_level', 0),
+                    "eeg_sampling_rate": stream_status.get('eeg_sampling_rate', 0),
+                    "ppg_sampling_rate": stream_status.get('ppg_sampling_rate', 0),
+                    "acc_sampling_rate": stream_status.get('acc_sampling_rate', 0),
+                    "bat_sampling_rate": stream_status.get('bat_sampling_rate', 0)
+                }
+                logger.info(f"Final status: {status}")
+            else:
+                logger.info("No device info, returning disconnected status")
+                status = {
+                    "is_connected": False,
+                    "device_address": None,
+                    "device_name": None,
+                    "connection_time": None,
+                    "battery_level": None
+                }
+            return status
+        except Exception as e:
+            logger.error(f"Error in get_device_status: {e}")
+            # 예외 발생 시 기본 상태 반환
+            return {
                 "is_connected": False,
                 "device_address": None,
                 "device_name": None,
                 "connection_time": None,
                 "battery_level": None
             }
-        return status
 
     async def handle_websocket_connection(self, websocket: WebSocket):
         """Handle new WebSocket connections."""
