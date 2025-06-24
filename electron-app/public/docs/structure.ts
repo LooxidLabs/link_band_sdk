@@ -125,49 +125,39 @@ export const documentStructure: DocumentSection[] = [
     title: '예제 및 FAQ',
     subsections: [
       {
-        id: 'react-integration',
-        title: 'React 통합 가이드',
-        filePath: 'examples/react-integration.md'
-      },
-      {
-        id: 'vue-integration',
-        title: 'Vue.js 통합 가이드',
-        filePath: 'examples/vue-integration.md'
-      },
-      {
-        id: 'nodejs-integration',
-        title: 'Node.js 통합 가이드',
-        filePath: 'examples/nodejs-integration.md'
-      },
-      {
-        id: 'python-integration-advanced',
-        title: 'Python 고급 통합 가이드',
-        filePath: 'examples/python-integration-advanced.md'
-      },
-      {
-        id: 'unity-integration',
-        title: 'Unity C# 통합 가이드',
-        filePath: 'examples/unity-integration.md'
-      },
-      {
-        id: 'python-integration',
-        title: 'Python 기본 통합',
-        filePath: 'examples/python-integration.md'
-      },
-      {
         id: 'python-examples',
-        title: 'Python 예제 모음',
+        title: 'Python 예제',
         filePath: 'examples/python-examples.md'
       },
       {
+        id: 'react-integration',
+        title: 'React 예제',
+        filePath: 'examples/react-integration.md'
+      },
+      {
+        id: 'nodejs-integration',
+        title: 'Node.js 예제',
+        filePath: 'examples/nodejs-integration.md'
+      },
+      {
+        id: 'vue-integration',
+        title: 'Vue.js 예제',
+        filePath: 'examples/vue-integration.md'
+      },
+      {
+        id: 'unity-integration',
+        title: 'Unity 예제',
+        filePath: 'examples/unity-integration.md'
+      },
+      {
         id: 'javascript-examples',
-        title: 'JavaScript 예제 모음',
+        title: 'JavaScript 예제',
         filePath: 'examples/javascript-examples.md'
       },
       {
-        id: 'integration-examples',
-        title: '통합 예제 모음',
-        filePath: 'examples/integration-examples.md'
+        id: 'python-integration-advanced',
+        title: 'Python 고급 예제',
+        filePath: 'examples/python-integration-advanced.md'
       },
       {
         id: 'troubleshooting',
@@ -208,15 +198,13 @@ export const documentTitles = {
     'metrics-api': 'Metrics API',
     'websocket-integration': 'WebSocket 통합',
     'examples': '예제 및 FAQ',
-    'react-integration': 'React 통합 가이드',
-    'vue-integration': 'Vue.js 통합 가이드',
-    'nodejs-integration': 'Node.js 통합 가이드',
-    'python-integration-advanced': 'Python 고급 통합 가이드',
-    'unity-integration': 'Unity C# 통합 가이드',
-    'python-integration': 'Python 기본 통합',
-    'python-examples': 'Python 예제 모음',
-    'javascript-examples': 'JavaScript 예제 모음',
-    'integration-examples': '통합 예제 모음',
+    'react-integration': 'React 예제',
+    'vue-integration': 'Vue.js 예제',
+    'nodejs-integration': 'Node.js 예제',
+    'python-integration-advanced': 'Python 고급 예제',
+    'unity-integration': 'Unity 예제',
+    'python-examples': 'Python 예제',
+    'javascript-examples': 'JavaScript 예제',
     'troubleshooting': '문제 해결 가이드',
     'faq': '자주 묻는 질문'
   },
@@ -243,15 +231,13 @@ export const documentTitles = {
     'metrics-api': 'Metrics API',
     'websocket-integration': 'WebSocket Integration',
     'examples': 'Examples & FAQ',
-    'react-integration': 'React Integration Guide',
-    'vue-integration': 'Vue.js Integration Guide',
-    'nodejs-integration': 'Node.js Integration Guide',
-    'python-integration-advanced': 'Advanced Python Integration Guide',
-    'unity-integration': 'Unity C# Integration Guide',
-    'python-integration': 'Basic Python Integration',
-    'python-examples': 'Python Examples Collection',
-    'javascript-examples': 'JavaScript Examples Collection',
-    'integration-examples': 'Integration Examples Collection',
+    'python-examples': 'Python Examples',
+    'react-integration': 'React Examples',
+    'nodejs-integration': 'Node.js Examples',
+    'vue-integration': 'Vue.js Examples',
+    'unity-integration': 'Unity Examples',
+    'javascript-examples': 'JavaScript Examples',
+    'python-integration-advanced': 'Advanced Python Examples',
     'troubleshooting': 'Troubleshooting Guide',
     'faq': 'Frequently Asked Questions'
   }

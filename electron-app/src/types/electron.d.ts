@@ -45,6 +45,9 @@ declare global {
         setSavedCredentials: (credentials: any) => Promise<boolean>;
         clearSavedCredentials: () => Promise<boolean>;
       };
+      fs: {
+        readMarkdownFile: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+      };
       updater: {
         onUpdateChecking: (callback: () => void) => () => void;
         onUpdateAvailable: (callback: (info: any) => void) => () => void;
