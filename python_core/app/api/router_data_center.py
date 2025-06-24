@@ -281,7 +281,6 @@ async def get_recording_status_endpoint( # async def로 변경
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/sessions", 
-    response_model=SessionListResponse,
     summary="List all data recording sessions",
     description="""
     Retrieve a comprehensive list of all recorded data sessions.
@@ -355,7 +354,10 @@ async def list_sessions_endpoint(
         result = recording_service.get_sessions() 
         if result.get("status") == "fail":
             raise HTTPException(status_code=500, detail=result.get("message"))
-        return result.get("data", [])
+        
+        # Return data in the expected format for frontend
+        sessions_data = result.get("data", [])
+        return {"sessions": sessions_data}
     except Exception as e:
         logger.error(f"Exception in /sessions endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
