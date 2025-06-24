@@ -59,6 +59,10 @@ class DeviceStatusResponse(BaseModel):
     device_name: Optional[str] = Field(None, description="Name of the connected device")
     connection_time: Optional[str] = Field(None, description="Time when device was connected")
     battery_level: Optional[int] = Field(None, description="Battery level percentage (0-100)")
+    eeg_sampling_rate: Optional[float] = Field(None, description="EEG sampling rate in Hz")
+    ppg_sampling_rate: Optional[float] = Field(None, description="PPG sampling rate in Hz")
+    acc_sampling_rate: Optional[float] = Field(None, description="Accelerometer sampling rate in Hz")
+    bat_sampling_rate: Optional[float] = Field(None, description="Battery sampling rate in Hz")
 
 class RegisterResponse(BaseModel):
     """Response model for device registration"""
