@@ -135,25 +135,25 @@ class DeviceManager:
     async def connect(self, address: str) -> bool:
         """Connect to a specific BLE device by address."""
         if self._connection_status == DeviceStatus.CONNECTED and self._client:
-            self.logger.warning(f"Already connected to {self.device_address}. Disconnect first.")
+            print(f"⚠️  Already connected to {self.device_address}")
             return False
 
-        self.logger.info(f"Attempting to connect to {address}...")
+        print(f"🔍 Connecting to {address}...")
         try:
-            # First, try to discover the device
-            devices = await BleakScanner.discover(timeout=5.0)
-            device = next((dev for dev in devices if dev.address == address), None)
+            # BleakScanner.find_device_by_address를 사용해서 더 안정적으로 디바이스 찾기
+            device = await BleakScanner.find_device_by_address(address, timeout=10.0)
             
             if not device:
-                self.logger.error(f"Device with address {address} not found during scanning")
+                print(f"❌ Device {address} not found")
                 return False
 
+            print(f"✅ Found device: {device.name} ({device.address})")
             self._client = BleakClient(device, disconnected_callback=self._handle_disconnect)
             
             try:
-                await self._client.connect(timeout=10.0)
+                await self._client.connect(timeout=15.0)  # 타임아웃 증가
             except Exception as connect_error:
-                self.logger.error(f"Failed to connect to device: {connect_error}")
+                print(f"❌ Connection failed: {connect_error}")
                 await self._cleanup_connection()
                 return False
 
@@ -163,23 +163,23 @@ class DeviceManager:
                 raw_name = getattr(self._client, 'name', None) or device.name
                 self.device_name = str(raw_name) if raw_name is not None else self.device_address
                 self._connection_status = DeviceStatus.CONNECTED
-                self.logger.info(f"Successfully connected to {self.device_name} ({self.device_address})")
+                print(f"🎉 Connected to {self.device_name} ({self.device_address})")
                 
                 # 배터리 모니터링 먼저 시작
                 battery_success = await self.start_battery_monitoring()
                 if not battery_success:
-                    self.logger.warning("Failed to start battery monitoring")
+                    print("⚠️  Battery monitoring failed")
                 
                 # 연결 성공 후 자동으로 데이터 수집 시작
                 acquisition_success = await self.start_data_acquisition()
                 if not acquisition_success:
-                    self.logger.error("Failed to start data acquisition")
+                    print("❌ Data acquisition failed")
                     await self._cleanup_connection()
                     return False
                 
                 return True
             else:
-                self.logger.error(f"Failed to connect to {address}.")
+                print(f"❌ Connection verification failed")
                 await self._cleanup_connection()
                 return False
                 
@@ -190,12 +190,12 @@ class DeviceManager:
 
     async def disconnect(self) -> bool:
         """Disconnect from the currently connected BLE device."""
-        if self.client and self.is_connected_flag:
+        if self._client and self.is_connected():
             self.logger.info(f"Disconnecting from {self.device_name} ({self.device_address})...")
             try:
                 # 데이터 수집 중지 먼저 시도
                 await self.stop_data_acquisition()
-                await self.client.disconnect()
+                await self._client.disconnect()
                 # disconnected_callback이 호출되어 cleanup 수행
                 # self._cleanup_connection() # 콜백에서 처리되므로 여기서 호출 안 함
                 return True
@@ -452,24 +452,24 @@ class DeviceManager:
             time_raw = (data[3] << 24 | data[2] << 16 | data[1] << 8 | data[0])
             base_timestamp = time_raw / 32.768 / 1000
             
-            # 데이터 구조: 4바이트 단위로 반복 (2바이트 red + 2바이트 ir)
-            num_samples = (len(data) - 4) // 4
+            # 데이터 구조: 4바이트 타임스탬프 + 6바이트씩 반복 (3바이트 red + 3바이트 ir)
+            num_samples = (len(data) - 4) // 6
 
             self.logger.debug(f"PPG data: base_timestamp={base_timestamp}, num_samples={num_samples}")
 
             samples_to_add = []
-            for i in range(4,172,6):
-                # offset = 4 + i * 4
-                # if offset + 4 > len(data):
-                #     self.logger.warning(f"PPG data shorter than expected for sample {i}. Skipping remaining.")
-                #     break
+            for sample_idx in range(num_samples):
+                byte_offset = 4 + sample_idx * 6
+                if byte_offset + 6 > len(data):
+                    self.logger.warning(f"PPG data shorter than expected for sample {sample_idx}. Skipping remaining.")
+                    break
 
-                # Read 16-bit unsigned values for red and ir
-                # ppgRedData = (data[i] << 16 | data[i+1] << 8 | data[i+2])
-                # ppgIRData = (data[i+3] << 16 | data[i+4] << 8 | data[i+5])
-                red_raw = (data[i] << 16 | data[i+1] << 8 | data[i+2])
-                ir_raw = (data[i+3] << 16 | data[i+4] << 8 | data[i+5])
-                sample_timestamp = base_timestamp + i / PPG_SAMPLE_RATE
+                # Read 24-bit values for red and ir (3 bytes each)
+                red_raw = (data[byte_offset] << 16 | data[byte_offset+1] << 8 | data[byte_offset+2])
+                ir_raw = (data[byte_offset+3] << 16 | data[byte_offset+4] << 8 | data[byte_offset+5])
+                
+                # Use correct sample index for timestamp calculation
+                sample_timestamp = base_timestamp + sample_idx / PPG_SAMPLE_RATE
 
                 sample = {
                     "timestamp": sample_timestamp,
@@ -477,7 +477,7 @@ class DeviceManager:
                     "ir": ir_raw
                 }
                 samples_to_add.append(sample)
-                self.logger.debug(f"PPG sample {i}: {sample}")
+                self.logger.debug(f"PPG sample {sample_idx}: {sample}")
 
             if samples_to_add:
                 # Raw data buffer에 추가
