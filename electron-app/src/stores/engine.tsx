@@ -64,16 +64,16 @@ class WebSocketManager {
       }
 
       // 디바이스가 연결되어 있고 스트리밍 중인 경우에만 연결 시도
-      if (deviceStore.deviceStatus?.status === 'connected' && 
+      if (deviceStore.deviceStatus?.is_connected && 
           engineStore.connectionInfo?.is_streaming === true) {
         console.log('Auto-connecting to WebSocket...', {
-          deviceStatus: deviceStore.deviceStatus?.status,
+          deviceStatus: deviceStore.deviceStatus?.is_connected,
           isStreaming: engineStore.connectionInfo?.is_streaming
         });
         this.connect();
       } else {
         // console.log('Auto-connect conditions not met:', {
-        //   deviceStatus: deviceStore.deviceStatus?.status,
+        //   deviceStatus: deviceStore.deviceStatus?.is_connected,
         //   isStreaming: engineStore.connectionInfo?.is_streaming
         // });
       }
