@@ -65,7 +65,7 @@ class RecordingService:
             return False
 
     async def start_recording(self, session_name: Optional[str] = None, settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        logger.info(f"Enter start_recording. Provided session_name (will be ignored by DataRecorder): {session_name}, Provided settings (will be ignored by DataRecorder): {settings}")
+        logger.info(f"Enter start_recording. Provided session_name: {session_name}, Provided settings: {settings}")
         
         is_connected = await self.check_device_connection()
         logger.info(f"start_recording: check_device_connection returned: {is_connected}")
@@ -80,8 +80,8 @@ class RecordingService:
             return {"status": "fail", "message": "Recording is already in progress."}
         
         try:
-            logger.info("Calling DataRecorder.start_recording() without session_name and settings...")
-            result = self.data_recorder.start_recording() # session_name 및 settings 인자 제거
+            logger.info(f"Calling DataRecorder.start_recording() with session_name: {session_name}")
+            result = self.data_recorder.start_recording(session_name=session_name)
             logger.info(f"DataRecorder.start_recording() returned: {result}")
             logger.info(f"start_recording: After DataRecorder.start_recording(), data_recorder.is_recording: {self.data_recorder.is_recording}") 
             

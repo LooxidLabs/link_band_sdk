@@ -1,16 +1,34 @@
 # .vscode/run_server.py (원래 코드로 복원)
 import os
 import sys
-import uvicorn
-import logging
-import psutil
-import socket
 from pathlib import Path
-from typing import Optional
 
 # Add the project root directory to Python path
 project_root = str(Path(__file__).parent)
 sys.path.insert(0, project_root)
+
+# Check if we're running in a packaged Electron app
+# In packaged app, the structure is: /Resources/python_core/
+if sys.platform == 'darwin' and '/Contents/Resources/python_core' in project_root:
+    # We're in a packaged macOS app
+    venv_site_packages = os.path.join(project_root, 'venv', 'lib', 'python3.13', 'site-packages')
+    if os.path.exists(venv_site_packages):
+        sys.path.insert(0, venv_site_packages)
+        print(f"Added packaged site-packages to path: {venv_site_packages}")
+    else:
+        print(f"Warning: site-packages not found at {venv_site_packages}")
+elif sys.platform == 'win32' and '\\resources\\python_core' in project_root.lower():
+    # We're in a packaged Windows app
+    venv_site_packages = os.path.join(project_root, 'venv', 'lib', 'python3.13', 'site-packages')
+    if os.path.exists(venv_site_packages):
+        sys.path.insert(0, venv_site_packages)
+        print(f"Added packaged site-packages to path: {venv_site_packages}")
+
+import uvicorn
+import logging
+import psutil
+import socket
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(

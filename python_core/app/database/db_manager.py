@@ -1,11 +1,30 @@
 import sqlite3
 import os
+import sys
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 class DatabaseManager:
     def __init__(self, db_path: str = "database/data_center.db"):
-        self.db_path = db_path
+        # Check if we're running in a packaged environment
+        if sys.platform == 'darwin' and '/Contents/Resources/python_core' in __file__:
+            # We're in a packaged macOS app, use user's home directory
+            home_dir = os.path.expanduser("~")
+            app_data_dir = os.path.join(home_dir, "Library", "Application Support", "Link Band SDK")
+            self.db_path = os.path.join(app_data_dir, "database", "data_center.db")
+        elif sys.platform == 'win32' and '\\resources\\python_core' in __file__.lower():
+            # We're in a packaged Windows app, use user's AppData directory
+            app_data_dir = os.path.join(os.environ.get('APPDATA', ''), "Link Band SDK")
+            self.db_path = os.path.join(app_data_dir, "database", "data_center.db")
+        elif sys.platform.startswith('linux') and '/resources/python_core' in __file__:
+            # We're in a packaged Linux app, use user's home directory
+            home_dir = os.path.expanduser("~")
+            app_data_dir = os.path.join(home_dir, ".link-band-sdk")
+            self.db_path = os.path.join(app_data_dir, "database", "data_center.db")
+        else:
+            # Development environment or unpackaged, use the provided db_path
+            self.db_path = db_path
+            
         self._ensure_db_directory()
         self._init_db()
 
@@ -176,12 +195,62 @@ class DatabaseManager:
     def _row_to_session_dict(self, row):
         if not row:
             return None
-        return {
-            "id": row[0],
+            
+        session_dict = {
+            "session_id": row[0],  # id를 session_id로 변경
             "session_name": row[1],
             "start_time": row[2],
             "end_time": row[3],
             "data_path": row[4],
             "status": row[5],
             "created_at": row[6],
-        } 
+        }
+        
+        # 세션 폴더의 파일 크기와 개수 계산
+        try:
+            import os
+            data_path = row[4]  # data_path
+            print(f"[DB] Calculating file size for session {row[0]}, path: {data_path}")
+            
+            if data_path and os.path.exists(data_path):
+                total_size = 0
+                file_count = 0
+                
+                # 절대 경로로 변환
+                if not os.path.isabs(data_path):
+                    # 상대 경로인 경우 현재 작업 디렉토리 기준으로 절대 경로 생성
+                    data_path = os.path.abspath(data_path)
+                    print(f"[DB] Converted to absolute path: {data_path}")
+                
+                if os.path.exists(data_path):
+                    for root, dirs, files in os.walk(data_path):
+                        for file in files:
+                            try:
+                                file_path = os.path.join(root, file)
+                                if os.path.exists(file_path) and os.path.isfile(file_path):
+                                    file_size = os.path.getsize(file_path)
+                                    total_size += file_size
+                                    file_count += 1
+                                    print(f"[DB] File: {file}, Size: {file_size} bytes")
+                            except (OSError, IOError) as e:
+                                print(f"[DB] Error accessing file {file}: {e}")
+                                continue
+                    
+                    print(f"[DB] Total size: {total_size} bytes, File count: {file_count}")
+                    session_dict["total_size"] = total_size
+                    session_dict["file_count"] = file_count
+                else:
+                    print(f"[DB] Path does not exist after conversion: {data_path}")
+                    session_dict["total_size"] = 0
+                    session_dict["file_count"] = 0
+            else:
+                print(f"[DB] Path is None or does not exist: {data_path}")
+                session_dict["total_size"] = 0
+                session_dict["file_count"] = 0
+        except Exception as e:
+            # 파일 크기 계산 실패 시 기본값 설정
+            print(f"[DB] Error calculating file size: {e}")
+            session_dict["total_size"] = 0
+            session_dict["file_count"] = 0
+            
+        return session_dict 

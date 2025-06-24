@@ -349,16 +349,30 @@ async def list_sessions_endpoint(
     # Assuming get_sessions might become async or involve I/O in the future
     # For now, if it's synchronous in the service, direct call is fine.
     # If get_sessions is made async in service: result = await recording_service.get_sessions()
-    logger.info("Endpoint /sessions called")
+    logger.info("[API] Endpoint /sessions called")
     try:
+        print(f"[API] Fetching sessions from recording service...")
         result = recording_service.get_sessions() 
+        print(f"[API] Recording service returned: {result}")
+        
         if result.get("status") == "fail":
+            print(f"[API] Recording service failed: {result.get('message')}")
             raise HTTPException(status_code=500, detail=result.get("message"))
         
         # Return data in the expected format for frontend
         sessions_data = result.get("data", [])
-        return {"sessions": sessions_data}
+        print(f"[API] Sessions data type: {type(sessions_data)}")
+        print(f"[API] Sessions data length: {len(sessions_data) if isinstance(sessions_data, list) else 'N/A'}")
+        
+        if isinstance(sessions_data, list):
+            for i, session in enumerate(sessions_data):
+                print(f"[API] Session {i}: {session.get('session_name', 'Unknown')} - Size: {session.get('total_size', 'N/A')}")
+        
+        response = {"sessions": sessions_data}
+        print(f"[API] Returning response: {response}")
+        return response
     except Exception as e:
+        print(f"[API] Exception in /sessions endpoint: {e}")
         logger.error(f"Exception in /sessions endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
