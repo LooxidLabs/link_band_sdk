@@ -1,22 +1,26 @@
 import { useState } from 'react';
-import { Brain, Cpu, Eye, Database, FileText, Settings, ChevronLeft } from 'lucide-react';
+import { Brain, Cpu, Eye, Database, FileText, ChevronLeft } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from './ui/utils';
 import { useUIStore } from '../stores/uiStore';
+import { useLanguageStore } from '../stores/languageStore';
+import { useTranslation } from '../locales';
 import type { MenuId } from '../stores/uiStore';
-
-const menuItems = [
-  { icon: Cpu, label: 'Engine', id: 'engine' as MenuId },
-  { icon: Brain, label: 'Link Band', id: 'linkband' as MenuId },
-  { icon: Eye, label: 'Visualizer', id: 'visualizer' as MenuId },
-  { icon: Database, label: 'Data Center', id: 'datacenter' as MenuId },
-  { icon: FileText, label: 'Documents', id: 'cloudmanager' as MenuId },
-  { icon: Settings, label: 'Settings', id: 'settings' as MenuId },
-];
 
 export function Sidebar() {
   const { activeMenu, setActiveMenu } = useUIStore();
+  const { currentLanguage } = useLanguageStore();
+  const t = useTranslation(currentLanguage);
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const menuItems = [
+    { icon: Cpu, label: t.nav.engine, id: 'engine' as MenuId },
+    { icon: Brain, label: t.nav.linkband, id: 'linkband' as MenuId },
+    { icon: Eye, label: t.nav.visualizer, id: 'visualizer' as MenuId },
+    { icon: Database, label: t.nav.datacenter, id: 'datacenter' as MenuId },
+    { icon: FileText, label: t.nav.documents, id: 'cloudmanager' as MenuId },
+    // { icon: Settings, label: t.nav.settings, id: 'settings' as MenuId },
+  ];
 
   return (
     <div className={cn(
@@ -24,7 +28,7 @@ export function Sidebar() {
       isCollapsed ? "w-16" : "w-64"
     )}>
       {/* Header - 고정 */}
-      <div className="flex-shrink-0 p-6 border-b border-sidebar-border">
+      <div className="flex-shrink-0 p-6 border-sidebar-border">
         <div className="flex items-center justify-between">
           {!isCollapsed && (
             <h1 className="text-sidebar-foreground font-semibold text-left">
