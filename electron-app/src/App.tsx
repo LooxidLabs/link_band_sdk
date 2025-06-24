@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useDeviceStore } from "./stores/device";
 import { useEngineStore } from "./stores/engine";
 import { useUIStore } from "./stores/uiStore";
+import { setupPythonServerEventListeners } from "./stores/pythonServerStore";
 import { Sidebar } from './components/Sidebar';
 import { TopNavigation } from './components/TopNavigation';
 
@@ -11,6 +12,7 @@ import LinkBandModule from './components/LinkBandModule';
 import { ProcessedDataVisualizer } from './components/ProcessedDataVisualizer';
 import DataCenter from './components/DataCenter';
 import EngineModule from './components/EngineModule';
+import Documents from './components/Documents';
 
 function App() {
   const { 
@@ -20,22 +22,19 @@ function App() {
   } = useDeviceStore();
   
   const { 
-    connectionInfo, 
+    // connectionInfo, 
     engineStatus,
-    startEngine, 
-    stopEngine, 
     initEngine,
     startPolling: startEnginePolling,
     stopPolling: stopEnginePolling,
     isWebSocketConnected,
     autoConnectWebSocket,
-    samplingRates
+    // samplingRates
   } = useEngineStore();
 
   const { activeMenu } = useUIStore();
 
   const isConnected = deviceStatus?.status === 'connected';
-  const isStreaming = connectionInfo?.is_streaming === true;
   const batteryLevel = deviceStatus?.bat_level || 0;
 
   useEffect(() => {
@@ -44,22 +43,15 @@ function App() {
     startDevicePolling();
     startEnginePolling();
     autoConnectWebSocket();
+    
+    // Setup Python server event listeners
+    setupPythonServerEventListeners();
      
     return () => {
       stopDevicePolling();
       stopEnginePolling();
     };
   }, []);
-
-  const handleStreamToggle = async () => {
-    if (isStreaming) {
-      await stopEngine();
-    } else {
-      await startEngine();
-    }
-  };
-
-
 
   const renderMainContent = () => {
     switch (activeMenu) {
@@ -71,6 +63,8 @@ function App() {
         return <ProcessedDataVisualizer />;
       case 'datacenter':
         return <DataCenter />;
+      case 'cloudmanager':
+        return <Documents />;
       default:
         return (
           <div className="h-full flex items-center justify-center">
@@ -97,10 +91,7 @@ function App() {
         {/* Top Navigation - 고정 */}
         <div className="flex-shrink-0 border-b border-border">
           <TopNavigation
-            isConnected={isConnected}
-            isStreaming={isStreaming}
-            onStreamingStart={handleStreamToggle}
-            onStreamingStop={handleStreamToggle}
+            menuName={activeMenu}
           />
         </div>
         
@@ -115,7 +106,6 @@ function App() {
             isConnected={isConnected} 
             isWebSocketConnected={isWebSocketConnected}
             engineStatus={engineStatus}
-            samplingRates={samplingRates}
             batteryLevel={batteryLevel}
           />
         </div>
