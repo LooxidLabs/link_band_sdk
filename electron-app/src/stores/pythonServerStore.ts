@@ -20,6 +20,8 @@ interface PythonServerState {
   logs: string[];
   isLoading: boolean;
   lastMessage: string | null;
+  // UI sync state - simple boolean for UI components
+  isRunning: boolean;
 }
 
 interface PythonServerActions {
@@ -32,6 +34,7 @@ interface PythonServerActions {
   addLog: (log: string) => void;
   setLoading: (loading: boolean) => void;
   setMessage: (message: string) => void;
+  setRunning: (running: boolean) => void;
 }
 
 interface PythonServerStore extends PythonServerState, PythonServerActions {}
@@ -44,7 +47,8 @@ const initialState: PythonServerState = {
   },
   logs: [],
   isLoading: false,
-  lastMessage: null
+  lastMessage: null,
+  isRunning: false
 };
 
 export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
@@ -69,13 +73,17 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
     set({ lastMessage });
   },
 
+  setRunning: (isRunning: boolean) => {
+    set({ isRunning });
+  },
+
   clearLogs: () => {
     set({ logs: [] });
   },
 
   // Async Actions
   startServer: async () => {
-    const { setLoading, setMessage, setStatus } = get();
+    const { setLoading, setMessage, setStatus, setRunning } = get();
     setLoading(true);
     setMessage('Starting Python server...');
 
@@ -84,6 +92,7 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
       setMessage(result.message);
       if (result.status) {
         setStatus(result.status);
+        setRunning(result.status.status === 'running' || result.status.status === 'starting');
       }
     } catch (error: any) {
       setMessage(`Failed to start server: ${error.message}`);
@@ -92,13 +101,14 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
         status: 'error',
         lastError: error.message
       });
+      setRunning(false);
     } finally {
       setLoading(false);
     }
   },
 
   stopServer: async () => {
-    const { setLoading, setMessage, setStatus } = get();
+    const { setLoading, setMessage, setStatus, setRunning } = get();
     setLoading(true);
     setMessage('Stopping Python server...');
 
@@ -107,6 +117,7 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
       setMessage(result.message);
       if (result.status) {
         setStatus(result.status);
+        setRunning(result.status.status === 'running' || result.status.status === 'starting');
       }
     } catch (error: any) {
       setMessage(`Failed to stop server: ${error.message}`);
@@ -115,13 +126,14 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
         status: 'error',
         lastError: error.message
       });
+      setRunning(false);
     } finally {
       setLoading(false);
     }
   },
 
   restartServer: async () => {
-    const { setLoading, setMessage, setStatus } = get();
+    const { setLoading, setMessage, setStatus, setRunning } = get();
     setLoading(true);
     setMessage('Restarting Python server...');
 
@@ -130,6 +142,7 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
       setMessage(result.message);
       if (result.status) {
         setStatus(result.status);
+        setRunning(result.status.status === 'running' || result.status.status === 'starting');
       }
     } catch (error: any) {
       setMessage(`Failed to restart server: ${error.message}`);
@@ -138,6 +151,7 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
         status: 'error',
         lastError: error.message
       });
+      setRunning(false);
     } finally {
       setLoading(false);
     }
@@ -146,7 +160,10 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
   refreshStatus: async () => {
     try {
       const status: ServerStatus = await (window as any).electron.pythonServer.getStatus();
-      set({ status });
+      set({ 
+        status,
+        isRunning: status.status === 'running' || status.status === 'starting'
+      });
     } catch (error: any) {
       console.error('Failed to refresh server status:', error);
     }
@@ -175,7 +192,9 @@ export const setupPythonServerEventListeners = () => {
 
   // Listen for status changes
   (window as any).electron.pythonServer.onStatusChange((status: ServerStatus) => {
-    usePythonServerStore.getState().setStatus(status);
+    const store = usePythonServerStore.getState();
+    store.setStatus(status);
+    store.setRunning(status.status === 'running' || status.status === 'starting');
   });
 
   // Listen for logs

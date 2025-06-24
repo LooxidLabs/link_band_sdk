@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Badge } from '../ui/badge';
 import type { RecordingStatusResponse } from '../../types/data-center';
-import { useMetricsStore } from '../../stores/metrics';
+import { useDeviceStore } from '../../stores/device';
 
 interface RecordingStatusProps {
   status: Omit<RecordingStatusResponse, 'device_connected'>;
@@ -18,7 +18,42 @@ const InfoRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label
 );
 
 export const RecordingStatus: React.FC<RecordingStatusProps> = ({ status }) => {
-  const isDeviceConnected = useMetricsStore((state) => state.deviceStatus?.status === 'connected');
+  const deviceStatus = useDeviceStore((state) => state.deviceStatus);
+  const isDeviceConnected = deviceStatus?.is_connected || false;
+  const [duration, setDuration] = useState<string>('00 min 00 sec 00 ms');
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (status.is_recording && status.start_time) {
+      const updateDuration = () => {
+        const startTime = new Date(status.start_time!).getTime();
+        const now = Date.now();
+        const diff = now - startTime;
+
+        const minutes = Math.floor(diff / 60000);
+        const seconds = Math.floor((diff % 60000) / 1000);
+        const milliseconds = Math.floor((diff % 1000) / 10); // 10ms 단위로 표시
+
+        const formattedDuration = `${minutes.toString().padStart(2, '0')} min ${seconds.toString().padStart(2, '0')} sec ${milliseconds.toString().padStart(2, '0')} ms`;
+        setDuration(formattedDuration);
+      };
+
+      // 초기 업데이트
+      updateDuration();
+
+      // 10ms마다 업데이트
+      intervalId = setInterval(updateDuration, 10);
+    } else {
+      setDuration('00 min 00 sec 00 ms');
+    }
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [status.is_recording, status.start_time]);
 
   return (
     <div className="w-full text-white mt-1">
@@ -49,6 +84,9 @@ export const RecordingStatus: React.FC<RecordingStatusProps> = ({ status }) => {
               <span className="text-xs text-gray-300">
                 {status.start_time ? new Date(status.start_time).toLocaleString() : 'N/A'}
               </span>
+            </InfoRow>
+            <InfoRow label="Duration">
+              <span className="text-xs text-cyan-400 font-mono">{duration}</span>
             </InfoRow>
           </>
         )}

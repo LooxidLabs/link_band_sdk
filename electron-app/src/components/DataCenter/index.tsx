@@ -1,13 +1,14 @@
 import React, { useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
-import { Play, Square, FolderOpen, Copy } from 'lucide-react';
+import { Play, Square, FolderOpen, Copy, Database, AlertCircle } from 'lucide-react';
 import { RecordingStatus } from './RecordingStatus.tsx';
 import { SessionList } from './SessionList.tsx';
 import { SearchFilters } from './SearchFilters.tsx';
 import { useDataCenterStore } from '../../stores/dataCenter';
-import { useMetricsStore } from '../../stores/metrics';
+import { useDeviceStore } from '../../stores/device';
+import { usePythonServerStore } from '../../stores/pythonServerStore';
 import type { FileInfo } from '../../types/data-center';
 
 const DataCenter: React.FC = () => {
@@ -24,7 +25,11 @@ const DataCenter: React.FC = () => {
     copyFilePath
   } = useDataCenterStore();
 
-  const isDeviceConnected = useMetricsStore((state) => state.deviceStatus?.status === 'connected');
+  const deviceStatus = useDeviceStore((state) => state.deviceStatus);
+  const isDeviceConnected = deviceStatus?.is_connected || false;
+  
+  // Get Engine status from Python server store
+  const { isRunning: isEngineStarted } = usePythonServerStore();
 
   useEffect(() => {
     fetchRecordingStatus();
@@ -36,7 +41,8 @@ const DataCenter: React.FC = () => {
     setActiveTab(newValue);
   };
 
-  const isStartRecordingDisabled = recordingStatus.is_recording || !isDeviceConnected;
+  // Recording can only be started when both Engine is started and Link Band is connected
+  const isStartRecordingDisabled = recordingStatus.is_recording || !isEngineStarted || !isDeviceConnected;
 
   const handleOpenFileClick = (file: FileInfo) => {
     if (file.is_accessible && file.file_path) {
@@ -49,11 +55,20 @@ const DataCenter: React.FC = () => {
   return (
     <div className="p-6 space-y-6">
       {/* Recording Controls */}
-      <Card className="bg-card p-4" style={{ backgroundColor: '#161822' }}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-white text-base font-semibold">Recording Controls</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="flex items-center gap-2 mb-6">
+        <Database className="w-8 h-8 text-foreground" />
+        <h1 className="text-2xl font-semibold text-foreground">
+          Data Center
+        </h1>
+      </div>
+
+      
+      <Card className="bg-card" style={{ backgroundColor: '#161822' }}>
+        <CardContent className="p-6">
+          <h2 className="flex items-center text-lg font-semibold text-foreground mb-4 mt-4 ">
+            <Database className="w-6 h-6 text-foreground mr-2" />
+            Recording Controls
+          </h2>
           <div className="flex gap-2 mb-4">
             <Button
               variant="default"
@@ -68,15 +83,19 @@ const DataCenter: React.FC = () => {
               variant="destructive"
               onClick={stopRecording}
               disabled={!recordingStatus.is_recording}
+              className="!bg-red-600 hover:!bg-red-700 !text-white !border-red-500 disabled:!bg-red-600 disabled:opacity-50"
             >
               <Square className="w-4 h-4 mr-2" />
               Stop Recording
             </Button>
           </div>
           
-          {!isDeviceConnected && !recordingStatus.is_recording && (
-            <div className="text-yellow-400 text-xs mb-2">
-              Please connect LINK BAND first to start recording.
+          {(!isEngineStarted || !isDeviceConnected) && !recordingStatus.is_recording && (
+            <div className="mb-4 p-4 bg-red-900/20 border border-red-800 rounded-md flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-400">
+                Recording can only be started when both Engine is started and Link Band is connected.
+              </p>
             </div>
           )}
           
@@ -95,9 +114,9 @@ const DataCenter: React.FC = () => {
         <CardHeader className="pb-3">
           <div className="flex space-x-4 border-b border-gray-600">
             {[
-              { id: 'recording', label: 'Recording Status' },
+              // { id: 'recording', label: 'Recording Status' },
               { id: 'sessions', label: 'Sessions' },
-              { id: 'search', label: 'Search Files' }
+              // { id: 'search', label: 'Search Files' }
             ].map((tab) => (
               <button
                 key={tab.id}
