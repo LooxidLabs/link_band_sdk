@@ -34,8 +34,8 @@ function App() {
 
   const { activeMenu } = useUIStore();
 
-  const isConnected = deviceStatus?.status === 'connected';
-  const batteryLevel = deviceStatus?.bat_level || 0;
+  const isConnected = deviceStatus?.is_connected || false;
+  const batteryLevel = deviceStatus?.battery_level || 0;
 
   useEffect(() => {
     // Initialize engine and start polling on component mount

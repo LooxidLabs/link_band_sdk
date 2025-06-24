@@ -62,19 +62,19 @@ Host: localhost:8121
   "timestamp": "2024-01-15T10:30:25Z"
 }
 ```
-   현재 RSSI 는 라이브러리 이슈로 정상적으로 동작하지 않을 수 있습니다.
+   Note: RSSI may not function properly due to library issues.
   
-**응답 필드 설명**
-- `id`: 디바이스 고유 식별자 (UUID)
-- `name`: 디바이스 이름
-- `rssi`: 신호 강도 (dBm, 값이 클수록 강함)
-   - 현재 RSSI 는 라이브러리 이슈로 정상적으로 동작하지 않을 수 있습니다.
-- `battery`: 배터리 잔량 (%)
-- `is_connected`: 현재 연결 상태
-- `is_connectable`: 연결 가능 여부
-- `last_seen`: 마지막 발견 시간
+**Response Field Description**
+- `id`: Device unique identifier (UUID)
+- `name`: Device name
+- `rssi`: Signal strength (dBm, higher values indicate stronger signal)
+   - Note: RSSI may not function properly due to library issues.
+- `battery`: Battery level (%)
+- `is_connected`: Current connection status
+- `is_connectable`: Whether device is connectable
+- `last_seen`: Last seen timestamp
 
-**오류 응답**
+**Error Response**
 ```json
 {
   "status": "error",
@@ -87,13 +87,13 @@ Host: localhost:8121
 }
 ```
 
-## 디바이스 연결
+## Device Connection
 
 ### `POST /device/connect`
 
-특정 디바이스에 연결합니다.
+Connects to a specific device.
 
-**요청**
+**Request**
 ```http
 POST /device/connect HTTP/1.1
 Host: localhost:8121
@@ -106,12 +106,12 @@ Content-Type: application/json
 }
 ```
 
-**요청 필드**
-- `device_id` (필수): 연결할 디바이스 ID
-- `timeout` (선택): 연결 타임아웃 (초, 기본값: 30)
-- `auto_reconnect` (선택): 자동 재연결 여부 (기본값: true)
+**Request Fields**
+- `device_id` (required): Device ID to connect
+- `timeout` (optional): Connection timeout in seconds (default: 30)
+- `auto_reconnect` (optional): Auto-reconnect enabled (default: true)
 
-**응답**
+**Response**
 ```json
 {
   "status": "success",
@@ -150,7 +150,7 @@ Content-Type: application/json
 }
 ```
 
-**오류 응답**
+**Error Response**
 ```json
 {
   "status": "error",
@@ -163,13 +163,13 @@ Content-Type: application/json
 }
 ```
 
-## 디바이스 연결 해제
+## Device Disconnection
 
 ### `DELETE /device/disconnect`
 
-디바이스 연결을 해제합니다.
+Disconnects from the device.
 
-**요청**
+**Request**
 ```http
 DELETE /device/disconnect HTTP/1.1
 Host: localhost:8121
@@ -180,7 +180,7 @@ Content-Type: application/json
 }
 ```
 
-**응답**
+**Response**
 ```json
 {
   "status": "success",
@@ -193,19 +193,19 @@ Content-Type: application/json
 }
 ```
 
-## 디바이스 상태 조회
+## Device Status
 
 ### `GET /device/status`
 
-연결된 디바이스의 현재 상태를 조회합니다.
+Gets the current status of connected devices.
 
-**요청**
+**Request**
 ```http
 GET /device/status?device_id=015F2A8E-3772-FB6D-2197-548F305983B0 HTTP/1.1
 Host: localhost:8121
 ```
 
-**응답**
+**Response**
 ```json
 {
   "status": "success",
@@ -245,13 +245,13 @@ Host: localhost:8121
 }
 ```
 
-## 디바이스 설정 변경
+## Device Settings
 
 ### `PUT /device/settings`
 
-디바이스의 설정을 변경합니다.
+Changes the device settings.
 
-**요청**
+**Request**
 ```http
 PUT /device/settings HTTP/1.1
 Host: localhost:8121
@@ -278,7 +278,7 @@ Content-Type: application/json
 }
 ```
 
-**응답**
+**Response**
 ```json
 {
   "status": "success",
@@ -306,31 +306,31 @@ Content-Type: application/json
 }
 ```
 
-## 오류 코드
+## Error Codes
 
-| 코드 | 설명 | 해결 방법 |
-|------|------|-----------|
-| `BLUETOOTH_ERROR` | 블루투스 어댑터 오류 | 블루투스 활성화 확인 |
-| `DEVICE_NOT_FOUND` | 디바이스를 찾을 수 없음 | 디바이스 검색 후 재시도 |
-| `CONNECTION_FAILED` | 연결 실패 | 디바이스 상태 및 거리 확인 |
-| `CONNECTION_TIMEOUT` | 연결 타임아웃 | 타임아웃 값 증가 또는 재시도 |
-| `DEVICE_BUSY` | 디바이스 사용 중 | 다른 연결 해제 후 재시도 |
-| `INVALID_SETTINGS` | 잘못된 설정 값 | 설정 값 범위 확인 |
-| `PERMISSION_DENIED` | 권한 없음 | 관리자 권한으로 실행 |
+| Code | Description | Solution |
+|------|-------------|----------|
+| `BLUETOOTH_ERROR` | Bluetooth adapter error | Check if Bluetooth is enabled |
+| `DEVICE_NOT_FOUND` | Device not found | Scan for devices and try again |
+| `CONNECTION_FAILED` | Connection failed | Check device status and distance |
+| `CONNECTION_TIMEOUT` | Connection timeout | Increase timeout value or try again |
+| `DEVICE_BUSY` | Device in use | Disconnect other connections and try again |
+| `INVALID_SETTINGS` | Invalid setting value | Check setting value range |
+| `PERMISSION_DENIED` | Permission denied | Run as administrator |
 
-## 사용 예제
+## Usage Examples
 
-### Python 예제
+### Python Example
 
 ```python
 import requests
 import json
 
-# 기본 URL
+# Base URL
 BASE_URL = "http://localhost:8121"
 
 def scan_devices():
-    """디바이스 검색"""
+    """Scan devices"""
     response = requests.get(f"{BASE_URL}/device/scan")
     if response.status_code == 200:
         data = response.json()
@@ -340,7 +340,7 @@ def scan_devices():
         return []
 
 def connect_device(device_id):
-    """디바이스 연결"""
+    """Connect to device"""
     payload = {
         "device_id": device_id,
         "timeout": 30,
@@ -353,36 +353,36 @@ def connect_device(device_id):
     return response.json()
 
 def get_device_status(device_id):
-    """디바이스 상태 조회"""
+    """Get device status"""
     response = requests.get(
         f"{BASE_URL}/device/status",
         params={"device_id": device_id}
     )
     return response.json()
 
-# 사용 예시
+# Usage example
 if __name__ == "__main__":
-    # 1. 디바이스 검색
+    # 1. Scan devices
     devices = scan_devices()
-    print(f"발견된 디바이스: {len(devices)}개")
+    print(f"Found devices: {len(devices)}")
     
     if devices:
-        # 2. 첫 번째 디바이스 연결
+        # 2. Connect to the first device
         device_id = devices[0]['id']
         result = connect_device(device_id)
         
         if result['status'] == 'success':
-            print(f"연결 성공: {device_id}")
+            print(f"Connection successful: {device_id}")
             
-            # 3. 디바이스 상태 확인
+            # 3. Get device status
             status = get_device_status(device_id)
             battery = status['data']['battery']['level']
-            print(f"배터리: {battery}%")
+            print(f"Battery: {battery}%")
         else:
-            print(f"연결 실패: {result['error']['message']}")
+            print(f"Connection failed: {result['error']['message']}")
 ```
 
-### JavaScript 예제
+### JavaScript Example
 
 ```javascript
 const BASE_URL = 'http://localhost:8121';
@@ -394,7 +394,7 @@ class DeviceAPI {
             const data = await response.json();
             return data.status === 'success' ? data.data.devices : [];
         } catch (error) {
-            console.error('스캔 오류:', error);
+            console.error('Scan error:', error);
             return [];
         }
     }
@@ -414,7 +414,7 @@ class DeviceAPI {
             });
             return await response.json();
         } catch (error) {
-            console.error('연결 오류:', error);
+            console.error('Connection error:', error);
             return { status: 'error', error: { message: error.message } };
         }
     }
@@ -426,34 +426,34 @@ class DeviceAPI {
             );
             return await response.json();
         } catch (error) {
-            console.error('상태 조회 오류:', error);
+            console.error('Status retrieval error:', error);
             return { status: 'error', error: { message: error.message } };
         }
     }
 }
 
-// 사용 예시
+// Usage example
 async function main() {
     const api = new DeviceAPI();
     
-    // 1. 디바이스 검색
+    // 1. Scan devices
     const devices = await api.scanDevices();
-    console.log(`발견된 디바이스: ${devices.length}개`);
+    console.log(`Found devices: ${devices.length}`);
     
     if (devices.length > 0) {
-        // 2. 첫 번째 디바이스 연결
+        // 2. Connect to the first device
         const deviceId = devices[0].id;
         const result = await api.connectDevice(deviceId);
         
         if (result.status === 'success') {
-            console.log(`연결 성공: ${deviceId}`);
+            console.log(`Connection successful: ${deviceId}`);
             
-            // 3. 디바이스 상태 확인
+            // 3. Get device status
             const status = await api.getDeviceStatus(deviceId);
             const battery = status.data.battery.level;
-            console.log(`배터리: ${battery}%`);
+            console.log(`Battery: ${battery}%`);
         } else {
-            console.log(`연결 실패: ${result.error.message}`);
+            console.log(`Connection failed: ${result.error.message}`);
         }
     }
 }
@@ -461,29 +461,29 @@ async function main() {
 main();
 ```
 
-## 모범 사례
+## Best Practices
 
-### 1. 연결 관리
-- 연결 전 항상 디바이스 스캔 수행
-- 연결 타임아웃 적절히 설정 (10-30초)
-- 자동 재연결 기능 활용
-- 사용 후 명시적으로 연결 해제
+### 1. Connection Management
+- Always scan for devices before connecting
+- Set appropriate connection timeout (10-30 seconds)
+- Use auto-reconnect feature
+- Explicitly disconnect after use
 
-### 2. 오류 처리
-- 모든 API 호출에 try-catch 구문 사용
-- 오류 코드별 적절한 대응 로직 구현
-- 재시도 메커니즘 구현 (최대 3회)
-- 사용자에게 명확한 오류 메시지 제공
+### 2. Error Handling
+- Use try-catch statements for all API calls
+- Implement appropriate response logic for each error code
+- Implement retry mechanism (max 3 retries)
+- Provide clear error messages to users
 
-### 3. 성능 최적화
-- 불필요한 상태 조회 최소화
-- 배치 처리 가능한 작업은 한 번에 처리
-- WebSocket 사용 고려 (실시간 데이터용)
-- 적절한 폴링 간격 설정 (2-5초)
+### 3. Performance Optimization
+- Minimize unnecessary status checks
+- Batch processable tasks
+- Consider WebSocket usage (for real-time data)
+- Set appropriate polling interval (2-5 seconds)
 
-## 다음 단계
+## Next Steps
 
-Device API 사용법을 익혔다면:
-1. [Stream API](stream-api.md)에서 데이터 스트리밍 방법을 학습하세요
-2. [WebSocket 통합](websocket-integration.md)에서 실시간 데이터 수신 방법을 확인하세요
-3. [Python 예제](../examples/python-examples.md)에서 더 많은 실제 사용 예제를 확인하세요 
+If you've mastered Device API usage:
+1. Learn data streaming methods in [Stream API](stream-api.md)
+2. Check real-time data reception methods in [WebSocket Integration](websocket-integration.md)
+3. View more actual usage examples in [Python Examples](../examples/python-examples.md) 
