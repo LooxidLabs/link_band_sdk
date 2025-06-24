@@ -199,8 +199,10 @@ export const openFolderInExplorer = async (folderPath: string): Promise<{ status
 
 export const getSessions = async (): Promise<Session[]> => {
   try {
-    const response = await axios.get<any[]>(`${API_BASE_URL}/data/sessions`, { headers });
-    return response.data.map((item: any) => ({
+    const response = await axios.get<{sessions: any[]}>(`${API_BASE_URL}/data/sessions`, { headers });
+    // Handle new API response format: {sessions: [...]}
+    const sessionsData = response.data.sessions || response.data;
+    return Array.isArray(sessionsData) ? sessionsData.map((item: any) => ({
       id: item.id,
       session_id: item.session_name,
       session_name: item.session_name,
@@ -209,7 +211,7 @@ export const getSessions = async (): Promise<Session[]> => {
       status: item.status,
       data_path: item.data_path,
       created_at: item.created_at,
-    }));
+    })) : [];
   } catch (error: unknown) {
     if (isAxiosLikeError(error)) {
       console.error('Error fetching sessions:', error.message);
@@ -252,6 +254,7 @@ export const openSessionFolder = async (sessionId: string): Promise<{ success: b
   console.log(`[api/dataCenter.ts] openSessionFolder called with sessionId: ${sessionId}`);
   if (electronApi && electronApi.dataCenter && electronApi.dataCenter.openSessionFolder) {
     try {
+      console.log('[api/dataCenter.ts] Calling electronApi.dataCenter.openSessionFolder...');
       const result = await electronApi.dataCenter.openSessionFolder(sessionId);
       console.log('[api/dataCenter.ts] openSessionFolder IPC result:', result);
       if (!result.success) {
@@ -259,11 +262,11 @@ export const openSessionFolder = async (sessionId: string): Promise<{ success: b
       }
       return result; // { success: true, message: string }
     } catch (error: any) {
-      console.error('Error invoking open-session-folder IPC:', error);
+      console.error('[api/dataCenter.ts] Error invoking open-session-folder IPC:', error);
       throw error; // Re-throw for the store to handle
     }
   } else {
-    console.error('Electron dataCenter API for openSessionFolder not found. Ensure preload.ts is correct.');
+    console.error('[api/dataCenter.ts] Electron dataCenter API for openSessionFolder not found. electronApi:', electronApi);
     throw new Error('Open folder functionality is not available.');
   }
 };

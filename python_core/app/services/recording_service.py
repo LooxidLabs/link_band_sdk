@@ -50,8 +50,8 @@ class RecordingService:
                 logger.debug("Exit check_device_connection (response is None)")
                 return False
 
-            is_connected = device_status_response.get("status") == "connected"
-            logger.info(f"check_device_connection: Evaluated is_connected: {is_connected} from response: {device_status_response.get('status')}")
+            is_connected = device_status_response.get("is_connected", False)
+            logger.info(f"check_device_connection: Evaluated is_connected: {is_connected} from response field 'is_connected': {device_status_response.get('is_connected')}")
             
             self.is_device_connected_cached = is_connected
             self.last_device_check_time = current_time
