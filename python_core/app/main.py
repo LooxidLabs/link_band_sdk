@@ -14,22 +14,109 @@ from app.database.db_manager import DatabaseManager
 from fastapi.staticfiles import StaticFiles
 import os
 
-# 기본 로깅 설정 (레벨, 포맷 등)
+# 간략한 로깅 설정
 logging.basicConfig(
-    level=logging.DEBUG,  # 로그 레벨을 DEBUG로 설정하여 더 많은 정보 확인
-    format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(funcName)s - %(lineno)d - %(message)s',
+    level=logging.INFO,  # INFO 레벨로 변경
+    format='%(message)s',  # 간단한 메시지만 출력
     handlers=[
         logging.StreamHandler(),  # 콘솔로 로그 출력
-        # logging.FileHandler("app.log") # 파일로도 로그를 남기고 싶다면 주석 해제
     ]
 )
+
+# 특정 모듈의 로그 레벨 조정
+logging.getLogger('uvicorn').setLevel(logging.WARNING)
+logging.getLogger('fastapi').setLevel(logging.WARNING)
+logging.getLogger('bleak').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)  # Initialize logger for this module
 
 app = FastAPI(
-    title="LINK BAND SDK API",
-    description="API for managing LINK BAND devices, data, and services.",
-    version="1.0.0",
+    title="Link Band SDK API",
+    description="""
+    **Link Band SDK API** provides comprehensive control and data management for Looxid Labs' next-generation ultra-lightweight EEG headband (Link Band 2.0).
+
+    ## Features
+
+    ### 🔗 Device Management
+    - **Bluetooth Discovery**: Scan and discover nearby Link Band devices
+    - **Connection Control**: Connect/disconnect devices with automatic pairing
+    - **Device Registry**: Register frequently used devices for quick access
+    - **Status Monitoring**: Real-time device status and battery monitoring
+
+    ### 📊 Real-time Data Streaming
+    - **WebSocket Server**: High-performance real-time data streaming
+    - **Multi-sensor Data**: EEG, PPG, ACC, and battery data
+    - **Signal Processing**: Real-time filtering and processing
+    - **Multiple Clients**: Support for multiple concurrent WebSocket connections
+
+    ### 💾 Data Recording & Management
+    - **Session Recording**: Start/stop recording sessions with metadata
+    - **Multi-format Storage**: JSON and CSV export options
+    - **Session Management**: Browse, analyze, and export recorded sessions
+    - **Data Quality**: Signal quality monitoring and validation
+
+    ### 📈 System Monitoring
+    - **Performance Metrics**: CPU, memory, and system health monitoring
+    - **Data Quality Metrics**: Signal quality and error rate tracking
+    - **Device Metrics**: Connection stability and device performance
+
+    ## Quick Start
+
+    1. **Initialize Streaming**: `POST /stream/init`
+    2. **Scan for Devices**: `GET /device/scan`
+    3. **Connect Device**: `POST /device/connect`
+    4. **Start Streaming**: `POST /stream/start`
+    5. **Start Recording**: `POST /data/start-recording`
+
+    ## WebSocket Connection
+
+    Connect to `ws://localhost:18765` for real-time data streaming after initializing the stream server.
+
+    ## Data Types
+
+    - **EEG**: Electroencephalography data (raw and processed)
+    - **PPG**: Photoplethysmography for heart rate monitoring
+    - **ACC**: 3-axis accelerometer data for movement tracking
+    - **Battery**: Device battery status and power management
+
+    ## Support
+
+    For technical support and documentation, visit: [Looxid Labs](https://looxidlabs.com)
+    """,
+    version="2.0.0",
+    contact={
+        "name": "Looxid Labs",
+        "url": "https://looxidlabs.com",
+        "email": "support@looxidlabs.com"
+    },
+    license_info={
+        "name": "Proprietary",
+        "url": "https://looxidlabs.com/license"
+    },
+    servers=[
+        {
+            "url": "http://localhost:8121",
+            "description": "Development server"
+        }
+    ],
+    tags_metadata=[
+        {
+            "name": "device",
+            "description": "Device management operations including scanning, connection, and registration"
+        },
+        {
+            "name": "engine", 
+            "description": "Streaming engine operations for real-time data transmission via WebSocket"
+        },
+        {
+            "name": "data_center",
+            "description": "Data recording and session management operations"
+        },
+        {
+            "name": "metrics",
+            "description": "System performance and health monitoring metrics"
+        }
+    ]
 )
 
 # Ensure the temp_exports directory exists and mount it for static file serving
@@ -63,32 +150,21 @@ app.include_router(router_data_center.router, prefix="/data", tags=["data_center
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("FastAPI server starting up...")
+    print("🚀 Starting Link Band SDK Server...")
 
-    # --- 서비스 인스턴스 생성 및 app.state에 저장 ---
-    # 0. DatabaseManager (다른 서비스들보다 먼저 또는 필요에 따라)
-    # db_path는 프로젝트 루트 기준이 아닌, db_manager.py 파일 위치 기준 또는 절대 경로가 될 수 있음.
-    # DatabaseManager 클래스 내에서 os.path.dirname(self.db_path)를 사용하므로, 
-    # main.py의 위치를 기준으로 상대 경로를 지정하면 python_core/database/data_center.db가 됨.
+    # Initialize core services
     db_manager_instance = DatabaseManager(db_path="database/data_center.db")
     app.state.db_manager = db_manager_instance
-    logger.info(f"DatabaseManager initialized with db_path: {db_manager_instance.db_path}. Instance: {app.state.db_manager}")
+    print("✓ Database initialized")
 
-    # 1. DeviceRegistry
     app.state.device_registry = DeviceRegistry()
-    logger.info(f"DeviceRegistry initialized: {app.state.device_registry}")
-
-    # 2. DeviceManager (DeviceRegistry 필요)
     app.state.device_manager = DeviceManager(registry=app.state.device_registry) 
-    logger.info(f"DeviceManager initialized: {app.state.device_manager}")
+    print("✓ Device manager initialized")
 
-    # 3. DataRecorder
     data_dir = "data"
     app.state.data_recorder = DataRecorder(data_dir=data_dir)
-    logger.info(f"DataRecorder initialized. Data directory: {data_dir}. Instance: {app.state.data_recorder}")
-    # logger.info(f"DataRecorder instance in app.state before WS init: {app.state.data_recorder}") # 이 로그는 이전 디버깅용, 제거 또는 유지
+    print("✓ Data recorder initialized")
 
-    # 4. WebSocketServer (DataRecorder, DeviceManager, DeviceRegistry 필요)
     ws_host = "localhost" 
     ws_port = 18765
     app.state.ws_server = WebSocketServer(
@@ -98,58 +174,49 @@ async def startup_event():
         device_manager=app.state.device_manager,
         device_registry=app.state.device_registry
     )
-    logger.info(f"WebSocketServer created and configured: {app.state.ws_server}")
+    print("✓ WebSocket server configured")
 
-    # 5. DeviceService (DeviceManager 필요)
     app.state.device_service = DeviceService(device_manager=app.state.device_manager)
-    logger.info(f"DeviceService initialized: {app.state.device_service}")
-
-    # 6. RecordingService (DataRecorder, DatabaseManager, WebSocketServer 필요)
     app.state.recording_service = RecordingService(
         data_recorder=app.state.data_recorder,
-        db_manager=app.state.db_manager, # db_manager 주입
+        db_manager=app.state.db_manager,
         ws_server=app.state.ws_server
     )
-    logger.info(f"RecordingService initialized: {app.state.recording_service}")
-
-    # 7. StreamService (WebSocketServer 필요)
     app.state.stream_service = StreamService(ws_server=app.state.ws_server)
-    logger.info(f"StreamService initialized and passed WebSocketServer: {app.state.stream_service}")
-    # --- 서비스 인스턴스 생성 완료 ---
+    print("✓ Services initialized")
 
     try:
-        logger.info("Attempting to start WebSocketServer...")
         await app.state.ws_server.start()
-        logger.info("WebSocketServer started successfully.")
+        print(f"✓ WebSocket server started on {ws_host}:{ws_port}")
     except Exception as e:
-        logger.error(f"Error starting WebSocketServer: {e}", exc_info=True)
+        print(f"❌ Error starting WebSocket server: {e}")
         
     try:
-        logger.info("Attempting to initialize StreamService (which no longer starts a new server)...")
         await app.state.stream_service.init_stream() 
-        logger.info("StreamService initialized.")
+        print("✓ Stream service ready")
     except Exception as e:
-        logger.error(f"Error during StreamService initialization: {e}", exc_info=True)
+        print(f"❌ Error initializing stream service: {e}")
     
-    logger.info("Startup event complete.")
+    print("🎉 Link Band SDK Server ready!")
+    print("WebSocket server initialized")  # Signal for Electron main process
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("FastAPI server shutting down...")
+    print("🛑 Shutting down Link Band SDK Server...")
     if hasattr(app.state, 'stream_service') and app.state.stream_service:
         try:
             await app.state.stream_service.stop_stream()
-            logger.info("StreamService stopped.")
+            print("✓ Stream service stopped")
         except Exception as e:
-            logger.error(f"Error stopping StreamService: {e}", exc_info=True)
+            print(f"❌ Error stopping stream service: {e}")
     
     if hasattr(app.state, 'ws_server') and app.state.ws_server:
         try:
             await app.state.ws_server.stop()
-            logger.info("WebSocketServer stopped.")
+            print("✓ WebSocket server stopped")
         except Exception as e:
-            logger.error(f"Error stopping WebSocketServer: {e}", exc_info=True)
-    logger.info("FastAPI server stopped successfully.")
+            print(f"❌ Error stopping WebSocket server: {e}")
+    print("👋 Link Band SDK Server stopped")
 
 @app.get("/")
 async def read_root():

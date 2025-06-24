@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Body
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.services.data_center import DataCenterService
 from app.services.recording_service import RecordingService
 import os
@@ -20,82 +20,333 @@ data_center_service = DataCenterService()
 TEMP_EXPORT_DIR = Path("temp_exports") # Store this in a config file or env var ideally
 TEMP_EXPORT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
 
+# Response Models for better API documentation
+class RecordingResponse(BaseModel):
+    """Response model for recording operations"""
+    status: str = Field(..., description="Operation status", example="success")
+    message: str = Field(..., description="Operation message")
+    session_name: Optional[str] = Field(None, description="Recording session name")
+
+class RecordingStatusResponse(BaseModel):
+    """Response model for recording status"""
+    is_recording: bool = Field(..., description="Whether recording is currently active")
+    current_session: Optional[str] = Field(None, description="Current session name if recording")
+    start_time: Optional[str] = Field(None, description="Recording start time in ISO format")
+
+class SessionInfo(BaseModel):
+    """Model for session information"""
+    session_name: str = Field(..., description="Session name")
+    start_time: str = Field(..., description="Session start time")
+    end_time: Optional[str] = Field(None, description="Session end time")
+    duration: Optional[float] = Field(None, description="Session duration in seconds")
+    data_path: str = Field(..., description="Path to session data")
+    file_count: int = Field(..., description="Number of files in session")
+    total_size: int = Field(..., description="Total size in bytes")
+
+class SessionListResponse(BaseModel):
+    """Response model for session list"""
+    sessions: List[SessionInfo] = Field(..., description="List of recording sessions")
+
+class ExportResponse(BaseModel):
+    """Response model for export operations"""
+    status: str = Field(..., description="Export status")
+    message: str = Field(..., description="Export message")
+    zip_filename: Optional[str] = Field(None, description="Generated zip filename")
+    download_url: Optional[str] = Field(None, description="Download URL for the exported file")
+    full_server_zip_path: Optional[str] = Field(None, description="Full server path to zip file")
+
 class SearchParams(BaseModel):
-    date_range: Optional[tuple[datetime, datetime]] = None
-    file_types: Optional[List[str]] = None
-    search_text: Optional[str] = None
+    """Search parameters for file search"""
+    date_range: Optional[tuple[datetime, datetime]] = Field(None, description="Date range filter")
+    file_types: Optional[List[str]] = Field(None, description="File type filters")
+    search_text: Optional[str] = Field(None, description="Text search query")
 
 class ExportParams(BaseModel):
-    date_range: tuple[datetime, datetime]
-    file_types: Optional[List[str]] = None
-    export_format: str
+    """Export parameters"""
+    date_range: tuple[datetime, datetime] = Field(..., description="Date range for export")
+    file_types: Optional[List[str]] = Field(None, description="File types to include")
+    export_format: str = Field(..., description="Export format (zip, csv, json)")
 
 class OpenFolderParams(BaseModel):
-    path: str
+    """Parameters for opening folder"""
+    path: str = Field(..., description="Folder path to open")
 
 class DataItem(BaseModel):
-    type: str
-    data: Dict[str, Any]
+    """Data item model"""
+    type: str = Field(..., description="Data type")
+    data: Dict[str, Any] = Field(..., description="Data content")
 
 # 의존성 주입을 위한 함수
 def get_recording_service(request: Request) -> RecordingService:
+    """Get RecordingService instance from application state"""
     if not hasattr(request.app.state, 'recording_service'):
         # 이 문제는 main.py에서 RecordingService 인스턴스를 app.state에 설정함으로써 해결되어야 합니다.
         logger.error("RecordingService not initialized in app.state. This should be done at application startup.")
         raise HTTPException(status_code=500, detail="Internal server error: Recording service not available.")
     return request.app.state.recording_service
 
-@router.post("/start-recording", summary="Start a new data recording session")
+@router.post("/start-recording", 
+    response_model=RecordingResponse,
+    summary="Start a new data recording session",
+    description="""
+    Start a new data recording session
+    
+    Creates a new recording session and begins capturing data from the connected
+    Link Band device. All sensor data will be saved to timestamped files.
+    
+    Args:
+        session_create: Optional session configuration
+        
+    Returns:
+        Recording start result with session name
+        
+    Raises:
+        HTTPException: If recording fails to start
+    """,
+    responses={
+        200: {
+            "description": "Recording session started successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Recording started",
+                        "session_name": "session_20240624_143022"
+                    }
+                }
+            }
+        },
+        400: {"description": "Recording failed - device not connected or already recording"},
+        500: {"description": "Internal server error during recording start"}
+    })
 async def start_recording_endpoint(
     session_create: Optional[DataSessionCreate] = Body(None), # 요청 본문에서 세션 이름과 설정을 받을 수 있도록 변경
     recording_service: RecordingService = Depends(get_recording_service)
 ):
     session_name = session_create.session_name if session_create and session_create.session_name else None
     settings = session_create.settings if session_create and session_create.settings else None
-    logger.info(f"Endpoint /start-recording called with session_name: {session_name}, settings: {settings}")
+    print(f"🎬 Start recording request: session_name={session_name}")
     try:
         result = await recording_service.start_recording(session_name=session_name, settings=settings)
         if result.get("status") == "fail":
-            logger.error(f"Failed to start recording: {result.get('message')}")
+            print(f"❌ Recording start failed: {result.get('message')}")
             raise HTTPException(status_code=400, detail=result.get("message"))
-        logger.info(f"Recording started successfully: {result}")
+        print(f"✅ Recording started: {result.get('session_name')}")
         return result
     except Exception as e:
-        logger.error(f"Exception in /start-recording endpoint: {e}", exc_info=True)
+        print(f"❌ Recording start error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.post("/stop-recording", summary="Stop the current recording session")
+@router.post("/stop-recording", 
+    response_model=RecordingResponse,
+    summary="Stop the current recording session",
+    description="""
+    Stop the currently active data recording session.
+    
+    **Process:**
+    1. Stops data capture from all sensors
+    2. Finalizes and saves all data files
+    3. Updates session metadata
+    4. Closes recording streams
+    
+    **Data Finalization:**
+    - Saves all buffered data to files
+    - Generates session summary
+    - Updates file metadata
+    - Calculates session statistics
+    
+    **File Organization:**
+    - Raw data files (EEG, PPG, ACC)
+    - Processed data files
+    - Session metadata (JSON)
+    - Battery and device logs
+    
+    **Note:** This operation is safe to call even if no recording is active.
+    """,
+    responses={
+        200: {
+            "description": "Recording session stopped successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Recording stopped",
+                        "session_name": "session_20240624_143022"
+                    }
+                }
+            }
+        },
+        400: {"description": "Stop failed - no active recording session"},
+        500: {"description": "Internal server error during recording stop"}
+    })
 async def stop_recording_endpoint(
     recording_service: RecordingService = Depends(get_recording_service)
 ):
-    logger.info("Endpoint /stop-recording called")
+    """
+    Stop the current recording session
+    
+    Stops the active recording session and finalizes all data files.
+    This ensures all captured data is properly saved and organized.
+    
+    Returns:
+        Recording stop result with session information
+        
+    Raises:
+        HTTPException: If stopping fails
+    """
+    print("🛑 Stop recording request")
     try:
         result = await recording_service.stop_recording()
         if result.get("status") == "fail":
-            logger.error(f"Failed to stop recording: {result.get('message')}")
+            print(f"❌ Recording stop failed: {result.get('message')}")
             raise HTTPException(status_code=400, detail=result.get("message"))
-        logger.info(f"Recording stopped successfully: {result}")
+        print(f"✅ Recording stopped: {result.get('session_name')}")
         return result
     except Exception as e:
-        logger.error(f"Exception in /stop-recording endpoint: {e}", exc_info=True)
+        print(f"❌ Recording stop error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.get("/recording-status", summary="Get the current recording status")
+@router.get("/recording-status", 
+    response_model=RecordingStatusResponse,
+    summary="Get the current recording status",
+    description="""
+    Retrieve the current status of data recording operations.
+    
+    **Status Information:**
+    - Recording active/inactive status
+    - Current session name (if recording)
+    - Recording start time
+    - Session duration
+    - Data capture statistics
+    
+    **Use Cases:**
+    - Monitor recording progress
+    - Display recording status in UI
+    - Validate recording state before operations
+    - Check session duration
+    
+    **Real-time Updates:**
+    This endpoint provides real-time status information that updates
+    as recording progresses. Poll this endpoint for live status updates.
+    """,
+    responses={
+        200: {
+            "description": "Current recording status",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "is_recording": True,
+                        "current_session": "session_20240624_143022",
+                        "start_time": "2024-06-24T14:30:22Z"
+                    }
+                }
+            }
+        },
+        500: {"description": "Failed to get recording status"}
+    })
 async def get_recording_status_endpoint( # async def로 변경
     recording_service: RecordingService = Depends(get_recording_service)
 ):
+    """
+    Get the current recording status
+    
+    Returns real-time information about the current recording session
+    including status, session name, and timing information.
+    
+    Returns:
+        Current recording status and session information
+        
+    Raises:
+        HTTPException: If status retrieval fails
+    """
     logger.info("Endpoint /recording-status called")
     try:
         status = recording_service.get_recording_status() # 동기 함수 호출
-        return status
+        
+        # DataRecorder가 반환하는 형식을 프론트엔드가 기대하는 형식으로 변환
+        response = {
+            "is_recording": status.get("is_recording", False),
+            "current_session": status.get("current_session_name"),  # current_session_name -> current_session
+            "start_time": None  # 기본값
+        }
+        
+        # 녹화 중이고 recording_service의 data_recorder에 meta 정보가 있으면 start_time 추가
+        if response["is_recording"] and hasattr(recording_service.data_recorder, 'meta'):
+            response["start_time"] = recording_service.data_recorder.meta.get("start_time")
+        
+        logger.info(f"Returning recording status: {response}")
+        return response
     except Exception as e:
         logger.error(f"Exception in /recording-status endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.get("/sessions", summary="List all data sessions")
+@router.get("/sessions", 
+    response_model=SessionListResponse,
+    summary="List all data recording sessions",
+    description="""
+    Retrieve a comprehensive list of all recorded data sessions.
+    
+    **Session Information:**
+    - Session names and timestamps
+    - Recording duration and file counts
+    - Data file paths and sizes
+    - Session metadata and statistics
+    
+    **Data Organization:**
+    Sessions are organized chronologically with the most recent first.
+    Each session contains multiple data files for different sensor types.
+    
+    **File Types per Session:**
+    - EEG raw and processed data
+    - PPG heart rate measurements
+    - ACC accelerometer data
+    - Battery status logs
+    - Session metadata (JSON)
+    
+    **Use Cases:**
+    - Browse recorded sessions
+    - Select sessions for analysis
+    - Monitor storage usage
+    - Session management operations
+    """,
+    responses={
+        200: {
+            "description": "List of all recording sessions",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "sessions": [
+                            {
+                                "session_name": "session_20240624_143022",
+                                "start_time": "2024-06-24T14:30:22Z",
+                                "end_time": "2024-06-24T14:45:30Z",
+                                "duration": 908.5,
+                                "data_path": "/data/session_20240624_143022",
+                                "file_count": 8,
+                                "total_size": 2048576
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        500: {"description": "Failed to retrieve sessions list"}
+    })
 async def list_sessions_endpoint(
     recording_service: RecordingService = Depends(get_recording_service)
 ):
+    """
+    List all data recording sessions
+    
+    Returns a comprehensive list of all recorded sessions with
+    metadata and statistics for each session.
+    
+    Returns:
+        List of all recording sessions with details
+        
+    Raises:
+        HTTPException: If session listing fails
+    """
     # Assuming get_sessions might become async or involve I/O in the future
     # For now, if it's synchronous in the service, direct call is fine.
     # If get_sessions is made async in service: result = await recording_service.get_sessions()
@@ -109,11 +360,76 @@ async def list_sessions_endpoint(
         logger.error(f"Exception in /sessions endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.get("/sessions/{session_name}", summary="Get details of a specific session")
+@router.get("/sessions/{session_name}", 
+    response_model=SessionInfo,
+    summary="Get detailed information about a specific session",
+    description="""
+    Retrieve comprehensive details about a specific recording session.
+    
+    **Detailed Information:**
+    - Complete session metadata
+    - File inventory and sizes
+    - Recording statistics
+    - Data quality metrics
+    - Session configuration
+    
+    **File Details:**
+    - Individual file paths and sizes
+    - Data type breakdown
+    - Recording timestamps
+    - Processing status
+    
+    **Quality Metrics:**
+    - Signal quality indicators
+    - Data completeness
+    - Error rates
+    - Device performance during session
+    
+    **Use Cases:**
+    - Session analysis preparation
+    - Data quality assessment
+    - Export planning
+    - Detailed session review
+    """,
+    responses={
+        200: {
+            "description": "Detailed session information",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "session_name": "session_20240624_143022",
+                        "start_time": "2024-06-24T14:30:22Z",
+                        "end_time": "2024-06-24T14:45:30Z",
+                        "duration": 908.5,
+                        "data_path": "/data/session_20240624_143022",
+                        "file_count": 8,
+                        "total_size": 2048576
+                    }
+                }
+            }
+        },
+        404: {"description": "Session not found"},
+        500: {"description": "Failed to retrieve session details"}
+    })
 async def get_session_details_endpoint(
     session_name: str,
     recording_service: RecordingService = Depends(get_recording_service)
 ):
+    """
+    Get detailed information about a specific session
+    
+    Returns comprehensive details about the specified recording session
+    including files, statistics, and quality metrics.
+    
+    Args:
+        session_name: Name of the session to retrieve
+        
+    Returns:
+        Detailed session information
+        
+    Raises:
+        HTTPException: If session not found or retrieval fails
+    """
     logger.info(f"Endpoint /sessions/{session_name} called")
     try:
         result = recording_service.get_session_details(session_name)
@@ -129,11 +445,73 @@ async def get_session_details_endpoint(
         logger.error(f"Exception in /sessions/{session_name} endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.post("/sessions/{session_name}/prepare-export", summary="Prepare a session for export by zipping its data.")
+@router.post("/sessions/{session_name}/prepare-export", 
+    response_model=ExportResponse,
+    summary="Prepare a session for export by creating a downloadable zip file",
+    description="""
+    Prepare a recording session for export by creating a compressed zip file.
+    
+    **Export Process:**
+    1. Validates session existence and data integrity
+    2. Creates compressed zip archive of all session files
+    3. Generates secure download URL
+    4. Provides export metadata
+    
+    **Included Files:**
+    - All raw sensor data files
+    - Processed data files
+    - Session metadata and configuration
+    - Battery and device logs
+    - Data quality reports
+    
+    **Security:**
+    - Sanitized filenames prevent path traversal
+    - Temporary export directory isolation
+    - Secure download URLs with expiration
+    
+    **File Organization in Zip:**
+    Files maintain their original structure and naming within the zip archive
+    for easy identification and analysis.
+    
+    **Note:** Large sessions may take time to compress. Monitor the operation status.
+    """,
+    responses={
+        200: {
+            "description": "Session prepared for export successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Session session_20240624_143022 prepared for export.",
+                        "zip_filename": "session_20240624_143022.zip",
+                        "download_url": "/exports/session_20240624_143022.zip",
+                        "full_server_zip_path": "/temp_exports/session_20240624_143022.zip"
+                    }
+                }
+            }
+        },
+        404: {"description": "Session not found or data directory missing"},
+        500: {"description": "Export preparation failed"}
+    })
 async def prepare_session_export_endpoint(
     session_name: str,
     recording_service: RecordingService = Depends(get_recording_service)
 ):
+    """
+    Prepare a session for export by creating a zip archive
+    
+    Creates a compressed zip file containing all session data
+    and provides a download URL for the exported archive.
+    
+    Args:
+        session_name: Name of the session to export
+        
+    Returns:
+        Export preparation result with download information
+        
+    Raises:
+        HTTPException: If session not found or export fails
+    """
     logger.info(f"Endpoint /sessions/{session_name}/prepare-export called")
     try:
         session_details_response = recording_service.get_session_details(session_name)
