@@ -1,1 +1,50 @@
 node_modules
+
+# Build outputs
+dist/
+build/
+release/
+out/
+
+# Electron build outputs
+electron-app/dist/
+electron-app/dist-electron/
+electron-app/release/
+
+# Python build outputs
+python_core/dist/
+python_core/build/
+python_core/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Data files
+*.db
+*.sqlite
+*.sqlite3
+data/
+temp_exports/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
