@@ -42,7 +42,7 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
   const getDefaultOptions = (): RecordingOptionsData => ({
     sessionName: getDefaultSessionName(),
     dataFormat: 'JSON',
-    exportPath: 'data'  // 초기화 시 기본 경로를 data로 설정
+    exportPath: '~/link-band-sdk/data'  // 초기화 시 기본 경로를 ~/link-band-sdk/data로 설정
   });
 
   // 설정 초기화
@@ -92,7 +92,7 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
               className="h-7 px-2 text-xs text-gray-400 hover:text-white hover:bg-gray-700"
             >
               <RotateCcw className="w-3 h-3 mr-1" />
-              설정 초기화
+              Reset Settings
             </Button>
             <Button
               variant="ghost"
@@ -100,7 +100,7 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
               onClick={() => setIsExpanded(!isExpanded)}
               className="h-7 px-2 text-xs text-gray-400 hover:text-white hover:bg-gray-700"
             >
-              {isExpanded ? '접기' : '펼치기'}
+              {isExpanded ? 'Collapse' : 'Expand'}
             </Button>
           </div>
         </div>
@@ -122,7 +122,7 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
                 className="h-8 text-xs bg-gray-800 border-gray-600 text-white"
               />
               <p className="text-xs text-gray-500">
-                폴더 및 파일명 앞에 사용됩니다 (예: {options.sessionName}_20250625_021254)
+                Used as prefix for folders and filenames (e.g., {options.sessionName}_20250625_021254)
               </p>
             </div>
 
@@ -137,7 +137,7 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
                 </SelectTrigger>
                 <SelectContent className="bg-gray-800 border-gray-600">
                   <SelectItem value="JSON" className="text-white hover:bg-gray-700">
-                    JSON (기본값)
+                    JSON (Default)
                   </SelectItem>
                   <SelectItem value="CSV" className="text-white hover:bg-gray-700">
                     CSV
@@ -145,7 +145,7 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
                 </SelectContent>
               </Select>
               <p className="text-xs text-gray-500">
-                Export 시 데이터 파일 형식을 선택합니다
+                Select data file format for export
               </p>
             </div>
 
@@ -185,12 +185,12 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
               {pathValidation.isValid && (
                 <div className="flex items-start gap-2 p-2 bg-green-900/20 border border-green-800 rounded-md">
                   <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-green-400">폴더 경로가 유효합니다.</p>
+                  <p className="text-xs text-green-400">Folder path is valid.</p>
                 </div>
               )}
               
               <p className="text-xs text-gray-500">
-                Export된 파일이 저장될 경로를 입력하세요. 상대 경로(./data) 또는 절대 경로(/Users/username/Documents) 모두 가능합니다.
+                Enter the path where exported files will be saved. Both relative paths (./data) and absolute paths (/Users/username/Documents) are supported. Non-existent paths will be created automatically.
               </p>
             </div>
           </div>

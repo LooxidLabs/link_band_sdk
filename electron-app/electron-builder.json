@@ -1,5 +1,5 @@
 {
-  "appId": "com.linkband.sdk",
+  "appId": "com.looxidlabs.linkbandsdk",
   "productName": "Link Band SDK",
   "directories": {
     "output": "release",
@@ -8,33 +8,27 @@
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
-    "resources/**/*"
+    "public/**/*",
+    "!public/docs/**/*"
   ],
   "extraResources": [
     {
       "from": "../python_core",
       "to": "python_core",
-      "filter": ["**/*"]
+      "filter": ["**/*", "!**/__pycache__/", "!**/*.pyc", "!**/dist/**", "!**/build/**"]
     },
     {
-      "from": "../venv/lib/python3.13/site-packages",
-      "to": "python_core/venv/lib/python3.13/site-packages",
-      "filter": [
-        "**/*",
-        "!**/__pycache__/",
-        "!**/*.pyc"
-      ]
-    },
-    {
-      "from": "../venv/bin",
-      "to": "python_core/venv/bin",
-      "filter": ["python*"]
+      "from": "public/docs",
+      "to": "docs"
     },
     {
       "from": "resources",
-      "to": "resources",
-      "filter": ["**/*"]
+      "to": "resources"
     }
+  ],
+  "asarUnpack": [
+    "**/*.node",
+    "**/python_core/**/*"
   ],
   "publish": [
     {
@@ -52,12 +46,12 @@
         "arch": ["x64", "arm64"]
       }
     ],
-    "hardenedRuntime": false,
+    "hardenedRuntime": true,
     "gatekeeperAssess": false,
     "entitlements": "resources/entitlements.mac.plist",
     "entitlementsInherit": "resources/entitlements.mac.plist",
     "notarize": false,
-    "identity": null
+    "identity": "Apple Development: yongwook.chae@icloud.com (AYR86268A3)"
   },
   "win": {
     "icon": "build/icons/win/icon.ico",

@@ -82,7 +82,15 @@ export const RecordingStatus: React.FC<RecordingStatusProps> = ({ status }) => {
             </InfoRow>
             <InfoRow label="Started At">
               <span className="text-xs text-gray-300">
-                {status.start_time ? new Date(status.start_time).toLocaleString() : 'N/A'}
+                {status.start_time ? new Date(status.start_time).toLocaleString('en-US', { 
+                  year: 'numeric', 
+                  month: '2-digit', 
+                  day: '2-digit', 
+                  hour: '2-digit', 
+                  minute: '2-digit', 
+                  second: '2-digit',
+                  hour12: true 
+                }) : 'N/A'}
               </span>
             </InfoRow>
             <InfoRow label="Duration">

@@ -21,6 +21,7 @@ const DataCenter: React.FC = () => {
   const {
     activeTab,
     recordingStatus,
+    // sessions,
     setActiveTab,
     fetchRecordingStatus,
     startRecording,
@@ -49,7 +50,7 @@ const DataCenter: React.FC = () => {
   const [recordingOptions, setRecordingOptions] = useState<RecordingOptionsData>({
     sessionName: getDefaultSessionName(),
     dataFormat: 'JSON',
-    exportPath: 'data'  // 초기값을 "data"로 설정
+    exportPath: '~/link-band-sdk/data'  // 초기값을 "~/link-band-sdk/data"로 설정
   });
 
   // 폴더 경로 검증 상태
@@ -66,7 +67,7 @@ const DataCenter: React.FC = () => {
       console.log('Path is empty');
       setPathValidation({
         isValid: false,
-        error: '경로를 입력해주세요.'
+        error: 'Please enter a path.'
       });
       return;
     }
@@ -94,20 +95,26 @@ const DataCenter: React.FC = () => {
             console.log('Path exists but not writable');
             setPathValidation({
               isValid: false,
-              error: '폴더에 쓰기 권한이 없습니다.'
+              error: 'No write permission for this folder.'
             });
           }
         } else if (result.exists && !result.isDirectory) {
           console.log('Path exists but is not a directory');
           setPathValidation({
             isValid: false,
-            error: '파일 경로입니다. 폴더 경로를 입력해주세요.'
+            error: 'This is a file path. Please enter a folder path.'
+          });
+        } else if (!result.exists && result.canCreate) {
+          console.log('Path does not exist but can be created');
+          setPathValidation({
+            isValid: true,
+            error: ''
           });
         } else {
-          console.log('Path does not exist');
+          console.log('Path does not exist and cannot be created');
           setPathValidation({
             isValid: false,
-            error: '폴더가 존재하지 않습니다.'
+            error: 'Path does not exist and cannot be created. Please check the parent folder.'
           });
         }
       } else {
@@ -122,13 +129,14 @@ const DataCenter: React.FC = () => {
       console.error('Error validating path:', error);
       setPathValidation({
         isValid: false,
-        error: '경로 검증 중 오류가 발생했습니다.'
+        error: 'Error occurred while validating path.'
       });
     }
   };
 
   // 초기 경로 검증
   useEffect(() => {
+    console.log('Initial path validation for:', recordingOptions.exportPath);
     validatePath(recordingOptions.exportPath);
   }, []);
 

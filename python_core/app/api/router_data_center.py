@@ -17,7 +17,27 @@ router = APIRouter()
 data_center_service = DataCenterService()
 
 # Configuration for exports
-TEMP_EXPORT_DIR = Path("temp_exports") # Store this in a config file or env var ideally
+import sys
+
+# Check if we're running in a packaged environment
+if sys.platform == 'darwin' and '/Contents/Resources/python_core' in __file__:
+    # We're in a packaged macOS app, use user's home directory
+    home_dir = os.path.expanduser("~")
+    app_data_dir = os.path.join(home_dir, "Library", "Application Support", "Link Band SDK")
+    TEMP_EXPORT_DIR = Path(app_data_dir) / "temp_exports"
+elif sys.platform == 'win32' and '\\resources\\python_core' in __file__.lower():
+    # We're in a packaged Windows app, use user's AppData directory
+    app_data_dir = os.path.join(os.environ.get('APPDATA', ''), "Link Band SDK")
+    TEMP_EXPORT_DIR = Path(app_data_dir) / "temp_exports"
+elif sys.platform.startswith('linux') and '/resources/python_core' in __file__:
+    # We're in a packaged Linux app, use user's home directory
+    home_dir = os.path.expanduser("~")
+    app_data_dir = os.path.join(home_dir, ".link-band-sdk")
+    TEMP_EXPORT_DIR = Path(app_data_dir) / "temp_exports"
+else:
+    # Development environment or unpackaged
+    TEMP_EXPORT_DIR = Path("temp_exports")
+
 TEMP_EXPORT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
 
 # Response Models for better API documentation

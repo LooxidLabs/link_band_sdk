@@ -80,8 +80,13 @@ class RecordingService:
             return {"status": "fail", "message": "Recording is already in progress."}
         
         try:
-            logger.info(f"Calling DataRecorder.start_recording() with session_name: {session_name}")
-            result = self.data_recorder.start_recording(session_name=session_name)
+            # Extract export_path from settings
+            export_path = None
+            if settings and isinstance(settings, dict):
+                export_path = settings.get('export_path')
+            
+            logger.info(f"Calling DataRecorder.start_recording() with session_name: {session_name}, export_path: {export_path}")
+            result = self.data_recorder.start_recording(session_name=session_name, export_path=export_path)
             logger.info(f"DataRecorder.start_recording() returned: {result}")
             logger.info(f"start_recording: After DataRecorder.start_recording(), data_recorder.is_recording: {self.data_recorder.is_recording}") 
             
