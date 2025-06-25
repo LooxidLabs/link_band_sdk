@@ -1,177 +1,176 @@
-# Link Band SDK - 배포 가이드
+# Link Band SDK Deployment Guide
 
-이 문서는 Link Band SDK Electron 앱의 배포와 자동 업데이트 설정에 대한 가이드입니다.
+## Overview
+Link Band SDK is a comprehensive development kit for Looxid Labs' next-generation ultra-lightweight EEG headband (Link Band 2.0). This guide provides instructions for third-party developers and researchers.
 
-## 📦 배포 준비
-
-### 1. 환경 설정
-
-```bash
-# 의존성 설치
-npm install
-
-# electron-updater 설치 확인
-npm list electron-updater
-```
-
-### 2. 버전 관리
-
-`package.json`에서 버전을 업데이트:
-
-```json
-{
-  "version": "1.0.0"
-}
-```
-
-### 3. 배포 설정 확인
-
-`electron-builder.json` 파일에서 GitHub 설정을 확인하고 수정:
-
-```json
-{
-  "publish": [
-    {
-      "provider": "github",
-      "owner": "your-github-username",
-      "repo": "link_band_sdk"
-    }
-  ]
-}
-```
-
-## 🚀 배포 방법
-
-### Option 1: GitHub Releases (권장)
-
-1. **GitHub 토큰 설정**
-   ```bash
-   export GH_TOKEN=your_github_personal_access_token
-   ```
-
-2. **빌드 및 배포**
-   ```bash
-   npm run electron:build:publish
-   ```
-
-3. **GitHub Release 생성**
-   - GitHub에서 자동으로 Release가 생성됩니다
-   - 빌드된 파일들이 Assets에 업로드됩니다
-
-### Option 2: 로컬 빌드만
-
-```bash
-npm run electron:build
-```
-
-생성된 파일들은 `release/` 폴더에 저장됩니다.
-
-## 🔄 자동 업데이트 구현
-
-### 1. 메인 프로세스 (이미 구현됨)
-
-- `electron-updater` 설정
-- 업데이트 체크 및 다운로드 로직
-- 사용자 알림 다이얼로그
-
-### 2. 렌더러 프로세스
-
-`UpdateNotification` 컴포넌트를 앱에 추가:
-
-```tsx
-import UpdateNotification from './components/UpdateNotification';
-
-function App() {
-  return (
-    <div>
-      {/* 기존 컴포넌트들 */}
-      <UpdateNotification />
-    </div>
-  );
-}
-```
-
-### 3. 업데이트 플로우
-
-1. **자동 체크**: 앱 시작 시 자동으로 업데이트 확인
-2. **수동 체크**: 사용자가 "Check for Updates" 버튼 클릭
-3. **다운로드**: 업데이트 발견 시 자동 다운로드
-4. **설치**: 사용자가 "Restart & Install" 선택 시 설치
-
-## 🛠 배포 환경별 설정
+## System Requirements
 
 ### macOS
-- **코드 사이닝**: `entitlements.mac.plist` 파일 사용
-- **공증**: 프로덕션에서는 `notarize: true` 설정 필요
-- **배포 형식**: DMG 파일
+- **Intel Mac**: macOS 10.15 (Catalina) or later
+- **Apple Silicon Mac**: macOS 11.0 (Big Sur) or later
+- **Memory**: 4GB RAM minimum, 8GB recommended
+- **Storage**: 1GB free space
 
 ### Windows
-- **코드 사이닝**: 인증서 필요 (프로덕션)
-- **배포 형식**: NSIS 인스톨러
-- **자동 업데이트**: 관리자 권한 없이 설치 가능
+- Windows 10 (64-bit) or later
+- 4GB RAM minimum, 8GB recommended
+- 1GB free space
 
 ### Linux
-- **배포 형식**: AppImage
-- **자동 업데이트**: 지원
+- Ubuntu 20.04 or later (or compatible distribution)
+- 4GB RAM minimum, 8GB recommended
+- 1GB free space
 
-## 📋 배포 체크리스트
+## What's Included
 
-- [ ] 버전 번호 업데이트
-- [ ] GitHub 리포지토리 설정 확인
-- [ ] 환경 변수 설정 (GH_TOKEN)
-- [ ] 테스트 빌드 실행
-- [ ] 업데이트 기능 테스트
-- [ ] 각 플랫폼별 빌드 확인
+Link Band SDK comes with everything you need:
+- **Python Runtime**: Bundled Python 3.13 environment
+- **All Dependencies**: Pre-installed scientific computing libraries
+- **No Additional Setup**: Works out of the box
 
-## 🔧 고급 설정
+## Installation
 
-### 1. 업데이트 서버 변경
+### macOS
+1. Download the appropriate version:
+   - **Intel Mac**: `Link Band SDK-1.0.0.dmg`
+   - **Apple Silicon Mac**: `Link Band SDK-1.0.0-arm64.dmg`
 
-GitHub 대신 다른 서버를 사용하려면:
+2. Double-click the DMG file to mount it
+3. Drag the "Link Band SDK" app to your Applications folder
+4. On first launch, you may need to:
+   - Right-click the app and select "Open" to bypass Gatekeeper
+   - Go to System Preferences > Security & Privacy and click "Open Anyway"
 
-```json
-{
-  "publish": [
-    {
-      "provider": "generic",
-      "url": "https://your-update-server.com/releases/"
-    }
-  ]
-}
+### Windows
+1. Download `Link Band SDK-1.0.0.exe`
+2. Run the installer
+3. Follow the installation wizard
+4. Launch from Start Menu or Desktop shortcut
+
+### Linux
+1. Download `Link Band SDK-1.0.0.AppImage`
+2. Make it executable: `chmod +x Link\ Band\ SDK-1.0.0.AppImage`
+3. Run the AppImage
+
+## Features
+
+### Device Management
+- Bluetooth device discovery and connection
+- Real-time device status monitoring
+- Battery level tracking
+- Multi-device support
+
+### Data Streaming
+- Real-time EEG data (250 Hz)
+- PPG data for heart rate monitoring
+- 3-axis accelerometer data
+- WebSocket API for custom applications
+
+### Data Recording
+- Session-based recording
+- Multiple export formats (JSON, CSV)
+- Automatic data organization
+- Session metadata management
+
+### Developer API
+- RESTful API endpoints
+- WebSocket real-time streaming
+- Comprehensive documentation
+- Example code and integrations
+
+## API Endpoints
+
+### Base URL
+```
+http://localhost:8121
 ```
 
-### 2. 베타 채널 설정
-
-```json
-{
-  "publish": [
-    {
-      "provider": "github",
-      "owner": "your-username",
-      "repo": "your-repo",
-      "channel": "beta"
-    }
-  ]
-}
+### WebSocket
+```
+ws://localhost:18765
 ```
 
-### 3. 수동 업데이트 체크 비활성화
+### Key Endpoints
+- `GET /device/scan` - Scan for devices
+- `POST /device/connect` - Connect to device
+- `POST /stream/start` - Start data streaming
+- `POST /data/start-recording` - Start recording session
+- `GET /metrics` - System performance metrics
 
-`main.ts`에서 자동 체크를 비활성화:
+## Quick Start
 
-```typescript
-// autoUpdater.checkForUpdatesAndNotify(); // 이 줄을 주석 처리
-```
+1. Launch Link Band SDK
+2. The Python server will start automatically (no setup required)
+3. Click "Scan for Devices"
+4. Select your Link Band device
+5. Click "Connect"
+6. Start streaming or recording
 
-## 📚 참고 자료
+## Troubleshooting
 
-- [electron-builder 공식 문서](https://electron.build/)
-- [electron-updater 공식 문서](https://github.com/electron-userland/electron-builder/tree/master/packages/electron-updater)
-- [GitHub Releases 설정 가이드](https://docs.github.com/en/repositories/releasing-projects-on-github)
+### Application Won't Start (macOS)
+If you see "Link Band SDK is damaged and can't be opened":
+1. Open Terminal
+2. Run: `xattr -cr /Applications/Link\ Band\ SDK.app`
+3. Try opening the app again
 
-## 🚨 주의사항
+### Server Connection Issues
+- The Python server starts automatically when you launch the app
+- Check if port 8121 is already in use by another application
+- Try restarting the application
 
-1. **GitHub Token**: 배포 시 반드시 적절한 권한을 가진 토큰 사용
-2. **코드 사이닝**: 프로덕션 환경에서는 반드시 코드 사이닝 적용
-3. **테스트**: 업데이트 기능은 실제 배포 환경에서만 테스트 가능
-4. **백업**: 중요한 사용자 데이터는 업데이트 전 백업 권장 
+### Device Not Found
+- Ensure Bluetooth is enabled
+- Check device battery level
+- Try restarting the device
+- Move closer to the computer
+
+### Connection Issues
+- Restart the application
+- Check for other Bluetooth interference
+- Update your system's Bluetooth drivers
+
+### Data Export Issues
+- Ensure sufficient disk space
+- Check write permissions
+- Try a different export format
+
+## Technical Details
+
+### Bundled Components
+- Python 3.13 runtime
+- FastAPI web framework
+- Scientific libraries: NumPy, SciPy, MNE
+- Bluetooth library: Bleak
+- Signal processing: HeartPy
+
+### Data Storage
+- **Development**: `electron-app/data/`
+- **Production (macOS)**: `~/Library/Application Support/Link Band SDK/`
+- **Production (Windows)**: `%APPDATA%\Link Band SDK\`
+- **Production (Linux)**: `~/.link-band-sdk/`
+
+## Support
+
+For technical support and updates:
+- Website: https://looxidlabs.com
+- Documentation: Available in-app
+- Email: support@looxidlabs.com
+
+## License
+
+This software is proprietary and licensed by Looxid Labs.
+See the license agreement for full terms and conditions.
+
+## Version History
+
+### v1.0.0 (Current)
+- Initial release
+- Full device support for Link Band 2.0
+- Real-time streaming and recording
+- Multi-platform support (macOS, Windows, Linux)
+- Bundled Python environment (no installation required)
+
+---
+
+© 2024 Looxid Labs. All rights reserved. 

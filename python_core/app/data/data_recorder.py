@@ -5,12 +5,35 @@ import threading
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 import logging
+import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 class DataRecorder:
     def __init__(self, data_dir: str = "data"):
-        self.data_dir = data_dir
+        # Check if we're running in a packaged environment
+        if sys.platform == 'darwin' and '/Contents/Resources/python_core' in __file__:
+            # We're in a packaged macOS app, use user's home directory
+            home_dir = os.path.expanduser("~")
+            app_data_dir = os.path.join(home_dir, "Library", "Application Support", "Link Band SDK")
+            self.data_dir = os.path.join(app_data_dir, "data")
+            logger.info(f"Running in packaged macOS app. Using data directory: {self.data_dir}")
+        elif sys.platform == 'win32' and '\\resources\\python_core' in __file__.lower():
+            # We're in a packaged Windows app, use user's AppData directory
+            app_data_dir = os.path.join(os.environ.get('APPDATA', ''), "Link Band SDK")
+            self.data_dir = os.path.join(app_data_dir, "data")
+            logger.info(f"Running in packaged Windows app. Using data directory: {self.data_dir}")
+        elif sys.platform.startswith('linux') and '/resources/python_core' in __file__:
+            # We're in a packaged Linux app, use user's home directory
+            home_dir = os.path.expanduser("~")
+            app_data_dir = os.path.join(home_dir, ".link-band-sdk")
+            self.data_dir = os.path.join(app_data_dir, "data")
+            logger.info(f"Running in packaged Linux app. Using data directory: {self.data_dir}")
+        else:
+            # Development environment or unpackaged, use the provided data_dir
+            self.data_dir = data_dir
+            
         self.is_recording = False
         self.session_dir = None
         self.meta: Dict[str, Any] = {}
@@ -33,15 +56,45 @@ class DataRecorder:
             logger.error(f"Error ensuring data directory {self.data_dir}: {e}", exc_info=True)
             raise
 
-    def start_recording(self) -> Dict[str, Any]:
+    def start_recording(self, session_name: Optional[str] = None, export_path: Optional[str] = None) -> Dict[str, Any]:
         if self.is_recording:
             logger.warning("Start recording called but already recording.")
             return {"status": "fail", "message": "Recording is already in progress."}
         
         now_dt = datetime.now()
         session_timestamp = now_dt.strftime("%Y%m%d_%H%M%S")
-        # session_dir을 data_dir 바로 아래에 생성 (이전과 동일)
-        self.session_dir = os.path.join(self.data_dir, f"session_{session_timestamp}")
+        
+        # Custom session name 처리
+        if session_name and session_name.strip():
+            # Custom session name이 제공된 경우, 이름_타임스탬프 형태로 조합
+            clean_session_name = session_name.strip()
+            final_session_name = f"{clean_session_name}_{session_timestamp}"
+        else:
+            # 기본 형태
+            final_session_name = f"session_{session_timestamp}"
+        
+        # Export path 처리
+        if export_path and export_path.strip():
+            # ~ 확장 처리
+            expanded_path = os.path.expanduser(export_path.strip())
+            # 상대 경로인 경우 절대 경로로 변환
+            if not os.path.isabs(expanded_path):
+                expanded_path = os.path.abspath(expanded_path)
+            base_dir = expanded_path
+        else:
+            # 기본 data_dir 사용
+            base_dir = self.data_dir
+        
+        # 디렉토리가 없으면 생성
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+            logger.info(f"Ensured base directory exists: {base_dir}")
+        except Exception as e:
+            logger.error(f"Failed to create base directory {base_dir}: {e}")
+            return {"status": "fail", "message": f"Failed to create directory: {e}"}
+        
+        # session_dir을 base_dir 아래에 생성
+        self.session_dir = os.path.join(base_dir, final_session_name)
         
         try:
             os.makedirs(self.session_dir, exist_ok=True)
@@ -50,10 +103,11 @@ class DataRecorder:
             self.data_buffers = {} # 새 녹화 시작 시 버퍼 초기화
 
             self.meta = {
-                "session_name": f"session_{session_timestamp}",
+                "session_name": final_session_name,
                 "start_time": now_dt.isoformat(),
                 "files": [], # 파일 정보는 stop_recording 시점에 채워짐
-                "status": "recording"
+                "status": "recording",
+                "export_path": base_dir  # 실제 사용된 경로 저장
             }
             # 초기 meta.json은 파일 정보 없이 저장
             meta_file_path = os.path.join(self.session_dir, "meta.json")

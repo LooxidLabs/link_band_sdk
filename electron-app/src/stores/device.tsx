@@ -155,10 +155,10 @@ export const useDeviceStore = create<DeviceState>((set, get) => {
       get().getDeviceStatus();
       get().getRegisteredDevices();
 
-      // Start polling
+      // Start polling - increased frequency for better sync
       pollingInterval = setInterval(() => {
         get().getDeviceStatus();
-      }, 10000);
+      }, 2000);
     },
 
     stopPolling: () => {

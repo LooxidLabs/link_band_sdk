@@ -307,30 +307,50 @@ class WebSocketServer:
         if hasattr(self, 'stream_engine'):
             await self.stream_engine.stop()
         
-        logger.info("WebSocket server stopped")
+        print("🔌 WebSocket server stopped")
 
     async def _auto_connect_loop(self):
         """Periodically check and connect to registered devices"""
-        logger.info("Auto-connect loop started")
+        print("🔄 Auto-connect loop started")
+        connection_attempts = {}  # 각 디바이스별 연결 시도 횟수 추적
         while True:
             try:
                 # 연결된 디바이스가 없으면 등록된 디바이스 중 하나를 연결
                 if not self.device_manager.is_connected():
                     registered_devices = self.device_registry.get_registered_devices()
-                    logger.info(f"Registered devices: {registered_devices}")
-                    for device in registered_devices:
-                        address = device.get('address')
-                        if address:
-                            logger.info(f"Attempting to connect to registered device: {address}")
-                            await self._run_connect_and_notify(address)
-                            if self.device_manager.is_connected():
-                                break
-                await asyncio.sleep(1)  # Check every second
+                    if registered_devices:
+                        for device in registered_devices:
+                            address = device.get('address')
+                            if address:
+                                # 연결 시도 횟수 제한 (5번 실패 후 30초 대기)
+                                if address not in connection_attempts:
+                                    connection_attempts[address] = {'count': 0, 'last_attempt': 0}
+                                
+                                current_time = time.time()
+                                attempt_info = connection_attempts[address]
+                                
+                                # 5번 연속 실패 후 30초 대기
+                                if attempt_info['count'] >= 5:
+                                    if current_time - attempt_info['last_attempt'] < 30:
+                                        continue  # 아직 대기 시간
+                                    else:
+                                        attempt_info['count'] = 0  # 대기 시간 끝, 재시도
+                                
+                                print(f"🔍 Auto-connecting to {address} (attempt {attempt_info['count'] + 1})")
+                                attempt_info['last_attempt'] = current_time
+                                attempt_info['count'] += 1
+                                
+                                await self._run_connect_and_notify(address)
+                                if self.device_manager.is_connected():
+                                    print(f"✅ Successfully connected to {address}")
+                                    connection_attempts[address]['count'] = 0  # 성공 시 카운터 리셋
+                                    break
+                await asyncio.sleep(6)  # 6초마다 체크 (더 긴 간격)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in auto-connect loop: {e}")
-                await asyncio.sleep(1)
+                print(f"❌ Auto-connect error: {e}")
+                await asyncio.sleep(6)
 
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
         """Handle messages from clients"""
@@ -481,23 +501,11 @@ class WebSocketServer:
     async def _run_connect_and_notify(self, device_address: str):
         """Connect to device and start notifications."""
         try:
-            # 먼저 스캔을 실행하여 디바이스를 찾습니다
-            logger.info(f"Scanning for device {device_address}...")
-            devices = await self.device_manager.scan_devices()
-            device_found = any(device.get('address') == device_address for device in devices)
+            print(f"🔍 Attempting connection to {device_address}")
             
-            if not device_found:
-                logger.error(f"Device {device_address} not found during scanning")
-                await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
-                    "address": device_address,
-                    "reason": "device_not_found"
-                })
-                return
-
-            # Connect to device
-            logger.info(f"Found device {device_address}, attempting to connect...")
+            # DeviceManager의 connect 메서드가 이미 스캔을 포함하므로 직접 연결 시도
             if not await self.device_manager.connect(device_address):
-                logger.error("Failed to connect to device")
+                print(f"❌ Failed to connect to device {device_address}")
                 await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
                     "address": device_address,
                     "reason": "connection_failed"
@@ -711,13 +719,13 @@ class WebSocketServer:
                 
                 current_time = time.time()
                 
-                logger.info(f"[STREAM_EEG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
-                if self.data_recorder:
-                    logger.info(f"[STREAM_EEG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
+                # logger.info(f"[STREAM_EEG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
+                # if self.data_recorder:
+                #     logger.info(f"[STREAM_EEG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
                 
                 raw_data_len = len(raw_data) if raw_data else 0
                 processed_data_len = len(processed_data) if processed_data else 0
-                logger.info(f"[STREAM_EEG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                # logger.info(f"[STREAM_EEG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
 
                 if raw_data_len > 0:
                     logger.debug(f"[STREAM_EEG_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
@@ -843,13 +851,13 @@ class WebSocketServer:
                 
                 current_time = time.time()
                 
-                logger.info(f"[STREAM_PPG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
-                if self.data_recorder:
-                    logger.info(f"[STREAM_PPG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
+                # logger.info(f"[STREAM_PPG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
+                # if self.data_recorder:
+                #     logger.info(f"[STREAM_PPG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
                 
                 raw_data_len = len(raw_data) if raw_data else 0
                 processed_data_len = len(processed_data) if processed_data else 0
-                logger.info(f"[STREAM_PPG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                # logger.info(f"[STREAM_PPG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
                 
                 if raw_data_len > 0:
                     logger.debug(f"[STREAM_PPG_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
@@ -975,12 +983,9 @@ class WebSocketServer:
                 
                 current_time = time.time()
                 
-                logger.info(f"[STREAM_ACC_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
-                if self.data_recorder:
-                    logger.info(f"[STREAM_ACC_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
+                # ACC 레코딩 상태는 EEG에서 이미 출력하므로 생략
                 raw_data_len = len(raw_data) if raw_data else 0
                 processed_data_len = len(processed_data) if processed_data else 0
-                logger.info(f"[STREAM_ACC_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
 
                 if raw_data_len > 0:
                     logger.debug(f"[STREAM_ACC_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
@@ -1106,12 +1111,8 @@ class WebSocketServer:
                 current_time = time.time()
                 actual_battery_data_list = await self.device_manager.get_and_clear_battery_buffer() 
                 
-                logger.info(f"[STREAM_BAT_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
-                if self.data_recorder:
-                    logger.info(f"[STREAM_BAT_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
-                
+                # 배터리 레코딩 상태는 EEG에서 이미 출력하므로 생략
                 actual_battery_data_len = len(actual_battery_data_list) if actual_battery_data_list else 0
-                logger.info(f"[STREAM_BAT_DEBUG] Actual battery data len: {actual_battery_data_len}")
                 if actual_battery_data_len > 0 :
                      logger.debug(f"[STREAM_BAT_DEBUG] First battery sample type: {type(actual_battery_data_list[0]) if actual_battery_data_len > 0 else 'N/A'}")
 
@@ -1319,22 +1320,14 @@ class WebSocketServer:
         return self.device_registry.is_device_registered(address)
 
     def get_stream_status(self):
-        # stream_stats가 없으면 기본값 생성
-        stream_stats = getattr(self, 'stream_stats', {
-            'eeg': {'samples_per_sec': 0},
-            'ppg': {'samples_per_sec': 0},
-            'acc': {'samples_per_sec': 0},
-            'bat': {'samples_per_sec': 0},
-            'bat_level': 0
-        })
         return {
             "status": "running" if self.is_streaming else "stopped",
             "clients_connected": self.get_connected_clients(),
-            "eeg_sampling_rate": stream_stats.get('eeg', {}).get('samples_per_sec', 0),
-            "ppg_sampling_rate": stream_stats.get('ppg', {}).get('samples_per_sec', 0),
-            "acc_sampling_rate": stream_stats.get('acc', {}).get('samples_per_sec', 0),
-            "bat_sampling_rate": stream_stats.get('bat', {}).get('samples_per_sec', 0),
-            "bat_level": stream_stats.get('bat_level', 0)
+            "eeg_sampling_rate": self.device_sampling_stats.get('eeg', {}).get('samples_per_sec', 0),
+            "ppg_sampling_rate": self.device_sampling_stats.get('ppg', {}).get('samples_per_sec', 0),
+            "acc_sampling_rate": self.device_sampling_stats.get('acc', {}).get('samples_per_sec', 0),
+            "bat_sampling_rate": self.device_sampling_stats.get('bat', {}).get('samples_per_sec', 0),
+            "bat_level": self.device_sampling_stats.get('bat_level', 0)
         }
 
     def health_check(self):
@@ -1373,24 +1366,50 @@ class WebSocketServer:
             self.stream_stats['bat']['samples_per_sec'] = bat
 
     def get_device_status(self):
-        info = self.device_manager.get_device_info()
-        status = {}
+        try:
+            logger.info("get_device_status called")
+            info = self.device_manager.get_device_info()
+            logger.info(f"device_info: {info}")
+            status = {}
 
-        if info:
-            status = {
-                "status": "connected",
-                "name": info.get("name"),
-                "address": info.get("address"),
-                "eeg_sampling_rate": self.device_sampling_stats['eeg']['samples_per_sec'],
-                "ppg_sampling_rate": self.device_sampling_stats['ppg']['samples_per_sec'],
-                "acc_sampling_rate": self.device_sampling_stats['acc']['samples_per_sec'],
-                "bat_sampling_rate": self.device_sampling_stats['bat']['samples_per_sec'],
-                "bat_level": self.device_sampling_stats['bat_level']
+            if info:
+                logger.info("Device info exists, getting stream status")
+                # 스트림 상태에서 샘플링 레이트 가져오기
+                stream_status = self.get_stream_status()
+                logger.info(f"stream_status: {stream_status}")
+                
+                status = {
+                    "is_connected": True,
+                    "device_address": info.get("address"),
+                    "device_name": info.get("name"),
+                    "connection_time": info.get("connection_time"),
+                    "battery_level": stream_status.get('bat_level', 0),
+                    "eeg_sampling_rate": stream_status.get('eeg_sampling_rate', 0),
+                    "ppg_sampling_rate": stream_status.get('ppg_sampling_rate', 0),
+                    "acc_sampling_rate": stream_status.get('acc_sampling_rate', 0),
+                    "bat_sampling_rate": stream_status.get('bat_sampling_rate', 0)
+                }
+                logger.info(f"Final status: {status}")
+            else:
+                logger.info("No device info, returning disconnected status")
+                status = {
+                    "is_connected": False,
+                    "device_address": None,
+                    "device_name": None,
+                    "connection_time": None,
+                    "battery_level": None
+                }
+            return status
+        except Exception as e:
+            logger.error(f"Error in get_device_status: {e}")
+            # 예외 발생 시 기본 상태 반환
+            return {
+                "is_connected": False,
+                "device_address": None,
+                "device_name": None,
+                "connection_time": None,
+                "battery_level": None
             }
-
-        else:
-            status["status"] = "disconnected"
-        return status
 
     async def handle_websocket_connection(self, websocket: WebSocket):
         """Handle new WebSocket connections."""
@@ -1398,7 +1417,7 @@ class WebSocketServer:
         try:
             await websocket.accept()
             self.connected_clients[client_id] = websocket
-            logger.info(f"Client {client_id} connected")
+            print(f"🔗 WebSocket client connected")
 
             # Send initial status
             await self.send_status(websocket)
@@ -1426,7 +1445,7 @@ class WebSocketServer:
         try:
             await websocket.accept()
             self.connected_clients[client_id] = websocket
-            logger.info(f"Processed data client {client_id} connected")
+            print(f"🔗 Processed data client connected")
 
             # Add data callback for this client
             async def data_callback(data: Dict[str, Any]):
@@ -1456,9 +1475,26 @@ class WebSocketServer:
     async def handle_client_message(self, client_id: str, data: Dict[str, Any]):
         """Handle incoming messages from clients."""
         try:
-            logger.info(f"Data message from client {data}")
+            # 데이터 타입 확인 및 변환
+            if isinstance(data, str):
+                # 문자열인 경우 JSON 파싱 시도
+                try:
+                    import json
+                    data = json.loads(data)
+                except json.JSONDecodeError:
+                    print(f"❌ Invalid JSON string: {data}")
+                    return
+            
+            # 딕셔너리가 아닌 경우 처리 중단
+            if not isinstance(data, dict):
+                print(f"❌ Invalid data type: {type(data)}")
+                return
+            
+            # health_check는 로그하지 않음 (너무 빈번함)
+            if data.get('command') != 'health_check':
+                print(f"📡 Client message: {data.get('command', 'unknown')}")
         except Exception as e:
-            logger.error(f"Error handling message from client {client_id}: {e}")
+            print(f"❌ Client message error: {e}")
             # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
 
     async def handle_command(self, client_id: str, data: Dict[str, Any]):
@@ -1497,9 +1533,10 @@ class WebSocketServer:
             #     })
             # else:
             #     logger.warning(f"Unknown command from client {client_id}: {command}")
-            logger.info(f"Command message from client {data}")
+            # 명령어 메시지는 이미 handle_client_message에서 처리됨
+            pass
         except Exception as e:
-            logger.error(f"Error handling command from client {client_id}: {e}")
+            print(f"❌ Command error: {e}")
             # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
 
     async def handle_data(self, client_id: str, data: Dict[str, Any]):
@@ -1528,7 +1565,7 @@ class WebSocketServer:
         """Handle client disconnection."""
         if client_id in self.connected_clients:
             del self.connected_clients[client_id]
-            logger.info(f"Client {client_id} disconnected")
+            print(f"🔌 WebSocket client disconnected")
 
     async def send_to_client(self, client_id: str, data: Dict[str, Any]):
         """Send data to a specific client."""
@@ -1566,7 +1603,7 @@ class WebSocketServer:
         """Start the WebSocket server."""
         if not self.server:
             await self.initialize()
-        logger.info("WebSocket server started")
+        # WebSocket 서버 시작 로그는 main.py에서 출력됨
 
     async def stop(self):
         """Stop the WebSocket server."""
@@ -1581,7 +1618,7 @@ class WebSocketServer:
         if hasattr(self, 'stream_engine'):
             await self.stream_engine.stop()
         
-        logger.info("WebSocket server stopped")
+        print("🔌 FastAPI WebSocket server stopped")
 
     async def _handle_processed_data(self, data_type: str, processed_data: dict):
         """Handle processed data from device manager"""

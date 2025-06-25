@@ -64,9 +64,9 @@ export const getRecordingStatus = async (): Promise<RecordingStatusResponse> => 
   }
 };
 
-export const startRecording = async (): Promise<StartRecordingResponse> => {
+export const startRecording = async (sessionData?: any): Promise<StartRecordingResponse> => {
   try {
-    const response = await axios.post<StartRecordingResponse>(`${API_BASE_URL}/data/start-recording`, {}, { headers });
+    const response = await axios.post<StartRecordingResponse>(`${API_BASE_URL}/data/start-recording`, sessionData || {}, { headers });
     return response.data;
   } catch (error: unknown) {
     if (isAxiosLikeError(error)) {
@@ -199,17 +199,30 @@ export const openFolderInExplorer = async (folderPath: string): Promise<{ status
 
 export const getSessions = async (): Promise<Session[]> => {
   try {
-    const response = await axios.get<any[]>(`${API_BASE_URL}/data/sessions`, { headers });
-    return response.data.map((item: any) => ({
+    const response = await axios.get<{sessions: any[]}>(`${API_BASE_URL}/data/sessions`, { headers });
+    console.log('[api/dataCenter.ts] Raw sessions response:', response.data);
+    
+    // Handle new API response format: {sessions: [...]}
+    const sessionsData = response.data.sessions || response.data;
+    console.log('[api/dataCenter.ts] Sessions data:', sessionsData);
+    
+    const mappedSessions = Array.isArray(sessionsData) ? sessionsData.map((item: any) => {
+      console.log('[api/dataCenter.ts] Mapping session item:', item);
+      
+      return {
       id: item.id,
-      session_id: item.session_name,
+        session_id: item.session_id || item.session_name, // session_id가 있으면 사용, 없으면 session_name 사용
       session_name: item.session_name,
       start_time: item.start_time,
       end_time: item.end_time,
       status: item.status,
       data_path: item.data_path,
       created_at: item.created_at,
-    }));
+      };
+    }) : [];
+    
+    console.log('[api/dataCenter.ts] Mapped sessions:', mappedSessions);
+    return mappedSessions;
   } catch (error: unknown) {
     if (isAxiosLikeError(error)) {
       console.error('Error fetching sessions:', error.message);
@@ -226,8 +239,13 @@ export const getSessions = async (): Promise<Session[]> => {
 
 export const exportSession = async (sessionId: string): Promise<{ success: boolean; message?: string; exportPath?: string }> => {
   console.log(`[api/dataCenter.ts] exportSession called with sessionId: ${sessionId}`);
+  console.log(`[api/dataCenter.ts] electronApi:`, electronApi);
+  console.log(`[api/dataCenter.ts] electronApi?.dataCenter:`, electronApi?.dataCenter);
+  console.log(`[api/dataCenter.ts] electronApi?.dataCenter?.exportSession:`, electronApi?.dataCenter?.exportSession);
+  
   if (electronApi && electronApi.dataCenter && electronApi.dataCenter.exportSession) {
     try {
+      console.log('[api/dataCenter.ts] Calling electronApi.dataCenter.exportSession...');
       const result = await electronApi.dataCenter.exportSession(sessionId);
       console.log('[api/dataCenter.ts] exportSession IPC result:', result);
       if (!result.success) {
@@ -244,14 +262,21 @@ export const exportSession = async (sessionId: string): Promise<{ success: boole
     }
   } else {
     console.error('Electron dataCenter API for exportSession not found. Ensure preload.ts is correct.');
+    console.error('[api/dataCenter.ts] window.electron:', (window as any).electron);
     throw new Error('Export functionality is not available.');
   }
 };
 
 export const openSessionFolder = async (sessionId: string): Promise<{ success: boolean; message?: string }> => {
   console.log(`[api/dataCenter.ts] openSessionFolder called with sessionId: ${sessionId}`);
+  console.log('[api/dataCenter.ts] window.electron:', (window as any).electron);
+  console.log('[api/dataCenter.ts] electronApi:', electronApi);
+  console.log('[api/dataCenter.ts] electronApi?.dataCenter:', electronApi?.dataCenter);
+  console.log('[api/dataCenter.ts] electronApi?.dataCenter?.openSessionFolder:', electronApi?.dataCenter?.openSessionFolder);
+  
   if (electronApi && electronApi.dataCenter && electronApi.dataCenter.openSessionFolder) {
     try {
+      console.log('[api/dataCenter.ts] Calling electronApi.dataCenter.openSessionFolder...');
       const result = await electronApi.dataCenter.openSessionFolder(sessionId);
       console.log('[api/dataCenter.ts] openSessionFolder IPC result:', result);
       if (!result.success) {
@@ -259,11 +284,12 @@ export const openSessionFolder = async (sessionId: string): Promise<{ success: b
       }
       return result; // { success: true, message: string }
     } catch (error: any) {
-      console.error('Error invoking open-session-folder IPC:', error);
+      console.error('[api/dataCenter.ts] Error invoking open-session-folder IPC:', error);
       throw error; // Re-throw for the store to handle
     }
   } else {
-    console.error('Electron dataCenter API for openSessionFolder not found. Ensure preload.ts is correct.');
+    console.error('[api/dataCenter.ts] Electron dataCenter API for openSessionFolder not found. electronApi:', electronApi);
+    console.error('[api/dataCenter.ts] window.electron:', (window as any).electron);
     throw new Error('Open folder functionality is not available.');
   }
 };
