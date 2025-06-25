@@ -261,9 +261,17 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       let pythonExecutable: string;
     
       if (isDev) {
-        // Development mode - use relative paths
+        // Development mode - use relative paths and virtual environment python
         pythonPath = path.join(__dirname, '../../python_core/run_server.py');
-        pythonExecutable = 'python';
+        
+        // Try to use virtual environment python first
+        const venvPython = path.join(__dirname, '../../venv/bin/python3');
+        if (fs.existsSync(venvPython)) {
+          pythonExecutable = venvPython;
+        } else {
+          // Fallback to system python3
+          pythonExecutable = 'python3';
+        }
       } else {
         // Production mode - use system Python
         const resourcesPath = process.resourcesPath;

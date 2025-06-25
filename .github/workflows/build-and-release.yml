@@ -1,0 +1,246 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          cd python_core
+          pip install -r requirements.txt
+
+      - name: Install Node.js dependencies
+        run: |
+          cd electron-app
+          npm ci
+
+      - name: Build Electron app (Windows)
+        run: |
+          cd electron-app
+          npm run build
+          npm run electron:build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-installer
+          path: electron-app/release/*.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          cd python_core
+          pip install -r requirements.txt
+
+      - name: Install Node.js dependencies
+        run: |
+          cd electron-app
+          npm ci
+
+      - name: Build Electron app (macOS)
+        run: |
+          cd electron-app
+          npm run build
+          npm run electron:build:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-installer
+          path: electron-app/release/*.dmg
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          cd python_core
+          pip install -r requirements.txt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3-dev libatk-bridge2.0-dev libdrm2-dev libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev libxss-dev libasound2-dev
+
+      - name: Install Node.js dependencies
+        run: |
+          cd electron-app
+          npm ci
+
+      - name: Build Electron app (Linux)
+        run: |
+          cd electron-app
+          npm run build
+          npm run electron:build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-installer
+          path: electron-app/release/*.AppImage
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: Link Band SDK ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Link Band SDK ${{ steps.version.outputs.version }}
+            
+            ### Download Links
+            
+            **Windows:**
+            - Windows 64-bit: Download the `.exe` file below
+            
+            **macOS:**
+            - Intel Mac: Download the regular `.dmg` file
+            - Apple Silicon Mac: Download the `-arm64.dmg` file
+            
+            **Linux:**
+            - Linux 64-bit: Download the `.AppImage` file
+            - Linux ARM64: Download the `-arm64.AppImage` file
+            
+            ### Installation
+            
+            1. **Easy Installation**: Use the installer scripts from the `installers/` folder
+            2. **Manual Installation**: Download the appropriate file for your platform
+            
+            ### What's New
+            - Korean to English translation complete
+            - Enhanced session management
+            - Improved Python server integration
+            - Comprehensive installation system
+            
+            ### System Requirements
+            - Python 3.9 or later
+            - Windows 10+, macOS 10.15+, or modern Linux distribution
+            
+            For detailed installation instructions, visit: https://github.com/Brian-Chae/link_band_sdk/tree/main/installers
+
+      - name: Upload Windows Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./windows-installer/Link Band SDK Setup 1.0.0.exe
+          asset_name: Link-Band-SDK-Setup-${{ steps.version.outputs.version }}.exe
+          asset_content_type: application/octet-stream
+
+      - name: Upload macOS Intel Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./macos-installer/Link Band SDK-1.0.0.dmg
+          asset_name: Link-Band-SDK-${{ steps.version.outputs.version }}.dmg
+          asset_content_type: application/octet-stream
+
+      - name: Upload macOS ARM64 Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./macos-installer/Link Band SDK-1.0.0-arm64.dmg
+          asset_name: Link-Band-SDK-${{ steps.version.outputs.version }}-arm64.dmg
+          asset_content_type: application/octet-stream
+
+      - name: Upload Linux Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./linux-installer/Link Band SDK-1.0.0.AppImage
+          asset_name: Link-Band-SDK-${{ steps.version.outputs.version }}.AppImage
+          asset_content_type: application/octet-stream 

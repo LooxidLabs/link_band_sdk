@@ -21,7 +21,7 @@ echo.
 REM Configuration
 set PYTHON_MIN_VERSION=3.9
 set SDK_VERSION=1.0.0
-set GITHUB_REPO=LooxidLabs/link_band_sdk
+set GITHUB_REPO=Brian-Chae/link_band_sdk
 set SDK_NAME=Link Band SDK
 
 REM Create installer directory
@@ -92,12 +92,26 @@ if not exist "%REQ_FILE%" (
     powershell -Command "& {Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/%GITHUB_REPO%/main/requirements.txt' -OutFile '%REQ_FILE%'}"
 )
 
+REM Check Python version for 3.13+ compatibility  
+for /f "tokens=2 delims=." %%i in ('python --version 2^>^&1 ^| findstr /r "[0-9]\.[0-9]"') do set PYTHON_MINOR=%%i
+for /f "tokens=1 delims=." %%i in ('python --version 2^>^&1 ^| findstr /r "[0-9]\.[0-9]"') do set PYTHON_MAJOR=%%i
+
+set PIP_FLAGS=
+if %PYTHON_MAJOR% geq 3 if %PYTHON_MINOR% geq 13 (
+    echo Python 3.13+ detected. Using --break-system-packages flag.
+    set PIP_FLAGS=--break-system-packages
+)
+
+REM Install setuptools first to avoid pkg_resources issues
+echo Installing setuptools...
+pip install %PIP_FLAGS% setuptools
+
 if exist "%REQ_FILE%" (
     echo Installing from requirements.txt...
-    pip install -r "%REQ_FILE%"
+    pip install %PIP_FLAGS% -r "%REQ_FILE%"
 ) else (
     echo Installing essential packages...
-    pip install numpy scipy matplotlib mne heartpy fastapi uvicorn websockets psutil
+    pip install %PIP_FLAGS% numpy scipy matplotlib mne heartpy fastapi uvicorn websockets psutil
 )
 
 if %errorlevel% neq 0 (

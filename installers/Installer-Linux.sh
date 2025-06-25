@@ -8,7 +8,7 @@ set -e
 # Configuration
 PYTHON_MIN_VERSION="3.9"
 SDK_VERSION="1.0.0"
-GITHUB_REPO="LooxidLabs/link_band_sdk"
+GITHUB_REPO="Brian-Chae/link_band_sdk"
 SDK_NAME="Link Band SDK"
 
 # Colors for output
@@ -182,12 +182,27 @@ install_dependencies() {
         curl -fsSL "https://raw.githubusercontent.com/$GITHUB_REPO/main/requirements.txt" -o "$req_file"
     fi
     
+    # Check Python version for 3.13+ compatibility
+    local python_version=$(python3 --version 2>&1 | cut -d' ' -f2)
+    local major=$(echo $python_version | cut -d'.' -f1)
+    local minor=$(echo $python_version | cut -d'.' -f2)
+    
+    local pip_flags="--user"
+    if [[ $major -ge 3 && $minor -ge 13 ]]; then
+        echo "Python 3.13+ detected. Using --break-system-packages flag."
+        pip_flags="--user --break-system-packages"
+    fi
+    
+    # Install setuptools first to avoid pkg_resources issues
+    echo "Installing setuptools..."
+    python3 -m pip install $pip_flags setuptools
+    
     if [[ -f "$req_file" ]]; then
         echo "Installing from requirements.txt..."
-        python3 -m pip install --user -r "$req_file"
+        python3 -m pip install $pip_flags -r "$req_file"
     else
         echo "Installing essential packages..."
-        python3 -m pip install --user numpy scipy matplotlib mne heartpy fastapi uvicorn websockets psutil
+        python3 -m pip install $pip_flags numpy scipy matplotlib mne heartpy fastapi uvicorn websockets psutil
     fi
     
     print_success "Python dependencies processed"
