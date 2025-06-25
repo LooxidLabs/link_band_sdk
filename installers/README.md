@@ -1,199 +1,175 @@
-# Link Band SDK Installation Guide
+# Link Band SDK Installers
 
-Link Band SDK는 Looxid Labs의 차세대 초경량 뇌파 밴드(Link Band 2.0)를 위한 개발 도구입니다.
+This directory contains comprehensive installation scripts for the Link Band SDK across all supported platforms.
 
-## 🎯 설치 방법
+## Quick Installation
 
-### 자동 설치 (권장)
+### Windows
+Simply double-click `Installer.bat` to start the automated installation process.
 
-각 플랫폼별 설치 스크립트를 사용하여 Python과 SDK를 자동으로 설치할 수 있습니다.
-
-#### macOS
-
-**방법 1: 더블클릭 설치 (가장 쉬움)**
-1. [install-macos.command](install-macos.command) 파일을 다운로드
-2. 파일을 더블클릭하여 실행
-
-**방법 2: 가상환경 설치 (Python 3.13+ 권장)**
-1. [install-macos-venv.sh](install-macos-venv.sh) 파일을 다운로드
-2. 터미널에서 `chmod +x install-macos-venv.sh && ./install-macos-venv.sh` 실행
-3. 시스템 Python과 완전히 분리된 전용 환경 생성
-
-**방법 3: 설치 앱 사용**
-1. [Link Band SDK Installer.app](Link%20Band%20SDK%20Installer.app) 다운로드
-2. 앱을 더블클릭하여 실행
-
-**방법 4: 터미널에서 자동 설치**
+### macOS
+Double-click `Installer.sh` or run in Terminal:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Brian-Chae/link_band_sdk/main/installers/install-macos.sh | bash
+./Installer.sh
 ```
 
-**방법 5: 수동 다운로드 후 실행**
+### Linux
+Run in Terminal:
 ```bash
-wget https://raw.githubusercontent.com/Brian-Chae/link_band_sdk/main/installers/install-macos.sh
-chmod +x install-macos.sh
-./install-macos.sh
+./Installer-Linux.sh
 ```
 
-#### Windows
+## What the Installers Do
 
-PowerShell을 관리자 권한으로 실행 후:
-```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Brian-Chae/link_band_sdk/main/installers/install-windows.bat" -OutFile "install-windows.bat"
-.\install-windows.bat
+Each installer performs the following steps automatically:
+
+1. **Check Python Installation**
+   - Verifies Python 3.9+ is installed
+   - Offers to install Python if missing
+
+2. **Install Python Dependencies**
+   - Installs required packages from requirements.txt
+   - Handles system-specific dependencies
+
+3. **Download/Install SDK**
+   - Uses local installer files if available
+   - Downloads from GitHub releases as fallback
+   - Installs platform-appropriate version
+
+4. **Create Shortcuts**
+   - Desktop shortcuts
+   - Start menu/Applications folder entries
+   - PATH configuration where applicable
+
+5. **Setup Uninstaller**
+   - Creates platform-specific uninstall scripts
+
+## File Structure
+
+```
+installers/
+├── Installer.bat           # Windows main installer
+├── Installer.sh            # macOS main installer  
+├── Installer-Linux.sh      # Linux main installer
+├── requirements.txt        # Python dependencies
+├── downloads/              # Downloaded files cache
+├── scripts/                # Helper scripts
+├── Uninstall.bat          # Windows uninstaller (created after install)
+├── Uninstall.sh           # macOS uninstaller (created after install)
+├── Uninstall-Linux.sh     # Linux uninstaller (created after install)
+└── Link Band SDK-*.dmg    # macOS installers (if available locally)
 ```
 
-또는 [install-windows.bat](install-windows.bat) 파일을 다운로드하여 실행
+## Installation Methods
 
-#### Linux
+### Method 1: Local Installation (Recommended)
+If you have the installer files locally:
+1. Place the appropriate installer file in this directory:
+   - Windows: `Link-Band-SDK-Setup-1.0.0.exe`
+   - macOS Intel: `Link Band SDK-1.0.0.dmg`
+   - macOS Apple Silicon: `Link Band SDK-1.0.0-arm64.dmg`
+   - Linux: `Link Band SDK-1.0.0.AppImage` or `Link Band SDK-1.0.0-arm64.AppImage`
+2. Run the appropriate installer script
+3. The script will use the local file instead of downloading
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Brian-Chae/link_band_sdk/main/installers/install-linux.sh | bash
-```
+### Method 2: Online Installation
+If no local installer files are found:
+1. Run the installer script
+2. It will automatically download the latest version from GitHub releases
+3. Continue with normal installation
 
-또는 파일을 다운로드 후 실행:
-```bash
-wget https://raw.githubusercontent.com/Brian-Chae/link_band_sdk/main/installers/install-linux.sh
-chmod +x install-linux.sh
-./install-linux.sh
-```
+## Platform-Specific Notes
 
-## 📋 설치 과정
+### Windows
+- Requires Windows 10 or later
+- May prompt for administrator privileges during Python installation
+- Automatically handles Python PATH configuration
+- Creates Start Menu shortcuts and desktop shortcut
 
-자동 설치 스크립트는 다음 단계를 수행합니다:
+### macOS
+- Supports both Intel and Apple Silicon Macs
+- Requires macOS 10.15 (Catalina) or later
+- May prompt for admin password during installation
+- Automatically detects architecture and installs appropriate version
+- Creates Applications folder entry and desktop alias
 
-1. **Python 확인/설치**
-   - Python 3.9 이상 버전 확인
-   - 필요시 Python 자동 설치
+### Linux
+- Supports major distributions (Ubuntu, Fedora, Arch, openSUSE, etc.)
+- Requires sudo privileges for system package installation
+- Installs as AppImage for maximum compatibility
+- Creates desktop entries and adds to PATH
 
-2. **Python 의존성 설치**
-   - numpy, scipy, matplotlib
-   - mne, heartpy
-   - fastapi, uvicorn, websockets
+## Troubleshooting
 
-3. **Link Band SDK 다운로드 및 설치**
-   - 플랫폼별 최신 버전 다운로드
-   - 자동 설치 및 바로가기 생성
+### Python Installation Issues
+- **Windows**: Ensure "Add Python to PATH" was checked during Python installation
+- **macOS**: Install Homebrew first if Python installation fails
+- **Linux**: Install development tools for your distribution
 
-4. **환경 설정**
-   - 데스크톱 바로가기 생성
-   - PATH 설정 (Linux)
+### Download Failures
+1. Check internet connection
+2. Manually download from: https://github.com/LooxidLabs/link_band_sdk/releases
+3. Place downloaded file in the installers directory
+4. Re-run the installer
 
-## 🔧 수동 설치
+### Permission Issues
+- **Windows**: Run Command Prompt as Administrator
+- **macOS/Linux**: Ensure script has execute permissions: `chmod +x Installer.sh`
 
-자동 설치가 실패하는 경우 수동으로 설치할 수 있습니다:
+### Python 3.13+ Issues
+If you encounter "externally-managed-environment" errors:
+- The installer will automatically handle this with appropriate flags
+- For manual installation, use virtual environments
 
-### 1단계: Python 설치
+## Advanced Usage
 
-#### macOS
-```bash
-# Homebrew 설치 (없는 경우)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+### Custom Installation Directory
+Edit the installer script and modify the installation paths:
+- Windows: Change `INSTALL_DIR` variable
+- macOS/Linux: Modify the application directories
 
-# Python 설치
-brew install python
-```
+### Offline Installation
+1. Download all required files:
+   - SDK installer for your platform
+   - requirements.txt
+   - Python installer (Windows only)
+2. Place in installers directory
+3. Run installer script
 
-#### Windows
-[Python 공식 웹사이트](https://www.python.org/downloads/)에서 Python 3.9+ 다운로드 및 설치
-- ⚠️ **중요**: 설치 시 "Add Python to PATH" 체크박스 선택
+### Silent Installation
+For automated deployments:
+- Windows: Use `/S` flag with the SDK installer
+- macOS: Modify script to skip user prompts
+- Linux: Set environment variables to skip confirmations
 
-#### Linux (Ubuntu/Debian)
-```bash
-sudo apt update
-sudo apt install python3 python3-pip python3-venv
-```
+## Uninstallation
 
-#### Linux (Fedora/RHEL/CentOS)
-```bash
-sudo dnf install python3 python3-pip
-```
+After installation, uninstaller scripts are created:
+- Windows: `Uninstall.bat`
+- macOS: `Uninstall.sh`
+- Linux: `Uninstall-Linux.sh`
 
-#### Linux (Arch/Manjaro)
-```bash
-sudo pacman -S python python-pip
-```
+These scripts will:
+- Remove installed applications
+- Clean up shortcuts and desktop entries
+- Remove PATH modifications
+- Preserve user data and Python installation
 
-### 2단계: Python 의존성 설치
+## Support
 
-```bash
-pip3 install numpy scipy matplotlib mne heartpy fastapi uvicorn websockets
-```
+For issues with the installers:
+1. Check the installation log: `install.log`
+2. Review troubleshooting section above
+3. Visit: https://github.com/LooxidLabs/link_band_sdk/issues
 
-### 3단계: Link Band SDK 다운로드
+## Legacy Installers
 
-[GitHub Releases](https://github.com/Brian-Chae/link_band_sdk/releases/latest)에서 플랫폼에 맞는 파일 다운로드:
+The following files are legacy installers (still functional):
+- `install-windows.bat` - Original Windows installer
+- `install-macos.sh` - Original macOS installer
+- `install-macos.command` - macOS double-click installer
+- `install-macos-venv.sh` - macOS virtual environment installer
+- `install-linux.sh` - Original Linux installer
+- `*.app` folders - macOS app bundle installers
 
-- **macOS (Intel)**: `Link-Band-SDK-1.0.0.dmg`
-- **macOS (Apple Silicon)**: `Link-Band-SDK-1.0.0-arm64.dmg`
-- **Windows**: `Link-Band-SDK-Setup-1.0.0.exe`
-- **Linux (x64)**: `Link-Band-SDK-1.0.0.AppImage`
-- **Linux (ARM64)**: `Link-Band-SDK-1.0.0-arm64.AppImage`
-
-### 4단계: 설치 및 실행
-
-#### macOS
-1. DMG 파일을 더블클릭하여 마운트
-2. `Link Band SDK.app`을 Applications 폴더로 드래그
-3. Applications 폴더에서 실행
-
-#### Windows
-1. EXE 파일을 더블클릭하여 설치 마법사 실행
-2. 설치 완료 후 시작 메뉴에서 실행
-
-#### Linux
-1. AppImage 파일에 실행 권한 부여: `chmod +x Link-Band-SDK-1.0.0.AppImage`
-2. 파일을 더블클릭하거나 터미널에서 실행
-
-## 🚀 첫 실행
-
-1. Link Band SDK를 실행합니다
-2. 첫 실행 시 Python 서버 초기화에 몇 초가 소요될 수 있습니다
-3. 웹 브라우저가 자동으로 열리며 SDK 인터페이스가 표시됩니다
-
-## ❗ 문제 해결
-
-### Python 관련 오류
-
-**오류**: `python3: command not found`
-- **해결**: Python이 설치되지 않았거나 PATH에 추가되지 않음. 위의 Python 설치 단계를 따라 재설치
-
-**오류**: `pip3: command not found`
-- **해결**: `python3 -m ensurepip --upgrade` 실행
-
-**오류**: `externally-managed-environment` (Python 3.13+)
-- **해결**: 가상환경 설치 방법 사용 (`install-macos-venv.sh`)
-- **또는**: `pip3 install --break-system-packages --user [패키지명]` 사용
-
-**오류**: `ModuleNotFoundError: No module named 'xxx'`
-- **해결**: `pip3 install xxx` 실행하여 누락된 모듈 설치
-- **Python 3.13+**: 가상환경 설치 방법 권장
-
-### SDK 실행 오류
-
-**오류**: 앱이 시작되지 않음
-- **해결**: 터미널에서 직접 실행하여 오류 메시지 확인
-- macOS: `/Applications/Link\ Band\ SDK.app/Contents/MacOS/Link\ Band\ SDK`
-- Linux: `./Link-Band-SDK-1.0.0.AppImage`
-
-**오류**: Python 서버 시작 실패
-- **해결**: Python 의존성이 올바르게 설치되었는지 확인
-- 터미널에서 `python3 -c "import numpy, scipy, mne"` 실행하여 테스트
-
-### 권한 관련 오류 (macOS)
-
-**오류**: "앱이 손상되어 열 수 없습니다"
-- **해결**: 
-  ```bash
-  sudo xattr -rd com.apple.quarantine "/Applications/Link Band SDK.app"
-  ```
-
-## 📞 지원
-
-- **GitHub Issues**: [https://github.com/Brian-Chae/link_band_sdk/issues](https://github.com/Brian-Chae/link_band_sdk/issues)
-- **이메일**: support@looxidlabs.com
-- **문서**: [https://github.com/Brian-Chae/link_band_sdk/wiki](https://github.com/Brian-Chae/link_band_sdk/wiki)
-
-## 📝 라이센스
-
-Copyright (c) 2025 Looxid Labs. All rights reserved. 
+Use the new `Installer.*` scripts for the best experience. 
