@@ -13,6 +13,8 @@ from app.services.device_service import DeviceService
 from app.database.db_manager import DatabaseManager
 from fastapi.staticfiles import StaticFiles
 import os
+import sys
+from pathlib import Path
 
 # 간략한 로깅 설정
 logging.basicConfig(
@@ -120,9 +122,27 @@ app = FastAPI(
 )
 
 # Ensure the temp_exports directory exists and mount it for static file serving
-TEMP_EXPORT_DIR = "temp_exports"
+# Check if we're running in a packaged environment
+if sys.platform == 'darwin' and '/Contents/Resources/python_core' in __file__:
+    # We're in a packaged macOS app, use user's home directory
+    home_dir = os.path.expanduser("~")
+    app_data_dir = os.path.join(home_dir, "Library", "Application Support", "Link Band SDK")
+    TEMP_EXPORT_DIR = os.path.join(app_data_dir, "temp_exports")
+elif sys.platform == 'win32' and '\\resources\\python_core' in __file__.lower():
+    # We're in a packaged Windows app, use user's AppData directory
+    app_data_dir = os.path.join(os.environ.get('APPDATA', ''), "Link Band SDK")
+    TEMP_EXPORT_DIR = os.path.join(app_data_dir, "temp_exports")
+elif sys.platform.startswith('linux') and '/resources/python_core' in __file__:
+    # We're in a packaged Linux app, use user's home directory
+    home_dir = os.path.expanduser("~")
+    app_data_dir = os.path.join(home_dir, ".link-band-sdk")
+    TEMP_EXPORT_DIR = os.path.join(app_data_dir, "temp_exports")
+else:
+    # Development environment or unpackaged
+    TEMP_EXPORT_DIR = "temp_exports"
+
 if not os.path.exists(TEMP_EXPORT_DIR):
-    os.makedirs(TEMP_EXPORT_DIR)
+    os.makedirs(TEMP_EXPORT_DIR, exist_ok=True)
 
 app.mount("/exports", StaticFiles(directory=TEMP_EXPORT_DIR), name="exports")
 

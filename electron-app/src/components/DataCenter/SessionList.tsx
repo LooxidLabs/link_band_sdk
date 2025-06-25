@@ -1,45 +1,49 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { Download, FolderOpen } from 'lucide-react';
+import { Download, FolderOpen, RefreshCw } from 'lucide-react';
 import { useDataCenterStore } from '../../stores/dataCenter';
 import type { Session } from '../../types/data-center';
 
 export const SessionList: React.FC = () => {
-  const { 
-    sessions, 
-    sessionsLoading, 
-    recordingStatus,
-    fetchSessions, 
-    exportSession, 
-    openSessionFolder 
-  } = useDataCenterStore();
+  // 마지막 업데이트 시간 추적
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  
+  // Zustand selector를 명시적으로 사용하여 리렌더링 보장
+  const sessions = useDataCenterStore(state => state.sessions);
+  const sessionsLoading = useDataCenterStore(state => state.sessionsLoading);
+  const recordingStatus = useDataCenterStore(state => state.recordingStatus);
+  const fetchSessions = useDataCenterStore(state => state.fetchSessions);
+  const exportSession = useDataCenterStore(state => state.exportSession);
+  const openSessionFolder = useDataCenterStore(state => state.openSessionFolder);
+
+  // 수동 refresh 함수
+  const handleRefresh = async () => {
+    console.log('[SessionList] Manual refresh triggered');
+    await fetchSessions();
+    setLastUpdated(new Date());
+  };
 
   useEffect(() => {
-    fetchSessions();
+    console.log('[SessionList] Initial mount, fetching sessions...');
+    handleRefresh();
   }, [fetchSessions]);
 
-  // 레코딩 상태가 변경될 때마다 세션 리스트 새로고침
+  // sessions 데이터가 변경될 때마다 로그 출력 및 업데이트 시간 기록
   useEffect(() => {
-    // 레코딩이 중지되었을 때 (is_recording이 false가 되었을 때) 세션 리스트 새로고침
-    if (!recordingStatus.is_recording && recordingStatus.current_session === null) {
-      console.log('[SessionList] Recording stopped, refreshing sessions...');
-      setTimeout(() => {
-        fetchSessions();
-      }, 1000); // 1초 후 새로고침 (파일 시스템 동기화 대기)
+    console.log('[SessionList] Sessions updated:', sessions);
+    console.log('[SessionList] Sessions count:', sessions?.length || 0);
+    if (sessions && sessions.length > 0) {
+      setLastUpdated(new Date());
     }
-  }, [recordingStatus.is_recording, recordingStatus.current_session, fetchSessions]);
+  }, [sessions]);
 
-  // 페이지 포커스 시에도 세션 리스트 새로고침
+  // 레코딩 상태가 변경될 때 알림만 표시 (자동 새로고침 제거)
   useEffect(() => {
-    const handleFocus = () => {
-      console.log('[SessionList] Page focused, refreshing sessions...');
-      fetchSessions();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [fetchSessions]);
+    if (!recordingStatus.is_recording && recordingStatus.current_session === null) {
+      console.log('[SessionList] Recording stopped. Use refresh button to update the list.');
+    }
+  }, [recordingStatus.is_recording, recordingStatus.current_session]);
 
   const getBadgeVariant = (status: string) => {
     if (status === 'recording') return 'destructive';
@@ -104,9 +108,40 @@ export const SessionList: React.FC = () => {
 
   const safeSessions = Array.isArray(sessions) ? sessions : [];
 
+  // 시간 포맷팅 함수
+  const formatLastUpdated = (date: Date | null): string => {
+    if (!date) return 'Never';
+    return date.toLocaleString('en-US', { 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit', 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit',
+      hour12: true 
+    });
+  };
+
   return (
     <div className="p-4 overflow-hidden" style={{ backgroundColor: '#161822' }}>
-      <h3 className="text-sm font-semibold text-white mb-4">Session List</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-white">Session List</h3>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400">
+            Last updated: {formatLastUpdated(lastUpdated)}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={sessionsLoading}
+            className="h-7 px-3 text-xs text-gray-300 border-gray-600 hover:bg-gray-700 hover:text-white"
+          >
+            <RefreshCw className={`w-3 h-3 mr-1 ${sessionsLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
       <div className="rounded-md border border-gray-600 overflow-hidden" style={{ backgroundColor: '#1a1d29' }}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[700px]">
@@ -132,10 +167,26 @@ export const SessionList: React.FC = () => {
                     {session.session_name}
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-300">
-                    {new Date(session.start_time).toLocaleString()}
+                    {new Date(session.start_time).toLocaleString('en-US', { 
+                      year: 'numeric', 
+                      month: '2-digit', 
+                      day: '2-digit', 
+                      hour: '2-digit', 
+                      minute: '2-digit', 
+                      second: '2-digit',
+                      hour12: true 
+                    })}
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-300">
-                    {session.end_time ? new Date(session.end_time).toLocaleString() : 'N/A'}
+                    {session.end_time ? new Date(session.end_time).toLocaleString('en-US', { 
+                      year: 'numeric', 
+                      month: '2-digit', 
+                      day: '2-digit', 
+                      hour: '2-digit', 
+                      minute: '2-digit', 
+                      second: '2-digit',
+                      hour12: true 
+                    }) : 'N/A'}
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-300">
                     {calculateDuration(session.start_time, session.end_time)}
@@ -159,7 +210,13 @@ export const SessionList: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={(e) => { e.stopPropagation(); exportSession(session.session_id); }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          console.log('[SessionList] Export clicked for session:', session);
+                          console.log('[SessionList] Session ID:', session.session_id);
+                          console.log('[SessionList] Session Name:', session.session_name);
+                          exportSession(session.session_name); // session_name을 사용
+                        }}
                         className="h-6 px-2 text-xs text-blue-400 border-gray-600 hover:bg-gray-700 hover:text-white"
                       >
                         <Download className="w-3 h-3 mr-1" />
@@ -168,7 +225,13 @@ export const SessionList: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={(e) => { e.stopPropagation(); openSessionFolder(session.session_id); }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          console.log('[SessionList] Open clicked for session:', session);
+                          console.log('[SessionList] Session ID:', session.session_id);
+                          console.log('[SessionList] Session Name:', session.session_name);
+                          openSessionFolder(session.session_name); // session_name을 사용
+                        }}
                         className="h-6 px-2 text-xs text-green-400 border-gray-600 hover:bg-gray-700 hover:text-white"
                       >
                         <FolderOpen className="w-3 h-3 mr-1" />

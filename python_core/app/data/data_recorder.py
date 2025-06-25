@@ -56,7 +56,7 @@ class DataRecorder:
             logger.error(f"Error ensuring data directory {self.data_dir}: {e}", exc_info=True)
             raise
 
-    def start_recording(self, session_name: Optional[str] = None) -> Dict[str, Any]:
+    def start_recording(self, session_name: Optional[str] = None, export_path: Optional[str] = None) -> Dict[str, Any]:
         if self.is_recording:
             logger.warning("Start recording called but already recording.")
             return {"status": "fail", "message": "Recording is already in progress."}
@@ -73,8 +73,28 @@ class DataRecorder:
             # 기본 형태
             final_session_name = f"session_{session_timestamp}"
         
-        # session_dir을 data_dir 바로 아래에 생성
-        self.session_dir = os.path.join(self.data_dir, final_session_name)
+        # Export path 처리
+        if export_path and export_path.strip():
+            # ~ 확장 처리
+            expanded_path = os.path.expanduser(export_path.strip())
+            # 상대 경로인 경우 절대 경로로 변환
+            if not os.path.isabs(expanded_path):
+                expanded_path = os.path.abspath(expanded_path)
+            base_dir = expanded_path
+        else:
+            # 기본 data_dir 사용
+            base_dir = self.data_dir
+        
+        # 디렉토리가 없으면 생성
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+            logger.info(f"Ensured base directory exists: {base_dir}")
+        except Exception as e:
+            logger.error(f"Failed to create base directory {base_dir}: {e}")
+            return {"status": "fail", "message": f"Failed to create directory: {e}"}
+        
+        # session_dir을 base_dir 아래에 생성
+        self.session_dir = os.path.join(base_dir, final_session_name)
         
         try:
             os.makedirs(self.session_dir, exist_ok=True)
@@ -86,7 +106,8 @@ class DataRecorder:
                 "session_name": final_session_name,
                 "start_time": now_dt.isoformat(),
                 "files": [], # 파일 정보는 stop_recording 시점에 채워짐
-                "status": "recording"
+                "status": "recording",
+                "export_path": base_dir  # 실제 사용된 경로 저장
             }
             # 초기 meta.json은 파일 정보 없이 저장
             meta_file_path = os.path.join(self.session_dir, "meta.json")

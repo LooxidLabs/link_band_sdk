@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# Get the directory where this app is located
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../" && pwd)"
+INSTALLER_SCRIPT="$APP_DIR/install-macos.sh"
+
+# Function to show dialog
+show_dialog() {
+    osascript -e "display dialog \"$1\" buttons {\"확인\"} default button \"확인\" with icon $2"
+}
+
+# Check if installer script exists
+if [[ ! -f "$INSTALLER_SCRIPT" ]]; then
+    show_dialog "Link Band SDK 설치 스크립트를 찾을 수 없습니다.\\n\\n경로: $INSTALLER_SCRIPT" "stop"
+    exit 1
+fi
+
+# Show welcome dialog
+RESPONSE=$(osascript -e 'display dialog "🚀 Link Band SDK 설치 프로그램\\n\\n이 프로그램은 다음을 자동으로 수행합니다:\\n\\n✓ Python 3.9+ 확인 및 설치\\n✓ 필요한 Python 패키지 설치\\n✓ Link Band SDK 다운로드 및 설치\\n✓ 바로가기 생성\\n\\n설치를 시작하시겠습니까?" buttons {"취소", "설치 시작"} default button "설치 시작" with icon note' 2>/dev/null)
+
+if [[ $RESPONSE == *"설치 시작"* ]]; then
+    # Show progress dialog
+    osascript -e 'display dialog "설치를 시작합니다...\\n\\n터미널 창이 열리면 설치 과정을 확인할 수 있습니다." buttons {"확인"} default button "확인" with icon note giving up after 3'
+    
+    # Open Terminal and run installer
+    osascript -e "tell application \"Terminal\"
+        activate
+        do script \"echo '🚀 Link Band SDK 설치 시작...'; cd '$APP_DIR' && bash '$INSTALLER_SCRIPT'\"
+    end tell"
+else
+    exit 0
+fi

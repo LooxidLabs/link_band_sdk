@@ -5,11 +5,30 @@ import tarfile
 from datetime import datetime
 from pathlib import Path
 import json
+import sys
 from typing import List, Dict, Any
 
 class FileManager:
     def __init__(self, data_dir: str = "data"):
-        self.data_dir = data_dir
+        # Check if we're running in a packaged environment
+        if sys.platform == 'darwin' and '/Contents/Resources/python_core' in __file__:
+            # We're in a packaged macOS app, use user's home directory
+            home_dir = os.path.expanduser("~")
+            app_data_dir = os.path.join(home_dir, "Library", "Application Support", "Link Band SDK")
+            self.data_dir = os.path.join(app_data_dir, "data")
+        elif sys.platform == 'win32' and '\\resources\\python_core' in __file__.lower():
+            # We're in a packaged Windows app, use user's AppData directory
+            app_data_dir = os.path.join(os.environ.get('APPDATA', ''), "Link Band SDK")
+            self.data_dir = os.path.join(app_data_dir, "data")
+        elif sys.platform.startswith('linux') and '/resources/python_core' in __file__:
+            # We're in a packaged Linux app, use user's home directory
+            home_dir = os.path.expanduser("~")
+            app_data_dir = os.path.join(home_dir, ".link-band-sdk")
+            self.data_dir = os.path.join(app_data_dir, "data")
+        else:
+            # Development environment or unpackaged, use the provided data_dir
+            self.data_dir = data_dir
+            
         self._ensure_data_directory()
 
     def _ensure_data_directory(self):
@@ -67,4 +86,4 @@ class FileManager:
         if os.path.exists(folder_path):
             os.system(f"open '{folder_path}'")
         else:
-            raise FileNotFoundError(f"폴더를 찾을 수 없습니다: {folder_path}") 
+            raise FileNotFoundError(f"폴더를 찾을 수 없습니다: {folder_path}")

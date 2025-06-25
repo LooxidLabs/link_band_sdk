@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, session, shell, dialog } from 'electron';
 // Completely disable electron-updater
 let autoUpdater = null;
 import * as path from 'path';
+import * as fs from 'fs';
 import { spawn } from 'child_process';
 import Store from 'electron-store';
 import axios from 'axios';
@@ -176,110 +177,135 @@ function addServerLog(log) {
         serverStatus.logs = serverStatus.logs.slice(-100);
     }
 }
-function startPythonServer() {
+// Function to start the Python server
+async function startPythonServer() {
     return new Promise((resolve) => {
         if (pythonProcess) {
             console.log('Python server is already running');
             resolve({ success: false, message: 'Python server is already running', status: serverStatus });
             return;
         }
-        // Determine if we're in development or production
-        const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-        let pythonPath;
-        let pythonExecutable;
-        if (isDev) {
-            // Development mode - use relative paths
-            pythonPath = path.join(__dirname, '../../python_core/run_server.py');
-            pythonExecutable = path.join(__dirname, '../../venv/bin/python3');
-        }
-        else {
-            // Production mode - use bundled resources and virtual environment
-            const resourcesPath = process.resourcesPath;
-            pythonPath = path.join(resourcesPath, 'python_core/run_server.py');
-            pythonExecutable = path.join(resourcesPath, 'python_core/venv/bin/python3');
-        }
-        console.log('Starting Python server from:', pythonPath);
-        console.log('Using Python executable:', pythonExecutable);
-        console.log('Development mode:', isDev);
-        console.log('Resources path:', process.resourcesPath);
-        updateServerStatus({ status: 'starting', lastError: undefined });
-        serverStartTime = new Date();
-        pythonProcess = spawn(pythonExecutable, [pythonPath], {
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
-        if (pythonProcess.pid) {
-            updateServerStatus({ pid: pythonProcess.pid });
-        }
-        pythonProcess.stdout?.on('data', (data) => {
-            const output = data.toString();
-            console.log('Python server output:', output);
-            addServerLog(output);
-            win?.webContents.send('python-log', output);
-            // Check for multiple possible server ready indicators
-            if (output.includes('WebSocket server initialized') ||
-                output.includes('Link Band SDK Server ready!') ||
-                output.includes('Application startup complete')) {
-                console.log('Python server is ready');
-                updateServerStatus({ status: 'running' });
-                win?.webContents.send('python-server-ready');
-                resolve({ success: true, message: 'Python server started successfully', status: serverStatus });
+        try {
+            console.log('Starting Python server...');
+            const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+            updateServerStatus({ status: 'starting', lastError: undefined });
+            serverStartTime = new Date();
+            let pythonPath;
+            let pythonExecutable;
+            if (isDev) {
+                // Development mode - use relative paths
+                pythonPath = path.join(__dirname, '../../python_core/run_server.py');
+                pythonExecutable = 'python';
             }
-        });
-        pythonProcess.stderr?.on('data', (data) => {
-            const error = data.toString();
-            console.error('Python server error:', error);
-            addServerLog(`ERROR: ${error}`);
-            updateServerStatus({ lastError: error });
-            win?.webContents.send('python-log', `ERROR: ${error}`);
-        });
-        pythonProcess.on('close', (code) => {
-            console.log('Python server stopped with code:', code);
-            pythonProcess = null;
-            serverStartTime = null;
-            updateServerStatus({ status: 'stopped', pid: undefined, uptime: undefined });
-            win?.webContents.send('python-server-stopped', { code, signal: null });
-        });
-        pythonProcess.on('error', (error) => {
-            console.error('Python server error:', error);
+            else {
+                // Production mode - use system Python
+                const resourcesPath = process.resourcesPath;
+                pythonPath = path.join(resourcesPath, 'python_core', 'run_server.py');
+                // Use system Python (installed by installer scripts)
+                pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+                console.log('Using system Python:', pythonExecutable);
+            }
+            console.log('Starting Python server from:', pythonPath);
+            console.log('Using Python executable:', pythonExecutable);
+            console.log('Development mode:', isDev);
+            console.log('Resources path:', process.resourcesPath);
+            // Check if executable exists
+            if (!fs.existsSync(pythonExecutable) && !isDev) {
+                console.error(`Python executable not found at: ${pythonExecutable}`);
+                updateServerStatus({ status: 'error', lastError: `Python executable not found: ${pythonExecutable}` });
+                resolve({ success: false, message: `Python executable not found: ${pythonExecutable}`, status: serverStatus });
+                return;
+            }
+            // Check if Python script exists
+            if (pythonPath && !fs.existsSync(pythonPath)) {
+                console.error(`Python script not found at: ${pythonPath}`);
+                updateServerStatus({ status: 'error', lastError: `Python script not found: ${pythonPath}` });
+                resolve({ success: false, message: `Python script not found: ${pythonPath}`, status: serverStatus });
+                return;
+            }
+            // Set up environment for bundled Python
+            const pythonEnv = { ...process.env };
+            if (!isDev) {
+                // Production mode - set up environment for bundled Python
+                const venvPath = path.join(process.resourcesPath, 'python_core', 'venv');
+                const pythonCoreDir = path.join(process.resourcesPath, 'python_core');
+                // Set VIRTUAL_ENV
+                pythonEnv.VIRTUAL_ENV = venvPath;
+                // Set PYTHONPATH to include python_core directory
+                pythonEnv.PYTHONPATH = pythonCoreDir;
+                // Clear PYTHONHOME to avoid conflicts
+                delete pythonEnv.PYTHONHOME;
+                // Disable user site packages
+                pythonEnv.PYTHONNOUSERSITE = '1';
+                // Don't write bytecode
+                pythonEnv.PYTHONDONTWRITEBYTECODE = '1';
+                // Set PATH to prioritize virtual environment
+                const binPath = process.platform === 'win32'
+                    ? path.join(venvPath, 'Scripts')
+                    : path.join(venvPath, 'bin');
+                pythonEnv.PATH = `${binPath}${path.delimiter}${process.env.PATH}`;
+            }
+            // Prepare spawn arguments
+            const spawnArgs = [pythonPath];
+            pythonProcess = spawn(pythonExecutable, spawnArgs, {
+                cwd: path.dirname(pythonPath),
+                env: pythonEnv,
+                stdio: ['pipe', 'pipe', 'pipe'],
+                shell: false
+            });
+            if (pythonProcess.pid) {
+                updateServerStatus({ pid: pythonProcess.pid });
+            }
+            pythonProcess.stdout?.on('data', (data) => {
+                const output = data.toString();
+                console.log('Python server output:', output);
+                addServerLog(output);
+                win?.webContents.send('python-log', output);
+                // Check for server ready
+                if (output.includes('WebSocket server initialized') ||
+                    output.includes('Link Band SDK Server ready!') ||
+                    output.includes('Application startup complete')) {
+                    console.log('Python server is ready');
+                    updateServerStatus({ status: 'running' });
+                    win?.webContents.send('python-server-ready');
+                    resolve({ success: true, message: 'Python server started successfully', status: serverStatus });
+                }
+            });
+            pythonProcess.stderr?.on('data', (data) => {
+                const error = data.toString();
+                console.error('Python server error:', error);
+                addServerLog(`ERROR: ${error}`);
+                updateServerStatus({ lastError: error });
+                win?.webContents.send('python-log', `ERROR: ${error}`);
+            });
+            pythonProcess.on('close', (code) => {
+                console.log('Python server stopped with code:', code);
+                pythonProcess = null;
+                serverStartTime = null;
+                updateServerStatus({ status: 'stopped', pid: undefined, uptime: undefined });
+                win?.webContents.send('python-server-stopped', { code, signal: null });
+            });
+            pythonProcess.on('error', (error) => {
+                console.error('Python server error:', error);
+                pythonProcess = null;
+                serverStartTime = null;
+                updateServerStatus({ status: 'error', lastError: error.message, pid: undefined });
+                resolve({ success: false, message: `Failed to start Python server: ${error.message}`, status: serverStatus });
+            });
+            // Timeout for server start
+            setTimeout(() => {
+                if (serverStatus.status === 'starting') {
+                    resolve({ success: false, message: 'Python server start timeout', status: serverStatus });
+                }
+            }, 30000); // 30 second timeout
+        }
+        catch (error) {
+            console.error('Error starting Python server:', error);
             pythonProcess = null;
             serverStartTime = null;
             updateServerStatus({ status: 'error', lastError: error.message, pid: undefined });
             resolve({ success: false, message: `Failed to start Python server: ${error.message}`, status: serverStatus });
-        });
-        // Quick health check to see if server is responding
-        const healthCheckInterval = setInterval(async () => {
-            if (serverStatus.status === 'starting') {
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 1000);
-                    const response = await fetch('http://localhost:8121/', {
-                        method: 'GET',
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-                    if (response.ok) {
-                        console.log('Python server is responding to HTTP requests');
-                        clearInterval(healthCheckInterval);
-                        updateServerStatus({ status: 'running' });
-                        win?.webContents.send('python-server-ready');
-                        resolve({ success: true, message: 'Python server started successfully', status: serverStatus });
-                    }
-                }
-                catch (error) {
-                    // Server not ready yet, continue checking
-                }
-            }
-            else {
-                clearInterval(healthCheckInterval);
-            }
-        }, 500); // Check every 500ms
-        // Timeout for server start
-        setTimeout(() => {
-            clearInterval(healthCheckInterval);
-            if (serverStatus.status === 'starting') {
-                resolve({ success: false, message: 'Python server start timeout', status: serverStatus });
-            }
-        }, 30000); // 30 second timeout
+        }
     });
 }
 // Improved Python server stopping with timeout
