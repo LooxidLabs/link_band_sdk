@@ -6,7 +6,7 @@ const https = require('https');
 
 // Configuration
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const REPO_OWNER = 'Brian-Chae';
+const REPO_OWNER = 'LooxidLabs';
 const REPO_NAME = 'link_band_sdk';
 const VERSION = process.argv[2] || 'v1.0.0';
 

@@ -54,3 +54,4 @@ temp/
 *.exe
 *.AppImage
 installers/downloads/
+electron-app/.env

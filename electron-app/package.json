@@ -2,7 +2,7 @@
   "name": "electron-app",
   "productName": "Link Band SDK",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Link Band SDK - Next-generation ultra-lightweight EEG headband SDK",
   "author": "Looxid Labs",
   "main": "dist-electron/main.js",
