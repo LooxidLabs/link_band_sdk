@@ -1,0 +1,79 @@
+{
+  "session_name": "session_20250624_181123",
+  "start_time": "2025-06-24T18:11:23.809020",
+  "files": [
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "path": "data/session_20250624_181123/015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+      "size": 49089,
+      "record_count": 540,
+      "created_at": "2025-06-24T18:11:44.153610"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "path": "data/session_20250624_181123/015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+      "size": 105408,
+      "record_count": 18,
+      "created_at": "2025-06-24T18:11:44.157797"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "path": "data/session_20250624_181123/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+      "size": 788982,
+      "record_count": 5025,
+      "created_at": "2025-06-24T18:11:44.181473"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "path": "data/session_20250624_181123/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+      "size": 801271,
+      "record_count": 36,
+      "created_at": "2025-06-24T18:11:44.200249"
+    },
+    {
+      "type": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw",
+      "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "path": "data/session_20250624_181123/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+      "size": 83442,
+      "record_count": 1008,
+      "created_at": "2025-06-24T18:11:44.202916"
+    }
+  ],
+  "status": "stopped",
+  "end_time": "2025-06-24T18:11:44.150777",
+  "stats": {
+    "total_files": 5,
+    "type_details": {
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json",
+        "record_count": 540,
+        "size_bytes": 49089
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json",
+        "record_count": 18,
+        "size_bytes": 105408
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json",
+        "record_count": 5025,
+        "size_bytes": 788982
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json",
+        "record_count": 36,
+        "size_bytes": 801271
+      },
+      "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw": {
+        "filename": "015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json",
+        "record_count": 1008,
+        "size_bytes": 83442
+      }
+    },
+    "total_records": 6627
+  }
+}

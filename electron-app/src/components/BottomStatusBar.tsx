@@ -41,7 +41,7 @@ export const BottomStatusBar: React.FC = () => {
     );
 
   const renderLinkBandIcon = () =>
-    deviceStatus?.status === 'connected' ? (
+    deviceStatus?.is_connected ? (
       <LinkIcon fontSize="small" color="success" sx={{ verticalAlign: 'middle' }} />
     ) : (
       <LinkOffIcon fontSize="small" color="error" sx={{ verticalAlign: 'middle' }} />
@@ -97,7 +97,7 @@ export const BottomStatusBar: React.FC = () => {
         <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>ACC:</Typography>
         <Typography variant="body2" sx={{ fontSize: 12 }}>{formatSamplingRate(deviceStatus?.acc_sampling_rate)}</Typography>
         <Typography variant="body2" color="grey.400" sx={{ fontSize: 12 }}>Battery:</Typography>
-        <Typography variant="body2" sx={{ fontSize: 12 }}>{deviceStatus?.bat_level} %</Typography>
+        <Typography variant="body2" sx={{ fontSize: 12 }}>{deviceStatus?.battery_level} %</Typography>
       </Box>
       {/* System metrics row */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>

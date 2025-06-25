@@ -30,14 +30,15 @@ export interface ConnectionQuality {
 }
 
 export interface DeviceStatus {
-  name: string;
-  address: string;
-  status: 'connected' | 'disconnected';
-  eeg_sampling_rate: number;
-  ppg_sampling_rate: number;
-  acc_sampling_rate: number;
-  bat_sampling_rate: number;
-  bat_level: number;
+  is_connected: boolean;
+  device_address: string | null;
+  device_name: string | null;
+  connection_time: string | null;
+  battery_level: number | null;
+  eeg_sampling_rate?: number;
+  ppg_sampling_rate?: number;
+  acc_sampling_rate?: number;
+  bat_sampling_rate?: number;
 }
 
 export interface DeviceStatusResponse {

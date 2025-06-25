@@ -1,11 +1,17 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, session, shell, dialog } from 'electron';
-import { autoUpdater } from 'electron-updater';
+// Completely disable electron-updater
+let autoUpdater: any = null;
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import Store from 'electron-store';
 import axios from 'axios';
 import fsExtra from 'fs-extra';
+import { fileURLToPath } from 'url';
+
+// ES module equivalent of __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 type StoreSchema = {
   savedCredentials: {
@@ -74,14 +80,16 @@ function showWindow() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1280,
+    height: 900,
     title: 'LINK BAND SDK',
+    icon: path.join(__dirname, 'appIcon.png'), // Add custom icon
     show: true, // Show window immediately
     center: true, // Center the window on screen
     webPreferences: {
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false // 외부 CSS 로드를 위해 웹 보안 비활성화
     },
   });
 
@@ -135,6 +143,11 @@ async function gracefulShutdown() {
 
 // Auto-updater configuration
 function configureAutoUpdater() {
+  if (!autoUpdater) {
+    console.warn('Auto-updater not available, skipping configuration');
+    return;
+  }
+
   // Configure autoUpdater
   autoUpdater.checkForUpdatesAndNotify();
   
@@ -143,22 +156,22 @@ function configureAutoUpdater() {
     win?.webContents.send('update-checking');
   });
 
-  autoUpdater.on('update-available', (info) => {
+  autoUpdater.on('update-available', (info: any) => {
     console.log('Update available:', info);
     win?.webContents.send('update-available', info);
   });
 
-  autoUpdater.on('update-not-available', (info) => {
+  autoUpdater.on('update-not-available', (info: any) => {
     console.log('Update not available:', info);
     win?.webContents.send('update-not-available', info);
   });
 
-  autoUpdater.on('error', (err) => {
+  autoUpdater.on('error', (err: any) => {
     console.log('Error in auto-updater:', err);
     win?.webContents.send('update-error', err);
   });
 
-  autoUpdater.on('download-progress', (progressObj) => {
+  autoUpdater.on('download-progress', (progressObj: any) => {
     let log_message = "Download speed: " + progressObj.bytesPerSecond;
     log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
     log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
@@ -166,7 +179,7 @@ function configureAutoUpdater() {
     win?.webContents.send('update-download-progress', progressObj);
   });
 
-  autoUpdater.on('update-downloaded', (info) => {
+  autoUpdater.on('update-downloaded', (info: any) => {
     console.log('Update downloaded:', info);
     win?.webContents.send('update-downloaded', info);
     
@@ -186,6 +199,9 @@ function configureAutoUpdater() {
 
   // IPC handlers for manual update check
   ipcMain.handle('check-for-updates', async () => {
+    if (!autoUpdater) {
+      throw new Error('Auto-updater not available');
+    }
     try {
       const result = await autoUpdater.checkForUpdates();
       return result;
@@ -196,6 +212,9 @@ function configureAutoUpdater() {
   });
 
   ipcMain.handle('quit-and-install', () => {
+    if (!autoUpdater) {
+      throw new Error('Auto-updater not available');
+    }
     autoUpdater.quitAndInstall();
   });
 }
@@ -221,7 +240,8 @@ function addServerLog(log: string) {
   }
 }
 
-function startPythonServer(): Promise<ServerControlResponse> {
+// Function to start the Python server
+async function startPythonServer(): Promise<ServerControlResponse> {
   return new Promise((resolve) => {
     if (pythonProcess) {
       console.log('Python server is already running');
@@ -229,20 +249,95 @@ function startPythonServer(): Promise<ServerControlResponse> {
       return;
     }
 
-    const pythonPath = path.join(__dirname, '../../python_core/run_server.py');
-    const venvPythonPath = path.join(__dirname, '../../venv/bin/python3');
+    try {
+      console.log('Starting Python server...');
+      
+      const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+      
+      updateServerStatus({ status: 'starting', lastError: undefined });
+      serverStartTime = new Date();
+    
+      let pythonPath: string;
+      let pythonExecutable: string;
+    
+      if (isDev) {
+        // Development mode - use relative paths
+        pythonPath = path.join(__dirname, '../../python_core/run_server.py');
+        pythonExecutable = 'python';
+      } else {
+        // Production mode - use system Python
+        const resourcesPath = process.resourcesPath;
+        pythonPath = path.join(resourcesPath, 'python_core', 'run_server.py');
+        
+        // Use system Python (installed by installer scripts)
+        pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+        
+        console.log('Using system Python:', pythonExecutable);
+      }
+    
     console.log('Starting Python server from:', pythonPath);
-    console.log('Using Python from virtual environment:', venvPythonPath);
-
-    updateServerStatus({ status: 'starting', lastError: undefined });
-    serverStartTime = new Date();
-
-    pythonProcess = spawn(venvPythonPath, [pythonPath], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    if (pythonProcess.pid) {
-      updateServerStatus({ pid: pythonProcess.pid });
+    console.log('Using Python executable:', pythonExecutable);
+    console.log('Development mode:', isDev);
+    console.log('Resources path:', process.resourcesPath);
+    
+    // Check if executable exists
+    if (!fs.existsSync(pythonExecutable) && !isDev) {
+      console.error(`Python executable not found at: ${pythonExecutable}`);
+      updateServerStatus({ status: 'error', lastError: `Python executable not found: ${pythonExecutable}` });
+      resolve({ success: false, message: `Python executable not found: ${pythonExecutable}`, status: serverStatus });
+      return;
+    }
+    
+    // Check if Python script exists
+    if (pythonPath && !fs.existsSync(pythonPath)) {
+      console.error(`Python script not found at: ${pythonPath}`);
+      updateServerStatus({ status: 'error', lastError: `Python script not found: ${pythonPath}` });
+      resolve({ success: false, message: `Python script not found: ${pythonPath}`, status: serverStatus });
+      return;
+    }
+    
+      // Set up environment for bundled Python
+      const pythonEnv = { ...process.env };
+      
+      if (!isDev) {
+        // Production mode - set up environment for bundled Python
+        const venvPath = path.join(process.resourcesPath, 'python_core', 'venv');
+        const pythonCoreDir = path.join(process.resourcesPath, 'python_core');
+        
+        // Set VIRTUAL_ENV
+        pythonEnv.VIRTUAL_ENV = venvPath;
+        
+        // Set PYTHONPATH to include python_core directory
+        pythonEnv.PYTHONPATH = pythonCoreDir;
+        
+        // Clear PYTHONHOME to avoid conflicts
+        delete pythonEnv.PYTHONHOME;
+        
+        // Disable user site packages
+        pythonEnv.PYTHONNOUSERSITE = '1';
+        
+        // Don't write bytecode
+        pythonEnv.PYTHONDONTWRITEBYTECODE = '1';
+        
+        // Set PATH to prioritize virtual environment
+        const binPath = process.platform === 'win32' 
+          ? path.join(venvPath, 'Scripts')
+          : path.join(venvPath, 'bin');
+        pythonEnv.PATH = `${binPath}${path.delimiter}${process.env.PATH}`;
+      }
+      
+      // Prepare spawn arguments
+      const spawnArgs = [pythonPath];
+      
+      pythonProcess = spawn(pythonExecutable, spawnArgs, {
+        cwd: path.dirname(pythonPath),
+        env: pythonEnv,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: false
+      });
+      
+      if (pythonProcess.pid) {
+        updateServerStatus({ pid: pythonProcess.pid });
     }
 
     pythonProcess.stdout?.on('data', (data) => {
@@ -252,7 +347,10 @@ function startPythonServer(): Promise<ServerControlResponse> {
       
       win?.webContents.send('python-log', output);
 
-      if (output.includes('WebSocket server initialized')) {
+        // Check for server ready
+      if (output.includes('WebSocket server initialized') || 
+          output.includes('Link Band SDK Server ready!') ||
+          output.includes('Application startup complete')) {
         console.log('Python server is ready');
         updateServerStatus({ status: 'running' });
         win?.webContents.send('python-server-ready');
@@ -290,6 +388,14 @@ function startPythonServer(): Promise<ServerControlResponse> {
         resolve({ success: false, message: 'Python server start timeout', status: serverStatus });
       }
     }, 30000); // 30 second timeout
+      
+    } catch (error: any) {
+      console.error('Error starting Python server:', error);
+      pythonProcess = null;
+      serverStartTime = null;
+      updateServerStatus({ status: 'error', lastError: error.message, pid: undefined });
+      resolve({ success: false, message: `Failed to start Python server: ${error.message}`, status: serverStatus });
+    }
   });
 }
 
@@ -439,6 +545,15 @@ function handleCustomUrl(url: string) {
 }
 
 app.whenReady().then(() => {
+  // Set app name for menu bar
+  app.setName('Link Band SDK');
+  
+  // Set Dock icon for macOS
+  if (process.platform === 'darwin' && app.dock) {
+    const dockIconPath = path.join(__dirname, 'appIcon.png');
+    app.dock.setIcon(dockIconPath);
+  }
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -469,8 +584,8 @@ app.whenReady().then(() => {
     createWindow();
   }
 
-  // Configure auto-updater after window is created
-  configureAutoUpdater();
+  // Auto-updater completely disabled
+  // configureAutoUpdater();
 
   // Start Python server on app startup
   startPythonServer().then(result => {
@@ -579,16 +694,140 @@ ipcMain.handle('clear-saved-credentials', () => {
   return true;
 });
 
+// Directory selection handler
+ipcMain.handle('select-directory', async (event) => {
+  try {
+    console.log('select-directory handler called');
+    const currentWindow = BrowserWindow.getFocusedWindow() || win;
+    if (!currentWindow) {
+      console.error('No focused window available for directory dialog.');
+      return { canceled: true, filePaths: [] };
+    }
+
+    console.log('Showing open dialog...');
+    const result = await dialog.showOpenDialog(currentWindow, {
+      properties: ['openDirectory', 'dontAddToRecent'],
+      title: 'Select Export Path',
+      buttonLabel: 'Select Folder',
+      message: 'Choose a folder for exporting data'
+    });
+
+    console.log('Dialog result:', JSON.stringify(result, null, 2));
+    console.log('Result canceled:', result.canceled);
+    console.log('Result filePaths:', result.filePaths);
+    console.log('FilePaths length:', result.filePaths ? result.filePaths.length : 'undefined');
+
+    // 사용자가 취소한 경우
+    if (result.canceled) {
+      console.log('User canceled the dialog');
+      return { canceled: true, filePaths: [] };
+    }
+
+    // filePaths 배열이 있고 비어있지 않은 경우
+    if (result.filePaths && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
+      console.log('Selected path:', result.filePaths[0]);
+      const finalResult = {
+        canceled: false,
+        filePaths: result.filePaths
+      };
+      console.log('Returning result:', JSON.stringify(finalResult, null, 2));
+      return finalResult;
+    }
+
+    // 여기에 도달한다는 것은 사용자가 취소하지 않았지만 filePaths가 비어있다는 뜻
+    // 이는 macOS의 알려진 버그입니다
+    console.warn('macOS dialog bug detected - filePaths is empty but not canceled');
+    
+    // 기본 Downloads 폴더를 대안으로 제공
+    const downloadsPath = app.getPath('downloads');
+    console.log('Offering alternative path:', downloadsPath);
+    
+    const alternativeResult = {
+      canceled: false,
+      filePaths: [downloadsPath],
+      isAlternative: true
+    };
+    console.log('Returning alternative result:', JSON.stringify(alternativeResult, null, 2));
+    return alternativeResult;
+
+  } catch (error: any) {
+    console.error('Error showing directory dialog:', error);
+    return { canceled: true, filePaths: [] };
+  }
+});
+
+// Markdown file reading handler
+ipcMain.handle('read-markdown-file', async (event, filePath: string) => {
+  try {
+    let fullPath: string;
+    
+    if (app.isPackaged) {
+      // 프로덕션 모드: dist 폴더에서 읽기
+      fullPath = path.join(__dirname, '../docs', filePath);
+    } else {
+      // 개발 모드: public 폴더에서 읽기
+      fullPath = path.join(__dirname, '../public/docs', filePath);
+    }
+    
+    console.log(`Reading markdown file from: ${fullPath}`);
+    
+    if (await fsExtra.pathExists(fullPath)) {
+      const content = await fsExtra.readFile(fullPath, 'utf8');
+      return { success: true, content };
+    } else {
+      console.error(`Markdown file not found: ${fullPath}`);
+      return { success: false, error: `File not found: ${filePath}` };
+    }
+  } catch (error: any) {
+    console.error(`Error reading markdown file ${filePath}:`, error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get default data path handler
+ipcMain.handle('get-default-data-path', async (event) => {
+  try {
+    let dataPath: string;
+    
+    if (app.isPackaged) {
+      // 프로덕션 모드: 앱 번들 내부의 python_core/data 경로
+      dataPath = path.join(process.resourcesPath, 'python_core', 'data');
+    } else {
+      // 개발 모드: 프로젝트 루트 기준으로 electron-app/data
+      const projectRoot = path.resolve(__dirname, '../../');
+      dataPath = path.join(projectRoot, 'electron-app', 'data');
+    }
+    
+    // 디렉토리가 없으면 생성
+    await fsExtra.ensureDir(dataPath);
+    
+    return dataPath;
+  } catch (error: any) {
+    console.error('Error getting default data path:', error);
+    return './data';
+  }
+});
+
 async function getSessionDataPath(sessionId: string): Promise<string | null> {
   try {
+    console.log(`[getSessionDataPath] Fetching data for session: ${sessionId}`);
+    console.log(`[getSessionDataPath] API URL: ${API_BASE_URL}/data/sessions/${sessionId}`);
     const response = await axios.get<any>(`${API_BASE_URL}/data/sessions/${sessionId}`);
+    console.log(`[getSessionDataPath] Response status: ${response.status}`);
+    console.log(`[getSessionDataPath] Response data:`, response.data);
+    
     if (response.data && typeof response.data.data_path === 'string') {
+      console.log(`[getSessionDataPath] Found data_path: ${response.data.data_path}`);
       return response.data.data_path;
     }
-    console.error('Failed to get data_path from session response or data_path is not a string:', response.data);
+    console.error('[getSessionDataPath] Failed to get data_path from session response or data_path is not a string:', response.data);
     return null;
   } catch (error: any) {
-    console.error(`Error fetching session data for ${sessionId}:`, error);
+    console.error(`[getSessionDataPath] Error fetching session data for ${sessionId}:`, error);
+    if (error.response) {
+      console.error(`[getSessionDataPath] Response status: ${error.response.status}`);
+      console.error(`[getSessionDataPath] Response data:`, error.response.data);
+    }
     return null;
   }
 }
@@ -602,20 +841,39 @@ ipcMain.handle('open-session-folder', async (event, sessionId: string) => {
   const sessionRelativePathFromBackend = await getSessionDataPath(sessionId); 
 
   if (sessionRelativePathFromBackend && typeof sessionRelativePathFromBackend === 'string') {
-    const projectRoot = path.resolve(__dirname, '../../'); 
+    let absoluteDataPath: string;
     
-    // 백엔드가 "data/session_XYZ" 형태로 반환한다고 가정합니다.
-    // 만약 백엔드가 "session_XYZ" (data/ 접두사 없이)만 반환한다면,
-    // 아래 줄은 path.join(projectRoot, 'python_core', 'data', sessionRelativePathFromBackend)가 되어야 합니다.
-    const absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+    // 개발 모드와 프로덕션 모드 구분
+      if (app.isPackaged) {
+        // 프로덕션 모드: 앱 번들 내부의 python_core 경로 사용
+        const resourcesPath = process.resourcesPath;
+      absoluteDataPath = path.join(resourcesPath, 'python_core', sessionRelativePathFromBackend);
+      } else {
+        // 개발 모드: 프로젝트 루트 기준으로 경로 설정
+        const projectRoot = path.resolve(__dirname, '../../'); 
+        
+        // 개발 모드에서는 electron-app/data에 저장되므로 경로 조정
+      // sessionRelativePathFromBackend이 "data/session_XXX" 형식이라면
+      const sessionName = sessionRelativePathFromBackend.split('/').pop(); // session_XXX 부분만 추출
+        if (sessionName) {
+          absoluteDataPath = path.join(projectRoot, 'electron-app', 'data', sessionName);
+        } else {
+          // sessionName을 추출할 수 없는 경우 원본 경로 사용
+        absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+        }
+        
+        // 만약 electron-app/data에 없다면 python_core/data도 확인
+        if (!await fsExtra.pathExists(absoluteDataPath)) {
+        absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+      }
+    }
 
     console.log(`[IPC] Backend session relative path: ${sessionRelativePathFromBackend}`);
-    console.log(`[IPC] Assumed project root: ${projectRoot}`);
     console.log(`[IPC] Attempting to open absolute path: ${absoluteDataPath}`);
 
     try {
       if (await fsExtra.pathExists(absoluteDataPath)) {
-        await shell.openPath(absoluteDataPath);
+          await shell.openPath(absoluteDataPath);
         console.log(`[IPC] Successfully opened folder: ${absoluteDataPath}`);
         return { success: true, message: `Folder ${absoluteDataPath} opened.` };
       } else {
@@ -736,5 +994,69 @@ ipcMain.handle('open-specific-file', async (event, filePath: string) => {
   } catch (error: any) {
     console.error(`Error opening path ${filePath}: `, error);
     return { success: false, message: `Failed to open path: ${error.message}` };
+  }
+});
+
+// Directory validation handler
+ipcMain.handle('check-directory', async (event, pathToCheck: string) => {
+  try {
+    console.log('check-directory handler called with path:', pathToCheck);
+    
+    const fs = await import('fs');
+    const pathModule = await import('path');
+    
+    // 상대 경로를 절대 경로로 변환
+    const absolutePath = pathModule.resolve(pathToCheck);
+    console.log('Resolved absolute path:', absolutePath);
+    
+    try {
+      const stats = await fs.promises.stat(absolutePath);
+      
+      if (stats.isDirectory()) {
+        // 쓰기 권한 확인
+        try {
+          await fs.promises.access(absolutePath, fs.constants.W_OK);
+          console.log('Directory exists and is writable');
+          return {
+            exists: true,
+            isDirectory: true,
+            writable: true,
+            path: absolutePath
+          };
+        } catch (writeError) {
+          console.log('Directory exists but is not writable');
+          return {
+            exists: true,
+            isDirectory: true,
+            writable: false,
+            path: absolutePath
+          };
+        }
+      } else {
+        console.log('Path exists but is not a directory');
+        return {
+          exists: true,
+          isDirectory: false,
+          writable: false,
+          path: absolutePath
+        };
+      }
+    } catch (statError) {
+      console.log('Path does not exist');
+      return {
+        exists: false,
+        isDirectory: false,
+        writable: false,
+        path: absolutePath
+      };
+    }
+  } catch (error: any) {
+    console.error('Error checking directory:', error);
+    return {
+      exists: false,
+      isDirectory: false,
+      writable: false,
+      error: error.message
+    };
   }
 });

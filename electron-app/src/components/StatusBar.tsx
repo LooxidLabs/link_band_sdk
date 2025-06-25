@@ -1,40 +1,103 @@
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
-import { Brain, Cpu, Activity, Zap, Battery, Wifi } from 'lucide-react';
+import { Brain, Cpu, Battery, Wifi, Circle, HeartPulse, Move3d } from 'lucide-react';
+import { usePythonServerStore } from '../stores/pythonServerStore';
+import { useEngineStore } from '../stores/engine';
+import { useDeviceStore } from '../stores/device';
+import { useDataCenterStore } from '../stores/dataCenter';
+import { useMetricsStore } from '../stores/metrics';
+import { useEffect, useState } from 'react';
 
 interface StatusBarProps {
   isConnected: boolean;
   isWebSocketConnected: boolean;
   engineStatus: any;
-  samplingRates: {
-    eeg: number;
-    ppg: number;
-    acc: number;
-    bat: number;
-  };
   batteryLevel: number;
 }
 
 export function StatusBar({ 
   isConnected, 
-  isWebSocketConnected,
-  engineStatus,
-  samplingRates,
+  // isWebSocketConnected,
   batteryLevel 
 }: StatusBarProps) {
-  // System status data
+  // Get Python server status
+  const { status: serverStatus, refreshStatus } = usePythonServerStore();
+  // Get engine status from store
+  const { engineStatus } = useEngineStore();
+  
+  // Get device status for sampling rates (same as Engine Module)
+  const deviceStatus = useDeviceStore((state) => state.deviceStatus);
+  // Get recording status from DataCenter store
+  const { recordingStatus, fetchRecordingStatus } = useDataCenterStore();
+  // Get system metrics for CPU, RAM, Disk
+  const { systemMetrics, startPolling: startMetricsPolling, stopPolling: stopMetricsPolling } = useMetricsStore();
+  
+  // State for recording duration
+  const [recordingDuration, setRecordingDuration] = useState<string>('00.00 s');
+  
+  // Debug: Log server status changes
+  useEffect(() => {
+    console.log('StatusBar - Python Server Status:', serverStatus.status);
+  }, [serverStatus.status]);
+  
+  // Start metrics polling and refresh server status periodically
+  useEffect(() => {
+    startMetricsPolling();
+    
+    const interval = setInterval(() => {
+      refreshStatus();
+    }, 2000); // Refresh every 2 seconds
+    
+    return () => {
+      clearInterval(interval);
+      stopMetricsPolling();
+    };
+  }, [refreshStatus, startMetricsPolling, stopMetricsPolling]);
+
+  // Fetch recording status periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchRecordingStatus();
+    }, 1000); // Refresh every 1 second for recording status
+    
+    return () => clearInterval(interval);
+  }, [fetchRecordingStatus]);
+
+  // Update recording duration
+  useEffect(() => {
+    if (recordingStatus.is_recording && recordingStatus.start_time) {
+      const interval = setInterval(() => {
+        const startTime = new Date(recordingStatus.start_time!);
+        const now = new Date();
+        const diffMs = now.getTime() - startTime.getTime();
+        const seconds = (diffMs / 1000).toFixed(2);
+        setRecordingDuration(`${seconds} s`);
+      }, 10); // Update every 10ms for smooth display
+      
+      return () => clearInterval(interval);
+    } else {
+      setRecordingDuration('00.00 s');
+    }
+  }, [recordingStatus.is_recording, recordingStatus.start_time]);
+  
+  // System status data - use Device store's sampling rates and Metrics store's system data
   const systemStats = {
     engine: engineStatus?.status === 'running',
     linkBand: isConnected,
-    clients: isWebSocketConnected ? 12 : 0,
-    eeg: { value: samplingRates.eeg, unit: 'Hz' },
-    ppg: { value: samplingRates.ppg, unit: 'Hz' },
-    accel: { value: samplingRates.acc, unit: 'Hz' },
+    clients: engineStatus?.clients_connected ? engineStatus?.clients_connected : 0,
+    eeg: { value: deviceStatus?.eeg_sampling_rate || 0, unit: 'Hz' },
+    ppg: { value: deviceStatus?.ppg_sampling_rate || 0, unit: 'Hz' },
+    accel: { value: deviceStatus?.acc_sampling_rate || 0, unit: 'Hz' },
     battery: batteryLevel,
-    cpu: 'N/A',
-    ram: 'N/A MB',
-    disk: 'N/A MB'
+    cpu: systemMetrics?.cpu?.toFixed(1) || 'N/A',
+    ram: systemMetrics?.ram?.toFixed(1) || 'N/A',
+    disk: systemMetrics?.disk?.toFixed(1) || 'N/A'
   };
+
+  // Debug logging
+  useEffect(() => {
+    console.log('StatusBar - System Metrics:', systemMetrics);
+  }, [systemMetrics]);
 
   return (
     <footer className="bg-card border-t border-border px-6 py-2">
@@ -42,21 +105,27 @@ export function StatusBar({
         {/* Left side - System status */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center gap-1">
-            <Brain className="h-3 w-3 text-chart-1" />
-            <span className="text-foreground">Engine:</span>
-            <Badge variant={systemStats.engine ? "default" : "destructive"} className="text-xs px-1 py-0">
-              {systemStats.engine ? 'ON' : 'OFF'}
+            <Cpu className="h-3 w-3 text-chart-2" />
+            <span className="text-foreground">Streaming :</span>
+            <Badge variant={engineStatus?.status === 'running' ? "default" : "secondary"} className="text-xs px-1 py-0">
+              {engineStatus?.status === 'running' ? 'ACTIVE' : 'INACTIVE'}
             </Badge>
           </div>
 
           <Separator orientation="vertical" className="h-4" />
 
           <div className="flex items-center gap-1">
-            <Cpu className="h-3 w-3 text-chart-2" />
-            <span className="text-foreground">Link Band:</span>
-            <Badge variant={systemStats.linkBand ? "default" : "destructive"} className="text-xs px-1 py-0">
-              {systemStats.linkBand ? 'Connected' : 'Disconnected'}
-            </Badge>
+            <Circle className={`h-3 w-3 ${recordingStatus.is_recording ? 'text-red-500 fill-red-500' : 'text-chart-1'}`} />
+            <span className="text-foreground">Recording:</span>
+            {recordingStatus.is_recording ? (
+              <span className="text-xs text-cyan-400 font-mono">
+                {recordingDuration}
+              </span>
+            ) : (
+              <Badge variant="secondary" className="text-xs px-1 py-0">
+                IDLE
+              </Badge>
+            )}
           </div>
 
           <Separator orientation="vertical" className="h-4" />
@@ -70,18 +139,18 @@ export function StatusBar({
         {/* Center - Data rates */}
         <div className="flex items-center space-x-4">
           <div className="flex items-center gap-1">
-            <Activity className="h-3 w-3 text-chart-1" />
-            <span className="text-foreground">EEG: {systemStats.eeg.value} {systemStats.eeg.unit}</span>
+            <Brain className="h-3 w-3 text-chart-1" />
+            <span className="text-foreground">EEG: {systemStats.eeg.value?.toFixed(1) || '-'} {systemStats.eeg.unit}</span>
           </div>
 
           <div className="flex items-center gap-1">
-            <Zap className="h-3 w-3 text-chart-2" />
-            <span className="text-foreground">PPG: {systemStats.ppg.value} {systemStats.ppg.unit}</span>
+            <HeartPulse className="h-3 w-3 text-chart-2" />
+            <span className="text-foreground">PPG: {systemStats.ppg.value?.toFixed(1) || '-'} {systemStats.ppg.unit}</span>
           </div>
 
           <div className="flex items-center gap-1">
-            <Activity className="h-3 w-3 text-chart-3" />
-            <span className="text-foreground">ACC: {systemStats.accel.value} {systemStats.accel.unit}</span>
+            <Move3d className="h-3 w-3 text-chart-3" />
+            <span className="text-foreground">ACC: {systemStats.accel.value?.toFixed(1) || '-'} {systemStats.accel.unit}</span>
           </div>
 
           <div className="flex items-center gap-1">
@@ -93,14 +162,14 @@ export function StatusBar({
         {/* Right side - System resources */}
         <div className="flex items-center space-x-4 text-muted-foreground">
           <span className="text-foreground">CPU: {systemStats.cpu}%</span>
-          <span className="text-foreground">RAM: {systemStats.ram}</span>
-          <span className="text-foreground">Disk: {systemStats.disk}</span>
+          <span className="text-foreground">RAM: {systemStats.ram} MB</span>
+          <span className="text-foreground">Disk: {systemStats.disk} MB</span>
           
-          {!isConnected && (
+          {/* {!isConnected && (
             <div className="text-destructive">
               System Error: Network Error Device Error Engine Error Network Error
             </div>
-          )}
+          )} */}
         </div>
       </div>
     </footer>

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, shell } from 'electron';
+const { contextBridge, ipcRenderer, shell } = require('electron');
 
 contextBridge.exposeInMainWorld('electron', {
   ipcRenderer: {
@@ -35,27 +35,34 @@ contextBridge.exposeInMainWorld('electron', {
       return unsubscribe;
     },
     onUpdateAvailable: (callback: (info: any) => void) => {
-      const unsubscribe = ipcRenderer.on('update-available', (_, info) => callback(info));
+      const unsubscribe = ipcRenderer.on('update-available', (_: any, info: any) => callback(info));
       return unsubscribe;
     },
     onUpdateNotAvailable: (callback: (info: any) => void) => {
-      const unsubscribe = ipcRenderer.on('update-not-available', (_, info) => callback(info));
+      const unsubscribe = ipcRenderer.on('update-not-available', (_: any, info: any) => callback(info));
       return unsubscribe;
     },
     onUpdateError: (callback: (error: any) => void) => {
-      const unsubscribe = ipcRenderer.on('update-error', (_, error) => callback(error));
+      const unsubscribe = ipcRenderer.on('update-error', (_: any, error: any) => callback(error));
       return unsubscribe;
     },
     onUpdateDownloadProgress: (callback: (progress: any) => void) => {
-      const unsubscribe = ipcRenderer.on('update-download-progress', (_, progress) => callback(progress));
+      const unsubscribe = ipcRenderer.on('update-download-progress', (_: any, progress: any) => callback(progress));
       return unsubscribe;
     },
     onUpdateDownloaded: (callback: (info: any) => void) => {
-      const unsubscribe = ipcRenderer.on('update-downloaded', (_, info) => callback(info));
+      const unsubscribe = ipcRenderer.on('update-downloaded', (_: any, info: any) => callback(info));
       return unsubscribe;
     },
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
     quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
+  },
+  // File system operations
+  fs: {
+    readMarkdownFile: (filePath: string) => ipcRenderer.invoke('read-markdown-file', filePath),
+    selectDirectory: () => ipcRenderer.invoke('select-directory'),
+    getDefaultDataPath: () => ipcRenderer.invoke('get-default-data-path'),
+    checkDirectory: (path: string) => ipcRenderer.invoke('check-directory', path),
   },
   // Python Server Control APIs
   pythonServer: {
@@ -64,11 +71,11 @@ contextBridge.exposeInMainWorld('electron', {
     restart: () => ipcRenderer.invoke('restart-python-server'),
     getStatus: () => ipcRenderer.invoke('get-python-server-status'),
     onStatusChange: (callback: (status: any) => void) => {
-      const unsubscribe = ipcRenderer.on('python-server-status', (_, status) => callback(status));
+      const unsubscribe = ipcRenderer.on('python-server-status', (_: any, status: any) => callback(status));
       return unsubscribe;
     },
     onLog: (callback: (log: string) => void) => {
-      const unsubscribe = ipcRenderer.on('python-log', (_, log) => callback(log));
+      const unsubscribe = ipcRenderer.on('python-log', (_: any, log: any) => callback(log));
       return unsubscribe;
     },
     onReady: (callback: () => void) => {
@@ -76,7 +83,7 @@ contextBridge.exposeInMainWorld('electron', {
       return unsubscribe;
     },
     onStopped: (callback: (info: any) => void) => {
-      const unsubscribe = ipcRenderer.on('python-server-stopped', (_, info) => callback(info));
+      const unsubscribe = ipcRenderer.on('python-server-stopped', (_: any, info: any) => callback(info));
       return unsubscribe;
     }
   }
