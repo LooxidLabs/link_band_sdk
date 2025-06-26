@@ -55,3 +55,14 @@ temp/
 *.AppImage
 installers/downloads/
 electron-app/.env
+
+# Large binary files and releases
+installers/releases/*.zip
+installers/distribution/*/linkband-server-*
+python_core/dist/
+python_core/build/
+*.dmg
+*.exe
+*.app
+*.deb
+*.rpm
