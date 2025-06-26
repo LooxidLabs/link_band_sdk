@@ -259,16 +259,37 @@ async function startPythonServer(): Promise<ServerControlResponse> {
         // Try to use virtual environment python first - different paths for different OS
         let venvPython: string;
         if (process.platform === 'win32') {
-          venvPython = path.join(__dirname, '../../venv/Scripts/python.exe');
+          venvPython = path.join(__dirname, '../../python_core/venv/Scripts/python.exe');
         } else {
-          venvPython = path.join(__dirname, '../../venv/bin/python3');
+          venvPython = path.join(__dirname, '../../python_core/venv/bin/python3');
         }
         
         if (fs.existsSync(venvPython)) {
           pythonExecutable = venvPython;
+          console.log('Found virtual environment Python:', venvPython);
         } else {
-          // Fallback to system python3 (available on all platforms including Windows)
-          pythonExecutable = 'python3';
+          console.log('Virtual environment not found at:', venvPython);
+          // Fallback to system python - try multiple options for Windows
+          if (process.platform === 'win32') {
+            // Try different Python commands on Windows
+            const pythonOptions = ['python3', 'python', 'py'];
+            pythonExecutable = 'python3'; // Default fallback
+            
+            // Check which Python command is available
+            for (const pyCmd of pythonOptions) {
+              try {
+                const { execSync } = require('child_process');
+                execSync(`${pyCmd} --version`, { stdio: 'ignore' });
+                pythonExecutable = pyCmd;
+                console.log(`Found system Python: ${pyCmd}`);
+                break;
+              } catch (error) {
+                console.log(`${pyCmd} not available`);
+              }
+            }
+          } else {
+            pythonExecutable = 'python3';
+          }
         }
       } else {
         // Production mode - use standalone Python server
@@ -303,12 +324,26 @@ async function startPythonServer(): Promise<ServerControlResponse> {
     console.log('Development mode:', isDev);
     console.log('Resources path:', process.resourcesPath);
     
-    // Check if executable exists
-    if (!fs.existsSync(pythonExecutable)) {
+    // Check if executable exists (only for absolute paths)
+    if (path.isAbsolute(pythonExecutable) && !fs.existsSync(pythonExecutable)) {
       console.error(`Python executable not found at: ${pythonExecutable}`);
       updateServerStatus({ status: 'error', lastError: `Python executable not found: ${pythonExecutable}` });
       resolve({ success: false, message: `Python executable not found: ${pythonExecutable}`, status: serverStatus });
       return;
+    }
+    
+    // For system commands (relative paths), try to verify they exist
+    if (!path.isAbsolute(pythonExecutable)) {
+      try {
+        const { execSync } = require('child_process');
+        execSync(`${pythonExecutable} --version`, { stdio: 'ignore' });
+        console.log(`Verified system Python command: ${pythonExecutable}`);
+      } catch (error) {
+        console.error(`Python command not available: ${pythonExecutable}`);
+        updateServerStatus({ status: 'error', lastError: `Python command not available: ${pythonExecutable}` });
+        resolve({ success: false, message: `Python command not available: ${pythonExecutable}`, status: serverStatus });
+        return;
+      }
     }
     
     // Check if Python script exists (only for development mode)
