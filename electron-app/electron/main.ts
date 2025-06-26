@@ -284,7 +284,15 @@ function updateServerStatus(newStatus: Partial<ServerStatus>) {
   if (serverStatus.status === 'running' && serverStartTime) {
     serverStatus.uptime = Math.floor((Date.now() - serverStartTime.getTime()) / 1000);
   }
-  win?.webContents.send('python-server-status', serverStatus);
+  
+  // Safe window communication - check if window exists and is not destroyed
+  if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+    try {
+      win.webContents.send('python-server-status', serverStatus);
+    } catch (error: any) {
+      console.log('Failed to send server status to renderer (window may be closing):', error.message);
+    }
+  }
 }
 
 function addServerLog(log: string) {
@@ -502,7 +510,14 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       console.log('Python server output:', output);
       addServerLog(output);
       
-      win?.webContents.send('python-log', output);
+      // Safe window communication for logs
+      if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+        try {
+          win.webContents.send('python-log', output);
+        } catch (error: any) {
+          console.log('Failed to send log to renderer (window may be closing):', error.message);
+        }
+      }
 
         // Check for server ready
       if (output.includes('WebSocket server initialized') || 
@@ -510,7 +525,16 @@ async function startPythonServer(): Promise<ServerControlResponse> {
           output.includes('Application startup complete')) {
         console.log('Python server is ready');
         updateServerStatus({ status: 'running' });
-        win?.webContents.send('python-server-ready');
+        
+        // Safe window communication for server ready
+        if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+          try {
+            win.webContents.send('python-server-ready');
+          } catch (error: any) {
+            console.log('Failed to send server ready to renderer (window may be closing):', error.message);
+          }
+        }
+        
         resolve({ success: true, message: 'Python server started successfully', status: serverStatus });
       }
     });
@@ -520,7 +544,15 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       console.error('Python server error:', error);
       addServerLog(`ERROR: ${error}`);
       updateServerStatus({ lastError: error });
-      win?.webContents.send('python-log', `ERROR: ${error}`);
+      
+      // Safe window communication for error logs
+      if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+        try {
+          win.webContents.send('python-log', `ERROR: ${error}`);
+        } catch (error: any) {
+          console.log('Failed to send error log to renderer (window may be closing):', error.message);
+        }
+      }
     });
 
     pythonProcess.on('close', (code) => {
@@ -528,7 +560,15 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       pythonProcess = null;
       serverStartTime = null;
       updateServerStatus({ status: 'stopped', pid: undefined, uptime: undefined });
-      win?.webContents.send('python-server-stopped', { code, signal: null });
+      
+      // Safe window communication for server stopped
+      if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+        try {
+          win.webContents.send('python-server-stopped', { code, signal: null });
+        } catch (error: any) {
+          console.log('Failed to send server stopped to renderer (window may be closing):', error.message);
+        }
+      }
       
       // Auto-restart if server crashed unexpectedly (exit code 1 indicates port conflict)
       if (code === 1 && serverStatus.status !== 'stopping') {
