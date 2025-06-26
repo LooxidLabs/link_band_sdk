@@ -1,0 +1,53 @@
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies first
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    wget \
+    curl \
+    gnupg2 \
+    ca-certificates \
+    apt-transport-https \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Wine repository with proper key handling
+RUN mkdir -pm755 /etc/apt/keyrings && \
+    wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key && \
+    wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/jammy/winehq-jammy.sources
+
+# Install Wine and dependencies
+RUN apt-get update && apt-get install -y \
+    winehq-stable \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Wine environment
+ENV WINEARCH=win64
+ENV WINEPREFIX=/root/.wine
+ENV DISPLAY=:99
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+Xvfb :99 -screen 0 1024x768x16 &\n\
+export DISPLAY=:99\n\
+wine wineboot --init\n\
+exec "$@"' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+# Download Python installer
+WORKDIR /tmp
+RUN wget -q https://www.python.org/ftp/python/3.11.0/python-3.11.0-amd64.exe
+
+# Set up application directory
+WORKDIR /app
+COPY python_core/requirements.txt .
+COPY python_core/ ./python_core/
+
+# Create build script
+COPY scripts/docker-build-windows.sh ./build.sh
+RUN chmod +x build.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["./build.sh"]

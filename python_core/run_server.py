@@ -1,72 +1,9 @@
 #!/usr/bin/env python3
 import os
 import sys
+import subprocess
 from pathlib import Path
-
-# Detect if we're running in PyInstaller bundle
-if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    # Running in PyInstaller bundle
-    print(f"Running in PyInstaller bundle from: {sys._MEIPASS}")
-    # Disable lazy loading for mne
-    os.environ['MNE_SKIP_LAZY_IMPORT'] = '1'
-    os.environ['_MNE_SKIP_LAZY_LOADER_IMPORT'] = '1'
-
-# Add the project root directory to Python path
-project_root = str(Path(__file__).parent)
-sys.path.insert(0, project_root)
-
-# Detect if we're running in a bundled Electron app
-is_bundled = False
-if sys.platform == 'darwin' and '/Contents/Resources/' in project_root:
-    # macOS bundled app
-    is_bundled = True
-    print(f"Running in bundled macOS app from: {project_root}")
-    
-    # Add site-packages to path
-    venv_path = Path(project_root) / "venv"
-    site_packages = venv_path / "lib" / "python3.13" / "site-packages"
-    if site_packages.exists():
-        sys.path.insert(0, str(site_packages))
-        print(f"Added site-packages to path: {site_packages}")
-    
-    # Also add the standard library path if needed
-    stdlib_path = venv_path / "lib" / "python3.13"
-    if stdlib_path.exists():
-        sys.path.insert(0, str(stdlib_path))
-        print(f"Added stdlib to path: {stdlib_path}")
-        
-elif sys.platform == 'win32' and '\\resources\\' in project_root.lower():
-    # Windows bundled app
-    is_bundled = True
-    print(f"Running in bundled Windows app from: {project_root}")
-    
-    venv_path = Path(project_root) / "venv"
-    site_packages = venv_path / "Lib" / "site-packages"
-    if site_packages.exists():
-        sys.path.insert(0, str(site_packages))
-        print(f"Added site-packages to path: {site_packages}")
-        
-elif sys.platform.startswith('linux') and '/resources/' in project_root:
-    # Linux bundled app
-    is_bundled = True
-    print(f"Running in bundled Linux app from: {project_root}")
-    
-    venv_path = Path(project_root) / "venv"
-    site_packages = venv_path / "lib" / "python3.13" / "site-packages"
-    if site_packages.exists():
-        sys.path.insert(0, str(site_packages))
-        print(f"Added site-packages to path: {site_packages}")
-
-# If bundled, ensure we use the bundled packages
-if is_bundled:
-    print(f"Python executable: {sys.executable}")
-    print(f"Python path: {sys.path}")
-
-import uvicorn
 import logging
-import psutil
-import socket
-from typing import Optional
 
 # Configure logging
 logging.basicConfig(
@@ -75,75 +12,47 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def is_port_in_use(port: int) -> bool:
-    """Check if a port is in use."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(('localhost', port)) == 0
-
-def kill_process_on_port(port: int) -> bool:
-    """Kill the process running on the specified port."""
-    try:
-        for proc in psutil.process_iter(['pid', 'name', 'connections']):
-            try:
-                for conn in proc.connections():
-                    if conn.laddr.port == port:
-                        logger.info(f"Found process using port {port}: {proc.name()} (PID: {proc.pid})")
-                        proc.kill()
-                        logger.info(f"Successfully killed process {proc.pid}")
-                        return True
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
-    except Exception as e:
-        logger.error(f"Error while trying to kill process on port {port}: {e}")
-    return False
-
-def ensure_port_available(port: int) -> bool:
-    """Ensure the port is available, killing any process if necessary."""
-    if is_port_in_use(port):
-        logger.warning(f"Port {port} is already in use. Attempting to free it...")
-        if kill_process_on_port(port):
-            logger.info(f"Successfully freed port {port}")
-            return True
-        else:
-            logger.error(f"Failed to free port {port}")
-            return False
-    return True
-
 def run_server(host: str = "localhost", port: int = 8121) -> None:
-    """Run the FastAPI server with proper error handling."""
+    """Run the MNE-enabled LinkBand server."""
     try:
-        # Check if port is available
-        if not ensure_port_available(port):
-            logger.error(f"Cannot start server: Port {port} is in use and could not be freed")
-            sys.exit(1)
-
-        logger.info(f"Starting FastAPI server on {host}:{port}")
-        logger.info(f"Python version: {sys.version}")
-        logger.info(f"Working directory: {os.getcwd()}")
+        # Get the directory containing this script
+        script_dir = Path(__file__).parent
         
-        # Change to the python_core directory
-        os.chdir(project_root)
-        logger.info(f"Changed working directory to: {os.getcwd()}")
+        # Look for the MNE-enabled server binary
+        server_binary = script_dir / "dist" / "linkband-server-macos-arm64-final"
         
-        # Import app here to avoid circular imports
-        from app.main import app
+        if not server_binary.exists():
+            # Fallback to the distributed version
+            server_binary = script_dir.parent / "installers" / "distribution" / "macos-arm64" / "linkband-server-macos-arm64-final"
         
-        # Run the FastAPI server using uvicorn
-        uvicorn.run(
-            app, 
-            host=host, 
-            port=port, 
-            reload=False,  # Disable reload in production
-            log_level="info",
-            access_log=True  # Enable access logging
-        )
-    except ImportError as e:
-        logger.error(f"Failed to import required modules: {e}")
-        logger.error("Make sure all dependencies are installed in the bundled environment")
-        logger.error(f"Current sys.path: {sys.path}")
-        sys.exit(1)
+        if not server_binary.exists():
+            logger.error(f"MNE-enabled server binary not found at {server_binary}")
+            logger.info("Falling back to standalone_server.py")
+            
+            # Fallback to standalone_server.py
+            standalone_server = script_dir / "standalone_server.py"
+            if standalone_server.exists():
+                logger.info(f"Running standalone_server.py from {standalone_server}")
+                exec(open(standalone_server).read())
+            else:
+                logger.error("standalone_server.py not found either")
+                sys.exit(1)
+            return
+        
+        logger.info(f"Starting MNE-enabled LinkBand server from {server_binary}")
+        logger.info(f"Server will run on {host}:{port}")
+        
+        # Make the binary executable
+        os.chmod(server_binary, 0o755)
+        
+        # Run the binary
+        result = subprocess.run([str(server_binary)], check=True)
+        
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Server process failed with exit code {e.returncode}")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Error starting server: {e}", exc_info=True)
         sys.exit(1)

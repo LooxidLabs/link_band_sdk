@@ -26,6 +26,10 @@
       "to": "linkband-server-macos-x64"
     },
     {
+      "from": "../installers/distribution/windows/linkband-server-windows.exe",
+      "to": "linkband-server-windows.exe"
+    },
+    {
       "from": "public/docs",
       "to": "docs"
     },

@@ -1,0 +1,39 @@
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    wine \
+    winetricks \
+    xvfb \
+    wget \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Wine environment
+ENV WINEARCH=win64
+ENV WINEPREFIX=/root/.wine
+ENV DISPLAY=:99
+
+# Create virtual display
+RUN Xvfb :99 -screen 0 1024x768x16 &
+
+# Initialize Wine
+RUN wine wineboot --init || true
+
+# Download Python installer
+WORKDIR /tmp
+RUN wget -q https://www.python.org/ftp/python/3.11.0/python-3.11.0-amd64.exe
+
+# Set up application directory
+WORKDIR /app
+COPY python_core/requirements.txt .
+COPY python_core/ ./python_core/
+
+# Create build script
+COPY scripts/docker-build-simple.sh ./build.sh
+RUN chmod +x build.sh
+
+CMD ["bash", "-c", "Xvfb :99 -screen 0 1024x768x16 & sleep 2 && ./build.sh"]

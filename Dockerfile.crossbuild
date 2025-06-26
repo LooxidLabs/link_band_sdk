@@ -1,0 +1,31 @@
+FROM ubuntu:22.04
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    build-essential \
+    wget \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Python environment
+WORKDIR /app
+COPY python_core/requirements.txt .
+
+# Create virtual environment and install dependencies
+RUN python3 -m venv venv
+RUN . venv/bin/activate && pip install --upgrade pip
+RUN . venv/bin/activate && pip install -r requirements.txt
+RUN . venv/bin/activate && pip install pyinstaller
+
+# Copy source code
+COPY python_core/ ./python_core/
+
+# Build script
+COPY scripts/docker-build-servers.sh ./
+RUN chmod +x docker-build-servers.sh
+
+CMD ["./docker-build-servers.sh"]
