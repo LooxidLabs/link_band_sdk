@@ -280,7 +280,7 @@ interface EngineState {
   autoConnectWebSocket: () => void;
 }
 
-const WS_URL = 'ws://localhost:18765';
+const WS_URL = 'ws://127.0.0.1:18765';
 
 // 샘플링 레이트 계산 및 업데이트 함수
 const updateSamplingRates = (state: EngineState): EngineState => {

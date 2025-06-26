@@ -46,7 +46,7 @@ class EventType(Enum):
 
 class WebSocketServer:
     def __init__(self, 
-                 host: str = "localhost", 
+                 host: str = "127.0.0.1",  # localhost 대신 명시적으로 127.0.0.1 사용 (Windows 호환성)
                  port: int = 18765, 
                  data_recorder: Optional[DataRecorder] = None,
                  device_manager: Optional[DeviceManager] = None,
@@ -1346,22 +1346,35 @@ class WebSocketServer:
         await self.broadcast(json.dumps(message))
 
     async def broadcast(self, message: str):
-        """Broadcast message to all connected clients using asyncio.gather."""
+        """Broadcast message to all connected clients with improved error handling."""
         if not self.clients:
             return
 
         # 연결이 끊어진 클라이언트를 추적
         disconnected_clients = set()
+        
+        # 클라이언트 목록을 복사하여 순회 중 수정 방지
+        clients_copy = list(self.clients)
 
         # 각 클라이언트에 메시지 전송 시도
-        for client in list(self.clients):
+        for client in clients_copy:
             try:
-                await client.send(message)
+                # 클라이언트 연결 상태 확인
+                if client.closed:
+                    disconnected_clients.add(client)
+                    continue
+                    
+                # 메시지 전송 (타임아웃 설정)
+                await asyncio.wait_for(client.send(message), timeout=1.0)
+                
             except websockets.exceptions.ConnectionClosed:
-                logger.warning(f"Connection closed for client {client.remote_address}")
+                logger.debug(f"Connection closed for client {getattr(client, 'remote_address', 'unknown')}")
+                disconnected_clients.add(client)
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout sending message to client {getattr(client, 'remote_address', 'unknown')}")
                 disconnected_clients.add(client)
             except Exception as e:
-                logger.error(f"Error sending message to client {client.remote_address}: {e}")
+                logger.debug(f"Error sending message to client {getattr(client, 'remote_address', 'unknown')}: {e}")
                 disconnected_clients.add(client)
 
         # 연결이 끊어진 클라이언트 정리
@@ -1369,12 +1382,13 @@ class WebSocketServer:
             if client in self.clients:
                 self.clients.remove(client)
                 try:
-                    await client.close()
-                except:
-                    pass
+                    if not client.closed:
+                        await client.close(code=1000, reason="Client cleanup")
+                except Exception as e:
+                    logger.debug(f"Error closing client: {e}")
 
         if disconnected_clients:
-            logger.info(f"Removed {len(disconnected_clients)} disconnected clients. Total clients: {len(self.clients)}")
+            logger.info(f"Cleaned up {len(disconnected_clients)} disconnected clients. Active clients: {len(self.clients)}")
 
     def get_connected_clients(self) -> int:
         """Get the number of currently connected clients"""

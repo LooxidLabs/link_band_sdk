@@ -446,9 +446,9 @@ export const ko = {
       overview: {
         title: 'API 개요',
         content: `
-        <strong>Base URL:</strong> http://localhost:8121
+        <strong>Base URL:</strong> http://127.0.0.1:8121
         
-        <strong>WebSocket:</strong> ws://localhost:18765
+        <strong>WebSocket:</strong> ws://127.0.0.1:18765
         
         <strong>인증:</strong> 현재 버전에서는 인증 불필요 (로컬 개발 환경)
         
@@ -498,7 +498,7 @@ export const ko = {
         <strong>POST /stream/stop</strong>
         데이터 스트리밍 중지
         
-        <strong>WebSocket: ws://localhost:18765</strong>
+        <strong>WebSocket: ws://127.0.0.1:18765</strong>
         실시간 데이터 수신
         
         Message Format:
@@ -574,7 +574,7 @@ export const ko = {
         import json
         
         async def connect_to_sdk():
-            uri = "ws://localhost:18765"
+            uri = "ws://127.0.0.1:18765"
             async with websockets.connect(uri) as websocket:
                 while True:
                     message = await websocket.recv()
@@ -590,11 +590,11 @@ export const ko = {
         import requests
         
         # 디바이스 상태 확인
-        response = requests.get("http://localhost:8121/device/status")
+        response = requests.get("http://127.0.0.1:8121/device/status")
         print(response.json())
         
         # 레코딩 시작
-        requests.post("http://localhost:8121/data/start-recording")
+        requests.post("http://127.0.0.1:8121/data/start-recording")
         \`\`\`
         `,
       },
@@ -605,7 +605,7 @@ export const ko = {
         <strong>WebSocket 연결 예제:</strong>
         
         \`\`\`javascript
-        const ws = new WebSocket('ws://localhost:18765');
+        const ws = new WebSocket('ws://127.0.0.1:18765');
         
         ws.onopen = function() {
           console.log('Connected to Link Band SDK');
@@ -625,12 +625,12 @@ export const ko = {
         
         \`\`\`javascript
         // 세션 목록 조회
-        fetch('http://localhost:8121/data/sessions')
+        fetch('http://127.0.0.1:8121/data/sessions')
           .then(response => response.json())
           .then(data => console.log(data));
         
         // 레코딩 시작
-        fetch('http://localhost:8121/data/start-recording', {
+        fetch('http://127.0.0.1:8121/data/start-recording', {
           method: 'POST'
         });
         \`\`\`
@@ -944,9 +944,9 @@ export const en = {
       overview: {
         title: 'API Overview',
         content: `
-        <strong>Base URL:</strong> http://localhost:8121
+        <strong>Base URL:</strong> http://127.0.0.1:8121
         
-        <strong>WebSocket:</strong> ws://localhost:18765
+        <strong>WebSocket:</strong> ws://127.0.0.1:18765
         
         <strong>Authentication:</strong> No authentication required in current version (local development environment)
         
@@ -996,7 +996,7 @@ export const en = {
         <strong>POST /stream/stop</strong>
         Stop data streaming
         
-        <strong>WebSocket: ws://localhost:18765</strong>
+        <strong>WebSocket: ws://127.0.0.1:18765</strong>
         Receive real-time data
         
         Message Format:
@@ -1072,7 +1072,7 @@ export const en = {
         import json
         
         async def connect_to_sdk():
-            uri = "ws://localhost:18765"
+            uri = "ws://127.0.0.1:18765"
             async with websockets.connect(uri) as websocket:
                 while True:
                     message = await websocket.recv()
@@ -1088,11 +1088,11 @@ export const en = {
         import requests
         
         # Check device status
-        response = requests.get("http://localhost:8121/device/status")
+        response = requests.get("http://127.0.0.1:8121/device/status")
         print(response.json())
         
         # Start recording
-        requests.post("http://localhost:8121/data/start-recording")
+        requests.post("http://127.0.0.1:8121/data/start-recording")
         \`\`\`
         `,
       },
@@ -1103,7 +1103,7 @@ export const en = {
         <strong>WebSocket Connection Example:</strong>
         
         \`\`\`javascript
-        const ws = new WebSocket('ws://localhost:18765');
+        const ws = new WebSocket('ws://127.0.0.1:18765');
         
         ws.onopen = function() {
           console.log('Connected to Link Band SDK');
@@ -1123,12 +1123,12 @@ export const en = {
         
         \`\`\`javascript
         // Query session list
-        fetch('http://localhost:8121/data/sessions')
+        fetch('http://127.0.0.1:8121/data/sessions')
           .then(response => response.json())
           .then(data => console.log(data));
         
         // Start recording
-        fetch('http://localhost:8121/data/start-recording', {
+        fetch('http://127.0.0.1:8121/data/start-recording', {
           method: 'POST'
         });
         \`\`\`
