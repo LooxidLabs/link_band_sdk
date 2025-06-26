@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import socket
 import websockets
 import time # For timestamping batched data
 from typing import Set, Dict, Any, Optional, List, Callable
@@ -159,12 +158,11 @@ class WebSocketServer:
             raise OSError(f"Port {self.port} is already in use")
 
         try:
-            # Create new server - force IPv4 only for Windows compatibility
+            # Create new server
             self.server = await websockets.serve(
                 self.handle_client,
                 self.host,
-                self.port,
-                family=socket.AF_INET  # Force IPv4 only
+                self.port
             )
             
             # Start auto-connect task
