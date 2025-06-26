@@ -187,10 +187,37 @@ async def connect_device(req: ConnectRequest, ws_server_instance: WebSocketServe
          # ws_server_instance.device_manager = device_manager_dependency # 아래처럼 device_manager를 직접 주입받는게 나음
         raise HTTPException(status_code=500, detail="DeviceManager not available via WebSocketServer")
 
-    result = await ws_server_instance.device_manager.connect(req.address)
-    if not result:
-        raise HTTPException(status_code=400, detail="Connection failed")
-    return {"result": "connected"}
+    try:
+        result = await ws_server_instance.device_manager.connect(req.address)
+        if not result:
+            # 플랫폼별 구체적인 에러 메시지 제공
+            import platform
+            is_windows = platform.system() == "Windows"
+            
+            if is_windows:
+                error_detail = (
+                    f"Connection failed: Device {req.address} not found. "
+                    "Windows troubleshooting: "
+                    "1) Make sure device is in pairing mode, "
+                    "2) Run as Administrator, "
+                    "3) Check Windows Bluetooth permissions, "
+                    "4) Try restarting Bluetooth adapter, "
+                    "5) Run: python scripts/windows-bluetooth-check.py"
+                )
+            else:
+                error_detail = (
+                    f"Connection failed: Device {req.address} not found. "
+                    "Make sure the device is in pairing mode and within range."
+                )
+            
+            raise HTTPException(status_code=400, detail=error_detail)
+        return {"result": "connected"}
+    except HTTPException:
+        # HTTPException은 그대로 재발생
+        raise
+    except Exception as e:
+        # 예상치 못한 에러는 500으로 처리
+        raise HTTPException(status_code=500, detail=f"Unexpected error during connection: {str(e)}")
 
 @router.post("/disconnect",
     response_model=ConnectionResponse,

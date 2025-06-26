@@ -208,29 +208,83 @@ class DeviceManager:
             # Windows에서는 더 긴 타임아웃 사용
             find_timeout = 15.0 if is_windows else 10.0
             connect_timeout = 25.0 if is_windows else 15.0
+            max_retries = 2 if is_windows else 1
             
             if is_windows:
-                print(f"Windows detected: Using extended timeouts (find: {find_timeout}s, connect: {connect_timeout}s)")
+                print(f"Windows detected: Using extended timeouts (find: {find_timeout}s, connect: {connect_timeout}s, retries: {max_retries})")
+            
+            device = None
             
             # 캐시된 디바이스가 있고 use_cached_device가 True면 스캔 건너뛰기
-            device = None
             if use_cached_device and hasattr(self, '_cached_devices'):
-                device = next((dev for dev in self._cached_devices if dev.address == address), None)
+                device = next((dev for dev in self._cached_devices if dev.address.upper() == address.upper()), None)
                 if device:
                     print(f"Using cached device: {device.name} ({device.address})")
             
+            # 캐시된 디바이스가 없으면 최근 스캔 결과도 확인
+            if not device and hasattr(self, '_cached_devices') and hasattr(self, '_cache_timestamp'):
+                # 캐시가 5분 이내라면 사용
+                if time.time() - self._cache_timestamp < 300:  # 5분
+                    device = next((dev for dev in self._cached_devices if dev.address.upper() == address.upper()), None)
+                    if device:
+                        print(f"Using recent cached device: {device.name} ({device.address})")
+            
+            # 캐시된 디바이스가 없으면 스캔 시도
             if not device:
-                # BleakScanner.find_device_by_address를 사용해서 더 안정적으로 디바이스 찾기
-                device = await BleakScanner.find_device_by_address(address, timeout=find_timeout)
+                for attempt in range(max_retries + 1):
+                    if attempt > 0:
+                        print(f"Retry attempt {attempt}/{max_retries}")
+                        await asyncio.sleep(2)  # 재시도 전 잠시 대기
+                    
+                    try:
+                        # 첫 번째 시도: find_device_by_address 사용
+                        print(f"Attempting find_device_by_address for {address}...")
+                        device = await BleakScanner.find_device_by_address(address, timeout=find_timeout)
+                        
+                        if device:
+                            print(f"✅ Found device via find_device_by_address: {device.name} ({device.address})")
+                            break
+                        else:
+                            print(f"❌ find_device_by_address failed for {address}")
+                            
+                            # 두 번째 시도: 일반 스캔으로 폴백
+                            print(f"Fallback: Trying general device discovery...")
+                            devices = await BleakScanner.discover(timeout=find_timeout)
+                            print(f"Discovered {len(devices)} devices total")
+                            
+                            # 주소 매칭 (대소문자 무시)
+                            device = next((dev for dev in devices if dev.address.upper() == address.upper()), None)
+                            
+                            if device:
+                                print(f"✅ Found device via general scan: {device.name} ({device.address})")
+                                break
+                            else:
+                                print(f"❌ Device {address} not found in general scan")
+                                # 발견된 디바이스들 로깅 (디버깅용)
+                                if devices:
+                                    print("Available devices:")
+                                    for dev in devices[:5]:  # 처음 5개만 표시
+                                        print(f"  - {dev.name or 'Unknown'} ({dev.address})")
+                                    if len(devices) > 5:
+                                        print(f"  ... and {len(devices) - 5} more devices")
+                                else:
+                                    print("No devices found during scan")
+                                    
+                    except Exception as scan_error:
+                        print(f"❌ Scan attempt {attempt + 1} failed: {scan_error}")
+                        if attempt == max_retries:
+                            print(f"All scan attempts failed")
             
             if not device:
-                print(f"Device {address} not found")
+                print(f"❌ Device {address} not found after all attempts")
                 if is_windows:
                     print("Windows troubleshooting:")
                     print("  1. Make sure device is in pairing mode")
                     print("  2. Try running as Administrator")
                     print("  3. Check Windows Bluetooth permissions")
                     print("  4. Run: python scripts/windows-bluetooth-check.py")
+                    print("  5. Try restarting Bluetooth adapter")
+                    print("  6. Make sure device is not connected to another application")
                 return False
 
             print(f"Found device: {device.name} ({device.address})")
