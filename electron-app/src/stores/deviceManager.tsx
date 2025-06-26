@@ -100,9 +100,12 @@ class WebSocketManager {
 
     this.isConnecting = true;
     console.log('Attempting to connect to WebSocket server...', this.url);
+    console.log('WebSocket support available:', typeof WebSocket !== 'undefined');
+    console.log('Current location:', window.location.href);
 
     try {
       this.ws = new WebSocket(this.url);
+      console.log('WebSocket object created successfully');
 
       this.ws.onopen = () => {
         console.log('WebSocket connected successfully');
@@ -136,8 +139,14 @@ class WebSocketManager {
 
       this.ws.onerror = (error) => {
         console.error('WebSocket error:', error);
+        console.error('WebSocket error details:', {
+          url: this.url,
+          readyState: this.ws?.readyState,
+          error: error
+        });
         this.isConnecting = false;
         this.ws = null;
+        this.onConnectionChange?.(false);
       };
 
       this.ws.onmessage = (event) => {

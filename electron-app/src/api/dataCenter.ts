@@ -33,7 +33,7 @@ import type {
 //   end_time?: string;
 // }
 
-const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL; // Base URL for the Python server
+const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121'; // Base URL for the Python server
 const headers = {
   'Content-Type': 'application/json'
 };

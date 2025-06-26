@@ -125,7 +125,7 @@ const store = new Store({
 
 // Define the backend API base URL (replace with your actual URL if different)
 // It's good practice to get this from an environment variable or config
-const API_BASE_URL = process.env.VITE_LINK_ENGINE_SERVER_URL || 'http://localhost:8121';
+const API_BASE_URL = process.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121';
 
 // Define a type for the backend's prepare-export response
 interface PrepareExportResponse {

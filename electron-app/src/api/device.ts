@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { DeviceResponse, DeviceStatus, RegisteredDevicesResponse } from '../types/device';
 
-const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL;
+const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121';
 
 const headers = {
   'Content-Type': 'application/json'
