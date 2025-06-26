@@ -12,6 +12,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def get_python_executable():
+    """Get the appropriate Python executable (prefer venv if available)."""
+    script_dir = Path(__file__).parent
+    
+    # Check for virtual environment
+    if sys.platform == 'win32':
+        venv_python = script_dir / "venv" / "Scripts" / "python.exe"
+    else:
+        venv_python = script_dir / "venv" / "bin" / "python3"
+    
+    if venv_python.exists():
+        logger.info(f"Using virtual environment Python: {venv_python}")
+        return str(venv_python)
+    else:
+        logger.warning("Virtual environment not found, using system Python")
+        return sys.executable
+
 def run_server(host: str = "localhost", port: int = 8121) -> None:
     """Run the MNE-enabled LinkBand server."""
     try:
@@ -29,11 +46,23 @@ def run_server(host: str = "localhost", port: int = 8121) -> None:
             logger.error(f"MNE-enabled server binary not found at {server_binary}")
             logger.info("Falling back to standalone_server.py")
             
-            # Fallback to standalone_server.py
+            # Fallback to standalone_server.py using subprocess with proper Python
             standalone_server = script_dir / "standalone_server.py"
             if standalone_server.exists():
                 logger.info(f"Running standalone_server.py from {standalone_server}")
-                exec(open(standalone_server).read())
+                
+                # Get the appropriate Python executable
+                python_exe = get_python_executable()
+                
+                # Run standalone_server.py as subprocess
+                try:
+                    result = subprocess.run([
+                        python_exe, 
+                        str(standalone_server)
+                    ], cwd=str(script_dir), check=True)
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"standalone_server.py failed with exit code {e.returncode}")
+                    sys.exit(1)
             else:
                 logger.error("standalone_server.py not found either")
                 sys.exit(1)

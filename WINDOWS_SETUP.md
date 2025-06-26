@@ -37,6 +37,22 @@ Windows에서 Link Band SDK 개발 환경을 설정하는 가이드입니다.
    npm run electron:preview
    ```
 
+## Python 서버 수동 실행 (문제 해결용)
+
+만약 Electron 앱에서 Python 서버 시작에 실패하면, 수동으로 실행해볼 수 있습니다:
+
+```bash
+cd python_core
+venv\Scripts\activate.bat
+python run_server.py
+```
+
+또는 가상환경 없이 (권장하지 않음):
+```bash
+cd python_core
+python standalone_server.py
+```
+
 ## 수동 설정
 
 자동 스크립트가 실패하는 경우 수동으로 설정할 수 있습니다:
