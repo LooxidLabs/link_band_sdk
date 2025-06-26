@@ -103,21 +103,62 @@ class WebSocketManager {
     console.log('WebSocket support available:', typeof WebSocket !== 'undefined');
     console.log('Current location:', window.location.href);
 
+    // Windows 특별 처리: 여러 URL 시도
+    const urlsToTry = [
+      this.url,
+      'ws://127.0.0.1:18765',
+      'ws://0.0.0.0:18765'
+    ];
+    
+    console.log('URLs to try:', urlsToTry);
+
+    this.tryConnection(urlsToTry, 0);
+  }
+
+  private tryConnection(urls: string[], index: number) {
+    if (index >= urls.length) {
+      console.error('All WebSocket URLs failed');
+      this.isConnecting = false;
+      this.onConnectionChange?.(false);
+      return;
+    }
+
+    const currentUrl = urls[index];
+    console.log(`Trying WebSocket URL ${index + 1}/${urls.length}:`, currentUrl);
+
     try {
-      this.ws = new WebSocket(this.url);
-      console.log('WebSocket object created successfully');
+      this.ws = new WebSocket(currentUrl);
+      console.log('WebSocket object created successfully for:', currentUrl);
+
+      const timeout = setTimeout(() => {
+        if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+          console.log('WebSocket connection timeout, trying next URL...');
+          this.ws.close();
+          this.tryConnection(urls, index + 1);
+        }
+      }, 3000); // 3초 타임아웃
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected successfully');
+        clearTimeout(timeout);
+        console.log('WebSocket connected successfully to:', currentUrl);
+        this.url = currentUrl; // 성공한 URL로 업데이트
         this.isConnecting = false;
-        this.reconnectAttempts = 0; // 연결 성공 시 재시도 횟수 초기화
+        this.reconnectAttempts = 0;
         this.onConnectionChange?.(true);
         this.startHealthCheck();
         this.startConnectionCheck();
       };
 
       this.ws.onclose = (event) => {
-        console.log('WebSocket connection closed', event.code, event.reason);
+        clearTimeout(timeout);
+        console.log('WebSocket connection closed', event.code, event.reason, 'URL:', currentUrl);
+        
+        if (this.isConnecting) {
+          // 연결 시도 중이었다면 다음 URL 시도
+          this.tryConnection(urls, index + 1);
+          return;
+        }
+
         this.isConnecting = false;
         this.ws = null;
         this.onConnectionChange?.(false);
@@ -138,12 +179,20 @@ class WebSocketManager {
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        clearTimeout(timeout);
+        console.error('WebSocket error for URL:', currentUrl, error);
         console.error('WebSocket error details:', {
-          url: this.url,
+          url: currentUrl,
           readyState: this.ws?.readyState,
           error: error
         });
+        
+        if (this.isConnecting) {
+          // 연결 시도 중이었다면 다음 URL 시도
+          this.tryConnection(urls, index + 1);
+          return;
+        }
+
         this.isConnecting = false;
         this.ws = null;
         this.onConnectionChange?.(false);
@@ -158,9 +207,8 @@ class WebSocketManager {
         }
       };
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-      this.isConnecting = false;
-      this.ws = null;
+      console.error('Failed to create WebSocket connection for URL:', currentUrl, error);
+      this.tryConnection(urls, index + 1);
     }
   }
 
@@ -280,6 +328,14 @@ type DeviceState = DeviceStateData & DeviceStateMethods;
 const MAX_DATA_POINTS = 1000;
 // Windows 호환성을 위해 localhost 사용
 const WS_URL = 'ws://localhost:18765';
+
+// Windows 디버깅을 위한 추가 로깅
+console.log('=== WebSocket Debug Info ===');
+console.log('Platform:', navigator.platform);
+console.log('User Agent:', navigator.userAgent);
+console.log('WebSocket URL:', WS_URL);
+console.log('Location:', window.location.href);
+console.log('============================');
 
 const initialConnectionQuality: ConnectionQuality = {
   signal: 'Unknown',
