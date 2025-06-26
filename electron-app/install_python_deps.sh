@@ -56,12 +56,12 @@ python3 -m pip install --user \
 
 if [ $? -eq 0 ]; then
     echo ""
-    echo "✅ All dependencies installed successfully!"
+    echo " All dependencies installed successfully!"
     echo ""
     echo "You can now run Link Band SDK."
 else
     echo ""
-    echo "❌ Error: Failed to install some dependencies."
+    echo " Error: Failed to install some dependencies."
     echo "Please check the error messages above."
     exit 1
 fi 

@@ -51,14 +51,14 @@ def check_bluetooth_service():
                 print("✓ Bluetooth Support Service is running")
                 return True
             else:
-                print("❌ Bluetooth Support Service is not running")
+                print(" Bluetooth Support Service is not running")
                 print("  Try: net start bthserv")
                 return False
         else:
-            print("❌ Bluetooth Support Service not found")
+            print(" Bluetooth Support Service not found")
             return False
     except Exception as e:
-        print(f"❌ Error checking Bluetooth service: {e}")
+        print(f" Error checking Bluetooth service: {e}")
         return False
 
 def check_bluetooth_adapter():
@@ -80,11 +80,11 @@ def check_bluetooth_adapter():
             print(result.stdout)
             return True
         else:
-            print("❌ No working Bluetooth adapters found")
+            print(" No working Bluetooth adapters found")
             print("  Check Device Manager for Bluetooth adapter issues")
             return False
     except Exception as e:
-        print(f"❌ Error checking Bluetooth adapter: {e}")
+        print(f" Error checking Bluetooth adapter: {e}")
         return False
 
 def check_python_bluetooth_access():
@@ -100,11 +100,11 @@ def check_python_bluetooth_access():
         print("✓ BleakScanner created successfully")
         return True
     except ImportError as e:
-        print(f"❌ Bleak library not installed: {e}")
+        print(f" Bleak library not installed: {e}")
         print("  Install with: pip install bleak")
         return False
     except Exception as e:
-        print(f"❌ Error accessing Bluetooth through Python: {e}")
+        print(f" Error accessing Bluetooth through Python: {e}")
         return False
 
 async def test_bluetooth_scan():
@@ -129,7 +129,7 @@ async def test_bluetooth_scan():
             print("  3. BLE devices are not advertising")
             return False
     except Exception as e:
-        print(f"❌ Error during Bluetooth scan: {e}")
+        print(f" Error during Bluetooth scan: {e}")
         print("  This usually indicates a permission or driver issue")
         return False
 
@@ -182,7 +182,7 @@ async def main():
     print("="*60)
     
     if platform.system() != "Windows":
-        print("❌ This tool is designed for Windows only")
+        print(" This tool is designed for Windows only")
         print(f"Current OS: {platform.system()}")
         return
     
@@ -212,7 +212,7 @@ async def main():
         print("  - Not be in pairing/advertising mode")
         print("  - Have a low battery")
     else:
-        print("❌ Some checks failed. Please review the issues above.")
+        print(" Some checks failed. Please review the issues above.")
         print_troubleshooting_steps()
 
 if __name__ == "__main__":

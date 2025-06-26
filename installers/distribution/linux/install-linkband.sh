@@ -22,13 +22,13 @@ echo ""
 
 # Check if running as root
 if [[ $EUID -eq 0 ]]; then
-    echo -e "${RED}❌ Error: Please do not run this installer as root${NC}"
+    echo -e "${RED} Error: Please do not run this installer as root${NC}"
     echo -e "${YELLOW}   Run as a regular user (sudo will be requested when needed)${NC}"
     echo ""
     exit 1
 fi
 
-echo -e "${GREEN}✅ Running as regular user${NC}"
+echo -e "${GREEN} Running as regular user${NC}"
 echo ""
 
 # Detect distribution
@@ -55,24 +55,24 @@ APPIMAGE_FILE="$SCRIPT_DIR/LinkBandSDK.AppImage"
 SERVER_FILE="$SCRIPT_DIR/linkband-server-linux"
 
 if [[ ! -f "$APPIMAGE_FILE" ]]; then
-    echo -e "${RED}❌ Error: LinkBandSDK.AppImage not found${NC}"
+    echo -e "${RED} Error: LinkBandSDK.AppImage not found${NC}"
     echo -e "${YELLOW}   Please ensure all files are in the same folder${NC}"
     echo ""
     exit 1
 fi
 
 if [[ ! -f "$SERVER_FILE" ]]; then
-    echo -e "${RED}❌ Error: linkband-server-linux not found${NC}"
+    echo -e "${RED} Error: linkband-server-linux not found${NC}"
     echo -e "${YELLOW}   Please ensure all files are in the same folder${NC}"
     echo ""
     exit 1
 fi
 
-echo -e "${GREEN}✅ All required files found${NC}"
+echo -e "${GREEN} All required files found${NC}"
 echo ""
 
 # Install system dependencies
-echo -e "${BLUE}📦 Installing system dependencies...${NC}"
+echo -e "${BLUE} Installing system dependencies...${NC}"
 
 install_dependencies() {
     local pkg_manager=""
@@ -100,7 +100,7 @@ install_dependencies() {
         install_cmd="sudo zypper install -y"
         packages="fuse libnss3 libatk-bridge-2_0-0 libdrm2 libXcomposite1 libXdamage1 libXrandr2 libgbm1 libXss1 alsa"
     else
-        echo -e "${YELLOW}⚠️  Warning: Unknown package manager${NC}"
+        echo -e "${YELLOW}  Warning: Unknown package manager${NC}"
         echo "   Please install FUSE and other AppImage dependencies manually"
         echo ""
     fi
@@ -108,9 +108,9 @@ install_dependencies() {
     if [[ -n "$pkg_manager" ]]; then
         echo "Using $pkg_manager to install dependencies..."
         if eval "$install_cmd $packages"; then
-            echo -e "${GREEN}✅ Dependencies installed successfully${NC}"
+            echo -e "${GREEN} Dependencies installed successfully${NC}"
         else
-            echo -e "${YELLOW}⚠️  Warning: Some dependencies may not have been installed${NC}"
+            echo -e "${YELLOW}  Warning: Some dependencies may not have been installed${NC}"
             echo "   The application might still work, but some features may be limited"
         fi
     fi
@@ -132,18 +132,18 @@ echo "Copying AppImage to $INSTALL_DIR..."
 cp "$APPIMAGE_FILE" "$APP_TARGET"
 chmod +x "$APP_TARGET"
 
-echo -e "${GREEN}✅ Application installed successfully${NC}"
+echo -e "${GREEN} Application installed successfully${NC}"
 echo ""
 
 # Install Python backend server
-echo -e "${BLUE}🐍 Installing Python Backend Server...${NC}"
+echo -e "${BLUE} Installing Python Backend Server...${NC}"
 SERVER_TARGET="$INSTALL_DIR/linkband-server"
 
 echo "Copying server to $INSTALL_DIR..."
 cp "$SERVER_FILE" "$SERVER_TARGET"
 chmod +x "$SERVER_TARGET"
 
-echo -e "${GREEN}✅ Python backend server installed successfully${NC}"
+echo -e "${GREEN} Python backend server installed successfully${NC}"
 echo ""
 
 # Add to PATH
@@ -171,11 +171,11 @@ add_to_path "$PROFILE"
 # Update current session PATH
 export PATH="$PATH:$INSTALL_DIR"
 
-echo -e "${GREEN}✅ Added to PATH${NC}"
+echo -e "${GREEN} Added to PATH${NC}"
 echo ""
 
 # Create launch script
-echo -e "${BLUE}🚀 Creating launch script...${NC}"
+echo -e "${BLUE} Creating launch script...${NC}"
 LAUNCH_SCRIPT="$INSTALL_DIR/linkband-start"
 
 cat > "$LAUNCH_SCRIPT" << 'EOF'
@@ -199,7 +199,7 @@ echo "To stop the server, run: kill $SERVER_PID"
 EOF
 
 chmod +x "$LAUNCH_SCRIPT"
-echo -e "${GREEN}✅ Launch script created at $LAUNCH_SCRIPT${NC}"
+echo -e "${GREEN} Launch script created at $LAUNCH_SCRIPT${NC}"
 echo ""
 
 # Create desktop entry
@@ -224,11 +224,11 @@ StartupNotify=true
 EOF
 
 chmod +x "$DESKTOP_FILE"
-echo -e "${GREEN}✅ Desktop entry created${NC}"
+echo -e "${GREEN} Desktop entry created${NC}"
 echo ""
 
 # Installation complete
-echo -e "${GREEN}🎉 Installation completed successfully!${NC}"
+echo -e "${GREEN} Installation completed successfully!${NC}"
 echo ""
 echo -e "${BLUE}📋 How to use:${NC}"
 echo "   1. Search for 'Link Band SDK' in your application menu"

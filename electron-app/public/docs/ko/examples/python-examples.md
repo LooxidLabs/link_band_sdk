@@ -848,9 +848,9 @@ class LinkBandUtils:
 if __name__ == "__main__":
     # 서버 상태 확인
     if LinkBandUtils.check_server_health():
-        print("✅ Link Band 서버가 정상적으로 실행 중입니다.")
+        print(" Link Band 서버가 정상적으로 실행 중입니다.")
     else:
-        print("❌ Link Band 서버에 연결할 수 없습니다.")
+        print(" Link Band 서버에 연결할 수 없습니다.")
 ```
 
 ## 참고사항
