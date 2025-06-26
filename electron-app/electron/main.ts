@@ -297,7 +297,7 @@ function addServerLog(log: string) {
 
 // Function to start the Python server
 async function startPythonServer(): Promise<ServerControlResponse> {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     if (pythonProcess) {
       console.log('Python server is already running');
       resolve({ success: false, message: 'Python server is already running', status: serverStatus });
