@@ -121,15 +121,68 @@ class DeviceManager:
 
     async def scan_devices(self) -> List[Dict[str, Any]]:
         """Scan for available BLE devices."""
-        self.logger.info("Scanning for BLE devices... (ONLY FOR LOOXID LINK BANDs)")
+        import platform
+        
+        # Windows에서는 더 긴 타임아웃과 추가 디버깅 사용
+        is_windows = platform.system() == "Windows"
+        timeout = 15.0 if is_windows else 5.0
+        
+        self.logger.info(f"Scanning for BLE devices... (ONLY FOR LOOXID LINK BANDs)")
+        if is_windows:
+            self.logger.info(f"Windows detected: Using extended timeout ({timeout}s)")
+            print(f"Windows BLE scan starting with {timeout}s timeout...")
+        
         try:
-            devices = await BleakScanner.discover(timeout=5.0)
+            # Windows에서 더 자세한 로깅
+            if is_windows:
+                print("Checking Bluetooth adapter availability...")
+                
+            devices = await BleakScanner.discover(timeout=timeout)
+            
+            if is_windows:
+                print(f"Raw scan found {len(devices)} total BLE devices")
+                if devices:
+                    print("All discovered devices:")
+                    for i, dev in enumerate(devices):
+                        print(f"  {i+1}. {dev.name or 'Unknown'} ({dev.address})")
+                else:
+                    print("No BLE devices found. Possible issues:")
+                    print("  1. Bluetooth permissions not granted")
+                    print("  2. No BLE devices in range")
+                    print("  3. Bluetooth adapter issues")
+                    print("  Run: python scripts/windows-bluetooth-check.py")
+            
+            # Filter for Link Band devices (LXB prefix)
             lx_devices = [dev for dev in devices if dev.name and dev.name.startswith("LXB")]
-            self.logger.info(f"Scan found {len(lx_devices)} devices.")
+            
+            self.logger.info(f"Scan found {len(lx_devices)} Link Band devices.")
+            
+            if is_windows:
+                if lx_devices:
+                    print(f"Found {len(lx_devices)} Link Band devices:")
+                    for dev in lx_devices:
+                        print(f"  - {dev.name} ({dev.address})")
+                else:
+                    print("No Link Band devices found.")
+                    if devices:
+                        print("Make sure your Link Band device:")
+                        print("  1. Is powered on")
+                        print("  2. Is in pairing mode")
+                        print("  3. Is within range (< 10 meters)")
+                        print("  4. Has sufficient battery")
+            
             # 필요한 정보만 추출 (이름, 주소) + 이름이 "LXB"로 시작하는 장치만 필터링
             return [{"name": dev.name, "address": dev.address} for dev in lx_devices]
+            
         except Exception as e:
             self.logger.error(f"Error during BLE scan: {e}")
+            if is_windows:
+                print(f"BLE scan error: {e}")
+                print("Troubleshooting steps:")
+                print("  1. Run as Administrator")
+                print("  2. Check Windows Bluetooth permissions")
+                print("  3. Restart Bluetooth service")
+                print("  4. Run: python scripts/windows-bluetooth-check.py")
             return []
 
     async def connect(self, address: str) -> bool:
@@ -140,20 +193,44 @@ class DeviceManager:
 
         print(f"Connecting to {address}...")
         try:
+            import platform
+            is_windows = platform.system() == "Windows"
+            
+            # Windows에서는 더 긴 타임아웃 사용
+            find_timeout = 20.0 if is_windows else 10.0
+            connect_timeout = 30.0 if is_windows else 15.0
+            
+            if is_windows:
+                print(f"Windows detected: Using extended timeouts (find: {find_timeout}s, connect: {connect_timeout}s)")
+            
             # BleakScanner.find_device_by_address를 사용해서 더 안정적으로 디바이스 찾기
-            device = await BleakScanner.find_device_by_address(address, timeout=10.0)
+            device = await BleakScanner.find_device_by_address(address, timeout=find_timeout)
             
             if not device:
                 print(f"Device {address} not found")
+                if is_windows:
+                    print("Windows troubleshooting:")
+                    print("  1. Make sure device is in pairing mode")
+                    print("  2. Try running as Administrator")
+                    print("  3. Check Windows Bluetooth permissions")
+                    print("  4. Run: python scripts/windows-bluetooth-check.py")
                 return False
 
             print(f"Found device: {device.name} ({device.address})")
             self._client = BleakClient(device, disconnected_callback=self._handle_disconnect)
             
             try:
-                await self._client.connect(timeout=15.0)  # 타임아웃 증가
+                if is_windows:
+                    print("Attempting connection with extended timeout...")
+                await self._client.connect(timeout=connect_timeout)  # Windows에서 더 긴 타임아웃
             except Exception as connect_error:
                 print(f"Connection failed: {connect_error}")
+                if is_windows:
+                    print("Windows connection troubleshooting:")
+                    print("  1. Try restarting Bluetooth adapter")
+                    print("  2. Remove device from Windows Bluetooth settings and retry")
+                    print("  3. Run as Administrator")
+                    print("  4. Check for Windows updates")
                 await self._cleanup_connection()
                 return False
 
