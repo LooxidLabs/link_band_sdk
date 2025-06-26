@@ -113,7 +113,7 @@ class WebSocketManager {
     return this.ws?.readyState === WebSocket.OPEN;
   }
 
-  connect() {
+  async connect() {
     if (this.isConnected()) {
       console.log('WebSocket is already connected');
       return;
@@ -126,60 +126,109 @@ class WebSocketManager {
     this.isConnecting = true;
     console.log('Attempting to connect to WebSocket server...', this.url);
 
-    try {
-      this.ws = new WebSocket(this.url);
+    // Platform detection
+    const isWindows = navigator.userAgent.toLowerCase().includes('windows');
+    console.log('Platform detected:', isWindows ? 'Windows' : 'Other');
+    console.log('Current location:', window.location.href);
 
-      this.ws.onopen = () => {
-        console.log('WebSocket connected successfully');
-        this.isConnecting = false;
-        this.reconnectAttempts = 0;
-        this.onConnectionChange?.(true);
-        this.startHealthCheck();
-        this.startConnectionCheck();
-      };
+    // Windows 특별 처리: 여러 URL 시도 (IPv6 포함)
+    const urlsToTry = [
+      this.url,
+      'ws://127.0.0.1:18765',
+      'ws://[::1]:18765',  // IPv6 localhost
+      'ws://0.0.0.0:18765'
+    ];
 
-      this.ws.onclose = (event) => {
-        console.log('WebSocket connection closed', event.code, event.reason);
-        this.isConnecting = false;
-        this.ws = null;
-        this.onConnectionChange?.(false);
-        
-        if (this.healthCheckTimer) {
-          clearInterval(this.healthCheckTimer);
-          this.healthCheckTimer = null;
+    for (const url of urlsToTry) {
+      console.log(`Trying WebSocket connection to: ${url}`);
+      
+      try {
+        const connected = await this.tryConnection(url);
+        if (connected) {
+          console.log(`Successfully connected to: ${url}`);
+          this.isConnecting = false;
+          return;
         }
-
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.reconnectAttempts++;
-          console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-          setTimeout(() => this.connect(), this.reconnectDelay);
-        } else {
-          console.log('Max reconnection attempts reached');
-          this.onConnectionChange?.(false);
-        }
-      };
-
-      this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        this.isConnecting = false;
-        this.ws = null;
-        this.onConnectionChange?.(false);
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          this.messageHandler(data);
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
-        }
-      };
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-      this.isConnecting = false;
-      this.ws = null;
-      this.onConnectionChange?.(false);
+      } catch (error) {
+        console.error(`Failed to connect to ${url}:`, error);
+        continue;
+      }
     }
+
+    console.error('All WebSocket connection attempts failed');
+    this.isConnecting = false;
+    this.onConnectionChange?.(false);
+  }
+
+  private tryConnection(url: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.log(`Connection timeout for ${url}`);
+        if (this.ws) {
+          this.ws.close();
+          this.ws = null;
+        }
+        resolve(false);
+      }, 3000);
+
+      try {
+        this.ws = new WebSocket(url);
+
+        this.ws.onopen = () => {
+          console.log(`WebSocket connected successfully to ${url}`);
+          clearTimeout(timeout);
+          this.reconnectAttempts = 0;
+          this.onConnectionChange?.(true);
+          this.startHealthCheck();
+          this.startConnectionCheck();
+          resolve(true);
+        };
+
+        this.ws.onclose = (event) => {
+          console.log('WebSocket connection closed', event.code, event.reason);
+          clearTimeout(timeout);
+          this.ws = null;
+          this.onConnectionChange?.(false);
+          
+          if (this.healthCheckTimer) {
+            clearInterval(this.healthCheckTimer);
+            this.healthCheckTimer = null;
+          }
+
+          if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+            setTimeout(() => this.connect(), this.reconnectDelay);
+          } else {
+            console.log('Max reconnection attempts reached');
+            this.onConnectionChange?.(false);
+          }
+          resolve(false);
+        };
+
+        this.ws.onerror = (error) => {
+          console.error(`WebSocket error for ${url}:`, error);
+          clearTimeout(timeout);
+          this.ws = null;
+          this.onConnectionChange?.(false);
+          resolve(false);
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            this.messageHandler(data);
+          } catch (error) {
+            console.error('Failed to parse WebSocket message:', error);
+          }
+        };
+
+      } catch (error) {
+        console.error(`Failed to create WebSocket for ${url}:`, error);
+        clearTimeout(timeout);
+        resolve(false);
+      }
+    });
   }
 
   disconnect() {

@@ -778,7 +778,7 @@ app.whenReady().then(() => {
           "default-src 'self'; " +
           "script-src 'self'; " +
           "style-src 'self' 'unsafe-inline'; " +
-          "connect-src 'self' http://127.0.0.1:8121 http://localhost:8121 ws://127.0.0.1:18765 ws://localhost:18765; " +
+          "connect-src 'self' http://127.0.0.1:8121 http://localhost:8121 ws://127.0.0.1:18765 ws://localhost:18765 ws://[::1]:18765; " +
           "img-src 'self' data:;"
         ]
       }
