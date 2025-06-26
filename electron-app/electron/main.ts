@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, session, shell, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, ChildProcessWithoutNullStreams, exec } from 'child_process';
 import Store from 'electron-store';
 import axios from 'axios';
 import fsExtra from 'fs-extra';
@@ -45,6 +45,76 @@ let serverStatus: ServerStatus = {
 };
 
 let serverStartTime: Date | null = null;
+
+// Function to check if a port is in use
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new (require('net').Socket)();
+    
+    socket.setTimeout(1000);
+    socket.on('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    
+    socket.on('error', () => {
+      resolve(false);
+    });
+    
+    socket.connect(port, 'localhost');
+  });
+}
+
+// Function to kill process on port (macOS/Linux)
+function killProcessOnPort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (process.platform === 'win32') {
+      // Windows command
+      exec(`netstat -ano | findstr :${port}`, (error, stdout) => {
+        if (error || !stdout) {
+          resolve(false);
+          return;
+        }
+        
+        const lines = stdout.split('\n');
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          if (parts.length >= 5 && parts[1].includes(`:${port}`)) {
+            const pid = parts[4];
+            exec(`taskkill /PID ${pid} /F`, (killError) => {
+              resolve(!killError);
+              return;
+            });
+          }
+        }
+        resolve(false);
+      });
+    } else {
+      // macOS/Linux command
+      exec(`lsof -ti:${port}`, (error, stdout) => {
+        if (error || !stdout) {
+          resolve(false);
+          return;
+        }
+        
+        const pids = stdout.trim().split('\n');
+        if (pids.length > 0 && pids[0]) {
+          exec(`kill -9 ${pids[0]}`, (killError) => {
+            console.log(`Killed process ${pids[0]} on port ${port}`);
+            resolve(!killError);
+          });
+        } else {
+          resolve(false);
+        }
+      });
+    }
+  });
+}
 
 const PROTOCOL_SCHEME = 'linkbandapp';
 const store = new Store({
@@ -324,6 +394,24 @@ async function startPythonServer(): Promise<ServerControlResponse> {
     console.log('Development mode:', isDev);
     console.log('Resources path:', process.resourcesPath);
     
+    // Check if ports are in use and free them if necessary
+    const wsPort = 18765;
+    const apiPort = 8121;
+    
+    if (await isPortInUse(wsPort)) {
+      console.log(`WebSocket port ${wsPort} is in use, attempting to free it...`);
+      await killProcessOnPort(wsPort);
+      // Wait a moment for the port to be freed
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    if (await isPortInUse(apiPort)) {
+      console.log(`API port ${apiPort} is in use, attempting to free it...`);
+      await killProcessOnPort(apiPort);
+      // Wait a moment for the port to be freed
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
     // Check if executable exists (only for absolute paths)
     if (path.isAbsolute(pythonExecutable) && !fs.existsSync(pythonExecutable)) {
       console.error(`Python executable not found at: ${pythonExecutable}`);
@@ -441,6 +529,24 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       serverStartTime = null;
       updateServerStatus({ status: 'stopped', pid: undefined, uptime: undefined });
       win?.webContents.send('python-server-stopped', { code, signal: null });
+      
+      // Auto-restart if server crashed unexpectedly (exit code 1 indicates port conflict)
+      if (code === 1 && serverStatus.status !== 'stopping') {
+        console.log('Python server crashed unexpectedly, attempting restart in 3 seconds...');
+        setTimeout(async () => {
+          try {
+            console.log('Attempting to restart Python server...');
+            const result = await startPythonServer();
+            if (result.success) {
+              console.log('Python server restarted successfully');
+            } else {
+              console.error('Failed to restart Python server:', result.message);
+            }
+          } catch (error) {
+            console.error('Error during Python server restart:', error);
+          }
+        }, 3000);
+      }
     });
 
     pythonProcess.on('error', (error) => {

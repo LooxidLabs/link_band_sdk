@@ -242,10 +242,10 @@ class DeviceManager:
                         device = await BleakScanner.find_device_by_address(address, timeout=find_timeout)
                         
                         if device:
-                            print(f"✅ Found device via find_device_by_address: {device.name} ({device.address})")
+                            print(f"Found device via find_device_by_address: {device.name} ({device.address})")
                             break
                         else:
-                            print(f"❌ find_device_by_address failed for {address}")
+                            print(f"find_device_by_address failed for {address}")
                             
                             # 두 번째 시도: 일반 스캔으로 폴백
                             print(f"Fallback: Trying general device discovery...")
@@ -256,10 +256,10 @@ class DeviceManager:
                             device = next((dev for dev in devices if dev.address.upper() == address.upper()), None)
                             
                             if device:
-                                print(f"✅ Found device via general scan: {device.name} ({device.address})")
+                                print(f"Found device via general scan: {device.name} ({device.address})")
                                 break
                             else:
-                                print(f"❌ Device {address} not found in general scan")
+                                print(f"Device {address} not found in general scan")
                                 # 발견된 디바이스들 로깅 (디버깅용)
                                 if devices:
                                     print("Available devices:")
@@ -271,12 +271,12 @@ class DeviceManager:
                                     print("No devices found during scan")
                                     
                     except Exception as scan_error:
-                        print(f"❌ Scan attempt {attempt + 1} failed: {scan_error}")
+                        print(f"Scan attempt {attempt + 1} failed: {scan_error}")
                         if attempt == max_retries:
                             print(f"All scan attempts failed")
             
             if not device:
-                print(f"❌ Device {address} not found after all attempts")
+                print(f"Device {address} not found after all attempts")
                 if is_windows:
                     print("Windows troubleshooting:")
                     print("  1. Make sure device is in pairing mode")
@@ -311,19 +311,19 @@ class DeviceManager:
                 await self._cleanup_connection()
                 return False
 
-            print(f"✅ BLE connection established")
+            print(f"BLE connection established")
             
             # 서비스 디스커버리 명시적 수행 및 대기
-            print("🔍 Performing service discovery...")
+            print("Performing service discovery...")
             try:
                 # 서비스 디스커버리 수행
                 services = await self._client.get_services()
                 if not services:
-                    print("❌ No services found")
+                    print("No services found")
                     await self._cleanup_connection()
                     return False
                 
-                print(f"✅ Service discovery completed. Found {len(services.services)} services")
+                print(f"Service discovery completed. Found {len(services.services)} services")
                 
                 # 중요한 특성들이 존재하는지 확인
                 required_chars = [EEG_NOTIFY_CHAR_UUID, PPG_CHAR_UUID, ACCELEROMETER_CHAR_UUID]
@@ -338,18 +338,18 @@ class DeviceManager:
                         missing_chars.append(char_uuid)
                 
                 if missing_chars:
-                    print(f"❌ Missing required characteristics: {missing_chars}")
+                    print(f"Missing required characteristics: {missing_chars}")
                     await self._cleanup_connection()
                     return False
                 
-                print("✅ All required characteristics found")
+                print("All required characteristics found")
                 
                 # 서비스가 완전히 준비될 때까지 잠시 대기
-                print("⏳ Waiting for services to stabilize...")
+                print("Waiting for services to stabilize...")
                 await asyncio.sleep(2)
                 
             except Exception as service_error:
-                print(f"❌ Service discovery failed: {service_error}")
+                print(f"Service discovery failed: {service_error}")
                 await self._cleanup_connection()
                 return False
 
@@ -358,25 +358,25 @@ class DeviceManager:
             raw_name = getattr(self._client, 'name', None) or device.name
             self.device_name = str(raw_name) if raw_name is not None else self.device_address
             self._connection_status = DeviceStatus.CONNECTED
-            print(f"🎉 Connected to {self.device_name} ({self.device_address})")
+            print(f"Connected to {self.device_name} ({self.device_address})")
             
             # 배터리 모니터링 먼저 시작 (실패해도 계속 진행)
-            print("🔋 Starting battery monitoring...")
+            print("Starting battery monitoring...")
             battery_success = await self.start_battery_monitoring()
             if not battery_success:
-                print("⚠️ Battery monitoring failed, but continuing...")
+                print("Battery monitoring failed, but continuing...")
             else:
-                print("✅ Battery monitoring started")
+                print("Battery monitoring started")
             
             # 연결 성공 후 자동으로 데이터 수집 시작
-            print("📊 Starting data acquisition...")
+            print("Starting data acquisition...")
             acquisition_success = await self.start_data_acquisition()
             if not acquisition_success:
-                print("❌ Data acquisition failed")
+                print("Data acquisition failed")
                 await self._cleanup_connection()
                 return False
             else:
-                print("✅ Data acquisition started")
+                print("Data acquisition started")
             
             return True
                 

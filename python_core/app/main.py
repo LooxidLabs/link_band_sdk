@@ -45,7 +45,7 @@ app = FastAPI(
     - **Device Registry**: Register frequently used devices for quick access
     - **Status Monitoring**: Real-time device status and battery monitoring
 
-    ### 📊 Real-time Data Streaming
+    ### Real-time Data Streaming
     - **WebSocket Server**: High-performance real-time data streaming
     - **Multi-sensor Data**: EEG, PPG, ACC, and battery data
     - **Signal Processing**: Real-time filtering and processing
@@ -170,7 +170,15 @@ app.include_router(router_data_center.router, prefix="/data", tags=["data_center
 
 @app.on_event("startup")
 async def startup_event():
+    from app.core.utils import ensure_port_available
+    
     print("Starting Link Band SDK Server...")
+
+    # Ensure required ports are available
+    ws_host = "localhost" 
+    ws_port = 18765
+    if not ensure_port_available(ws_port):
+        print(f"Failed to free WebSocket port {ws_port}, server may fail to start")
 
     # Initialize core services
     db_manager_instance = DatabaseManager(db_path="database/data_center.db")
@@ -185,8 +193,6 @@ async def startup_event():
     app.state.data_recorder = DataRecorder(data_dir=data_dir)
     print("Data recorder initialized")
 
-    ws_host = "localhost" 
-    ws_port = 18765
     app.state.ws_server = WebSocketServer(
         host=ws_host, 
         port=ws_port, 
