@@ -278,7 +278,8 @@ type DeviceStateMethods = {
 type DeviceState = DeviceStateData & DeviceStateMethods;
 
 const MAX_DATA_POINTS = 1000;
-const WS_URL = 'ws://127.0.0.1:18765';
+// Windows 호환성을 위해 localhost 사용
+const WS_URL = 'ws://localhost:18765';
 
 const initialConnectionQuality: ConnectionQuality = {
   signal: 'Unknown',
