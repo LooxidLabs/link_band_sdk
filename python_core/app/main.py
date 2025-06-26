@@ -170,20 +170,20 @@ app.include_router(router_data_center.router, prefix="/data", tags=["data_center
 
 @app.on_event("startup")
 async def startup_event():
-    print("🚀 Starting Link Band SDK Server...")
+    print("Starting Link Band SDK Server...")
 
     # Initialize core services
     db_manager_instance = DatabaseManager(db_path="database/data_center.db")
     app.state.db_manager = db_manager_instance
-    print("✓ Database initialized")
+    print("Database initialized")
 
     app.state.device_registry = DeviceRegistry()
     app.state.device_manager = DeviceManager(registry=app.state.device_registry) 
-    print("✓ Device manager initialized")
+    print("Device manager initialized")
 
     data_dir = "data"
     app.state.data_recorder = DataRecorder(data_dir=data_dir)
-    print("✓ Data recorder initialized")
+    print("Data recorder initialized")
 
     ws_host = "localhost" 
     ws_port = 18765
@@ -194,7 +194,7 @@ async def startup_event():
         device_manager=app.state.device_manager,
         device_registry=app.state.device_registry
     )
-    print("✓ WebSocket server configured")
+    print("WebSocket server configured")
 
     app.state.device_service = DeviceService(device_manager=app.state.device_manager)
     app.state.recording_service = RecordingService(
@@ -203,40 +203,40 @@ async def startup_event():
         ws_server=app.state.ws_server
     )
     app.state.stream_service = StreamService(ws_server=app.state.ws_server)
-    print("✓ Services initialized")
+    print("Services initialized")
 
     try:
         await app.state.ws_server.start()
-        print(f"✓ WebSocket server started on {ws_host}:{ws_port}")
+        print(f"WebSocket server started on {ws_host}:{ws_port}")
     except Exception as e:
-        print(f"❌ Error starting WebSocket server: {e}")
+        print(f"Error starting WebSocket server: {e}")
         
     try:
         await app.state.stream_service.init_stream() 
-        print("✓ Stream service ready")
+        print("Stream service ready")
     except Exception as e:
-        print(f"❌ Error initializing stream service: {e}")
+        print(f"Error initializing stream service: {e}")
     
-    print("🎉 Link Band SDK Server ready!")
+    print("Link Band SDK Server ready!")
     print("WebSocket server initialized")  # Signal for Electron main process
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    print("🛑 Shutting down Link Band SDK Server...")
+    print("Shutting down Link Band SDK Server...")
     if hasattr(app.state, 'stream_service') and app.state.stream_service:
         try:
             await app.state.stream_service.stop_stream()
-            print("✓ Stream service stopped")
+            print("Stream service stopped")
         except Exception as e:
-            print(f"❌ Error stopping stream service: {e}")
+            print(f"Error stopping stream service: {e}")
     
     if hasattr(app.state, 'ws_server') and app.state.ws_server:
         try:
             await app.state.ws_server.stop()
-            print("✓ WebSocket server stopped")
+            print("WebSocket server stopped")
         except Exception as e:
-            print(f"❌ Error stopping WebSocket server: {e}")
-    print("👋 Link Band SDK Server stopped")
+            print(f"Error stopping WebSocket server: {e}")
+    print("Link Band SDK Server stopped")
 
 @app.get("/")
 async def read_root():
