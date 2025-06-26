@@ -313,44 +313,75 @@ class WebSocketServer:
         """Periodically check and connect to registered devices"""
         print("🔄 Auto-connect loop started")
         connection_attempts = {}  # 각 디바이스별 연결 시도 횟수 추적
+        last_scan_time = 0
+        scan_interval = 30  # 30초마다 스캔
+        
         while True:
             try:
+                current_time = time.time()
+                
                 # 연결된 디바이스가 없으면 등록된 디바이스 중 하나를 연결
                 if not self.device_manager.is_connected():
                     registered_devices = self.device_registry.get_registered_devices()
                     if registered_devices:
+                        # 주기적으로 스캔 실행 (디바이스 캐시 업데이트)
+                        if current_time - last_scan_time > scan_interval:
+                            print("🔍 Updating device cache via scan...")
+                            try:
+                                await self.device_manager.scan_devices()
+                                last_scan_time = current_time
+                                print("✅ Device cache updated")
+                            except Exception as scan_error:
+                                print(f"⚠️ Scan failed during auto-connect: {scan_error}")
+                        
                         for device in registered_devices:
                             address = device.get('address')
                             if address:
-                                # 연결 시도 횟수 제한 (5번 실패 후 30초 대기)
+                                # 연결 시도 횟수 제한 (3번 실패 후 60초 대기)
                                 if address not in connection_attempts:
                                     connection_attempts[address] = {'count': 0, 'last_attempt': 0}
                                 
-                                current_time = time.time()
                                 attempt_info = connection_attempts[address]
                                 
-                                # 5번 연속 실패 후 30초 대기
-                                if attempt_info['count'] >= 5:
-                                    if current_time - attempt_info['last_attempt'] < 30:
+                                # 3번 연속 실패 후 60초 대기
+                                if attempt_info['count'] >= 3:
+                                    if current_time - attempt_info['last_attempt'] < 60:
                                         continue  # 아직 대기 시간
                                     else:
                                         attempt_info['count'] = 0  # 대기 시간 끝, 재시도
                                 
-                                print(f"Auto-connecting to {address} (attempt {attempt_info['count'] + 1})")
+                                # 마지막 시도로부터 최소 15초 간격 유지
+                                if current_time - attempt_info['last_attempt'] < 15:
+                                    continue
+                                
+                                print(f"🔍 Auto-connecting to {address} (attempt {attempt_info['count'] + 1}/3)")
                                 attempt_info['last_attempt'] = current_time
                                 attempt_info['count'] += 1
                                 
-                                await self._run_connect_and_notify(address)
-                                if self.device_manager.is_connected():
-                                    print(f"Successfully connected to {address}")
+                                # 캐시된 디바이스 사용해서 연결 시도 (스캔 중복 방지)
+                                success = await self.device_manager.connect(address, use_cached_device=True)
+                                if success:
+                                    print(f"✅ Successfully auto-connected to {address}")
                                     connection_attempts[address]['count'] = 0  # 성공 시 카운터 리셋
+                                    # 연결 성공 이벤트 브로드캐스트
+                                    await self.broadcast_event(EventType.DEVICE_CONNECTED, {
+                                        "address": address,
+                                        "name": self.device_manager.device_name or "Unknown",
+                                        "connection_type": "auto"
+                                    })
                                     break
-                await asyncio.sleep(6)  # 6초마다 체크 (더 긴 간격)
+                                else:
+                                    print(f"❌ Auto-connect failed to {address}")
+                
+                # 15초마다 체크 (더 긴 간격으로 시스템 부하 감소)
+                await asyncio.sleep(15)
+                
             except asyncio.CancelledError:
+                print("🛑 Auto-connect loop cancelled")
                 break
             except Exception as e:
-                print(f"Auto-connect error: {e}")
-                await asyncio.sleep(6)
+                print(f"❌ Auto-connect error: {e}")
+                await asyncio.sleep(15)
 
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
         """Handle messages from clients"""

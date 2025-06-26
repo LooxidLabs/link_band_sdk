@@ -115,6 +115,11 @@ class DeviceManager:
 
         self.processed_data_callbacks = []
 
+        # 스캔 캐시 (스캔 결과를 일정 시간 캐시)
+        self._cached_devices: List[Any] = []
+        self._cache_timestamp = 0
+        self._cache_duration = 30  # 30초간 캐시 유지
+
     @property
     def battery_buffer(self):
         return self._battery_buffer
@@ -123,9 +128,9 @@ class DeviceManager:
         """Scan for available BLE devices."""
         import platform
         
-        # Windows에서는 더 긴 타임아웃과 추가 디버깅 사용
+        # 모든 플랫폼에서 일관된 타임아웃 사용 (Windows는 조금 더 길게)
         is_windows = platform.system() == "Windows"
-        timeout = 15.0 if is_windows else 5.0
+        timeout = 12.0 if is_windows else 8.0
         
         self.logger.info(f"Scanning for BLE devices... (ONLY FOR LOOXID LINK BANDs)")
         if is_windows:
@@ -154,6 +159,10 @@ class DeviceManager:
             
             # Filter for Link Band devices (LXB prefix)
             lx_devices = [dev for dev in devices if dev.name and dev.name.startswith("LXB")]
+            
+            # 스캔 결과를 캐시에 저장
+            self._cached_devices = devices  # 전체 디바이스 목록 캐시
+            self._cache_timestamp = time.time()
             
             self.logger.info(f"Scan found {len(lx_devices)} Link Band devices.")
             
@@ -185,7 +194,7 @@ class DeviceManager:
                 print("  4. Run: python scripts/windows-bluetooth-check.py")
             return []
 
-    async def connect(self, address: str) -> bool:
+    async def connect(self, address: str, use_cached_device: bool = False) -> bool:
         """Connect to a specific BLE device by address."""
         if self._connection_status == DeviceStatus.CONNECTED and self._client:
             print(f"Already connected to {self.device_address}")
@@ -197,14 +206,22 @@ class DeviceManager:
             is_windows = platform.system() == "Windows"
             
             # Windows에서는 더 긴 타임아웃 사용
-            find_timeout = 20.0 if is_windows else 10.0
-            connect_timeout = 30.0 if is_windows else 15.0
+            find_timeout = 15.0 if is_windows else 10.0
+            connect_timeout = 25.0 if is_windows else 15.0
             
             if is_windows:
                 print(f"Windows detected: Using extended timeouts (find: {find_timeout}s, connect: {connect_timeout}s)")
             
-            # BleakScanner.find_device_by_address를 사용해서 더 안정적으로 디바이스 찾기
-            device = await BleakScanner.find_device_by_address(address, timeout=find_timeout)
+            # 캐시된 디바이스가 있고 use_cached_device가 True면 스캔 건너뛰기
+            device = None
+            if use_cached_device and hasattr(self, '_cached_devices'):
+                device = next((dev for dev in self._cached_devices if dev.address == address), None)
+                if device:
+                    print(f"Using cached device: {device.name} ({device.address})")
+            
+            if not device:
+                # BleakScanner.find_device_by_address를 사용해서 더 안정적으로 디바이스 찾기
+                device = await BleakScanner.find_device_by_address(address, timeout=find_timeout)
             
             if not device:
                 print(f"Device {address} not found")
@@ -234,31 +251,80 @@ class DeviceManager:
                 await self._cleanup_connection()
                 return False
 
-            if self._client.is_connected:
-                # Ensure address and name are stored as strings immediately
-                self.device_address = str(address) 
-                raw_name = getattr(self._client, 'name', None) or device.name
-                self.device_name = str(raw_name) if raw_name is not None else self.device_address
-                self._connection_status = DeviceStatus.CONNECTED
-                print(f"Connected to {self.device_name} ({self.device_address})")
-                
-                # 배터리 모니터링 먼저 시작
-                battery_success = await self.start_battery_monitoring()
-                if not battery_success:
-                    print("Battery monitoring failed")
-                
-                # 연결 성공 후 자동으로 데이터 수집 시작
-                acquisition_success = await self.start_data_acquisition()
-                if not acquisition_success:
-                    print("Data acquisition failed")
-                    await self._cleanup_connection()
-                    return False
-                
-                return True
-            else:
+            # 연결 상태 확인
+            if not self._client or not self._client.is_connected:
                 print(f"Connection verification failed")
                 await self._cleanup_connection()
                 return False
+
+            print(f"✅ BLE connection established")
+            
+            # 서비스 디스커버리 명시적 수행 및 대기
+            print("🔍 Performing service discovery...")
+            try:
+                # 서비스 디스커버리 수행
+                services = await self._client.get_services()
+                if not services:
+                    print("❌ No services found")
+                    await self._cleanup_connection()
+                    return False
+                
+                print(f"✅ Service discovery completed. Found {len(services.services)} services")
+                
+                # 중요한 특성들이 존재하는지 확인
+                required_chars = [EEG_NOTIFY_CHAR_UUID, PPG_CHAR_UUID, ACCELEROMETER_CHAR_UUID]
+                missing_chars = []
+                
+                for char_uuid in required_chars:
+                    try:
+                        char = services.get_characteristic(char_uuid)
+                        if not char:
+                            missing_chars.append(char_uuid)
+                    except Exception:
+                        missing_chars.append(char_uuid)
+                
+                if missing_chars:
+                    print(f"❌ Missing required characteristics: {missing_chars}")
+                    await self._cleanup_connection()
+                    return False
+                
+                print("✅ All required characteristics found")
+                
+                # 서비스가 완전히 준비될 때까지 잠시 대기
+                print("⏳ Waiting for services to stabilize...")
+                await asyncio.sleep(2)
+                
+            except Exception as service_error:
+                print(f"❌ Service discovery failed: {service_error}")
+                await self._cleanup_connection()
+                return False
+
+            # Ensure address and name are stored as strings immediately
+            self.device_address = str(address) 
+            raw_name = getattr(self._client, 'name', None) or device.name
+            self.device_name = str(raw_name) if raw_name is not None else self.device_address
+            self._connection_status = DeviceStatus.CONNECTED
+            print(f"🎉 Connected to {self.device_name} ({self.device_address})")
+            
+            # 배터리 모니터링 먼저 시작 (실패해도 계속 진행)
+            print("🔋 Starting battery monitoring...")
+            battery_success = await self.start_battery_monitoring()
+            if not battery_success:
+                print("⚠️ Battery monitoring failed, but continuing...")
+            else:
+                print("✅ Battery monitoring started")
+            
+            # 연결 성공 후 자동으로 데이터 수집 시작
+            print("📊 Starting data acquisition...")
+            acquisition_success = await self.start_data_acquisition()
+            if not acquisition_success:
+                print("❌ Data acquisition failed")
+                await self._cleanup_connection()
+                return False
+            else:
+                print("✅ Data acquisition started")
+            
+            return True
                 
         except Exception as e:
             self.logger.error(f"Error connecting to {address}: {e}", exc_info=True)
@@ -365,6 +431,12 @@ class DeviceManager:
             return True
 
         self.logger.info("Starting data acquisition (EEG, PPG, ACC)...")
+        
+        # 서비스가 준비되었는지 확인
+        if not self._client.services:
+            self.logger.warning("Services not ready for data acquisition")
+            return False
+        
         success = True
         try:
             self.logger.info(f"Starting notify for EEG ({EEG_NOTIFY_CHAR_UUID})...")
@@ -640,24 +712,53 @@ class DeviceManager:
 
         try:
             self.logger.info("Starting battery monitoring...")
-            # 먼저 현재 배터리 수준을 읽어옴
-            battery_data = await self._client.read_gatt_char(BATTERY_CHAR_UUID)
-            initial_battery_level = int.from_bytes(battery_data, 'little')
             
-            # 초기 배터리 값을 버퍼에 추가
-            timestamp = time.time()
-            battery_data = {
-                "timestamp": timestamp,
-                "level": initial_battery_level
-            }
-            self._add_to_buffer(self._battery_buffer, battery_data, self.BATTERY_BUFFER_SIZE)
-            self.logger.info(f"Initial battery level: {initial_battery_level}%")
+            # 서비스가 준비되었는지 확인
+            if not self._client.services:
+                self.logger.warning("Services not ready, attempting to get services...")
+                try:
+                    await self._client.get_services()
+                except Exception as service_error:
+                    self.logger.error(f"Failed to get services for battery monitoring: {service_error}")
+                    return False
+            
+            # 배터리 특성이 존재하는지 확인
+            try:
+                battery_char = self._client.services.get_characteristic(BATTERY_CHAR_UUID)
+                if not battery_char:
+                    self.logger.warning("Battery characteristic not found, skipping battery monitoring")
+                    return False
+            except Exception as char_error:
+                self.logger.warning(f"Error accessing battery characteristic: {char_error}")
+                return False
+            
+            # 먼저 현재 배터리 수준을 읽어옴
+            try:
+                battery_data = await self._client.read_gatt_char(BATTERY_CHAR_UUID)
+                initial_battery_level = int.from_bytes(battery_data, 'little')
+                
+                # 초기 배터리 값을 버퍼에 추가
+                timestamp = time.time()
+                battery_data = {
+                    "timestamp": timestamp,
+                    "level": initial_battery_level
+                }
+                self._add_to_buffer(self._battery_buffer, battery_data, self.BATTERY_BUFFER_SIZE)
+                self.logger.info(f"Initial battery level: {initial_battery_level}%")
+            except Exception as read_error:
+                self.logger.warning(f"Could not read initial battery level: {read_error}")
+                # 초기 읽기 실패는 치명적이지 않음
             
             # 배터리 수준 변경 알림 시작
-            await self._client.start_notify(BATTERY_CHAR_UUID, self._handle_battery)
-            self.battery_running = True
-            self.logger.info("Battery monitoring started successfully.")
-            return True
+            try:
+                await self._client.start_notify(BATTERY_CHAR_UUID, self._handle_battery)
+                self.battery_running = True
+                self.logger.info("Battery monitoring started successfully.")
+                return True
+            except Exception as notify_error:
+                self.logger.warning(f"Could not start battery notifications: {notify_error}")
+                return False
+                
         except Exception as e:
             self.logger.error(f"Error starting battery monitoring: {e}", exc_info=True)
             return False
