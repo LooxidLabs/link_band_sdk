@@ -267,12 +267,8 @@ async function startPythonServer(): Promise<ServerControlResponse> {
         if (fs.existsSync(venvPython)) {
           pythonExecutable = venvPython;
         } else {
-          // Fallback to system python - use 'python' on Windows, 'python3' on others
-          if (process.platform === 'win32') {
-            pythonExecutable = 'python';
-          } else {
-            pythonExecutable = 'python3';
-          }
+          // Fallback to system python3 (available on all platforms including Windows)
+          pythonExecutable = 'python3';
         }
       } else {
         // Production mode - use standalone Python server
