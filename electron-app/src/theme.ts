@@ -16,7 +16,6 @@ export const theme = createTheme({
   },
   typography: {
     fontFamily: [
-      'Pretendard',
       '-apple-system',
       'BlinkMacSystemFont',
       'system-ui',

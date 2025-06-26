@@ -33,11 +33,11 @@ const EngineModule: React.FC = () => {
     isLoading: serverLoading,
     lastMessage: serverMessage,
     isRunning: serverRunning,
+    isVerifyingMetrics,
     startServer,
     stopServer,
     restartServer,
-    clearLogs,
-    setRunning
+    clearLogs
   } = usePythonServerStore();
 
   // Debug logging
@@ -52,22 +52,6 @@ const EngineModule: React.FC = () => {
     
     startPolling();
     startMetricsPolling();
-    
-    // Force refresh server status on mount
-    const refreshServerStatus = async () => {
-      try {
-        const status = await (window as any).electron.pythonServer.getStatus();
-        console.log('Force refreshed server status:', status);
-        setRunning(status.status === 'running');
-      } catch (error) {
-        console.error('Failed to force refresh server status:', error);
-      }
-    };
-    
-    // Refresh multiple times to ensure we get the correct status
-    refreshServerStatus();
-    setTimeout(refreshServerStatus, 500);
-    setTimeout(refreshServerStatus, 1500);
     
     return () => {
       stopPolling();
@@ -99,36 +83,19 @@ const EngineModule: React.FC = () => {
 
   const handleServerStart = async () => {
     try {
-      // Immediately update UI state for responsiveness
-      setRunning(true);
-      
-      // Start server with 3-second timeout for UI responsiveness
-      const startPromise = startServer();
-      const timeoutPromise = new Promise<void>((resolve) => {
-        setTimeout(() => {
-          console.log('Server start UI timeout reached, assuming success');
-          resolve();
-        }, 3000);
-      });
-      
-      // Race between actual start and timeout
-      await Promise.race([startPromise, timeoutPromise]);
-      
+      // Don't update UI state immediately - let the store handle it
+      await startServer();
       // setNotification({ message: 'Python server is starting...', type: 'info' });
     } catch (e) {
-      // Revert on error
-      setRunning(false);
       // setNotification({ message: 'Failed to start Python server', type: 'error' });
     }
   };
 
   const handleServerStop = async () => {
     try {
-      // Immediately update UI state for responsiveness
-      setRunning(false);
+      // Don't update UI state immediately - let the store handle it
       await stopServer();
     } catch (e) {
-      // Revert on error (though this is less likely to be needed for stop)
       // setNotification({ message: 'Failed to stop Python server', type: 'error' });
     }
   };
@@ -141,16 +108,21 @@ const EngineModule: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (status: string, isConnected?: boolean) => {
+  const getStatusBadge = (status: string, isConnected?: boolean, isVerifyingMetrics?: boolean) => {
     if (isConnected === false) {
       return <Badge variant="destructive">Disconnected</Badge>;
     }
     
     switch (status) {
       case 'running':
-        return <Badge className="bg-green-600">Running</Badge>;
+        return <Badge className="bg-green-600">Started</Badge>;
       case 'starting':
-        return <Badge className="bg-yellow-600">Starting</Badge>;
+        return (
+          <Badge className="bg-yellow-600 flex items-center gap-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            {isVerifyingMetrics ? 'Loading...' : 'Starting'}
+          </Badge>
+        );
       case 'stopping':
         return <Badge className="bg-orange-600">Stopping</Badge>;
       case 'stopped':
@@ -179,7 +151,7 @@ const EngineModule: React.FC = () => {
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-400">Status:</span>
-                {getStatusBadge(serverStatus.status)}
+                {getStatusBadge(serverStatus.status, undefined, isVerifyingMetrics)}
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-400">Port:</span>

@@ -56,6 +56,7 @@ declare global {
       };
       fs: {
         readMarkdownFile: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+        getDefaultExportPath: () => Promise<{ success: boolean; path: string; error?: string }>;
       };
       updater: {
         onUpdateChecking: (callback: () => void) => () => void;

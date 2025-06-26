@@ -538,6 +538,10 @@ class WebSocketServer:
                 await self.broadcast_event(EventType.DEVICE_CONNECTED, safe_device_info)
                 logger.info(f"Device connected: {safe_device_info}")
                 
+                # Wait a moment for WebSocket clients to connect before starting streaming
+                logger.info("Waiting 2 seconds for WebSocket clients to connect...")
+                await asyncio.sleep(2)
+                
                 # Automatically start streaming after successful connection
                 await self.start_streaming()
             else:
@@ -619,12 +623,20 @@ class WebSocketServer:
                 logger.warning(msg)
                 if websocket: await self.send_error_to_client(websocket, msg)
                 return
+            
+            # Wait a moment for data acquisition to stabilize
+            logger.info("Waiting 1 second for data acquisition to stabilize...")
+            await asyncio.sleep(1)
 
         # Start battery monitoring if not already running
         if not self.device_manager.battery_running:
             logger.info("Battery monitoring not started, attempting to start...")
             if not await self.device_manager.start_battery_monitoring():
                 logger.warning("Failed to start battery monitoring, but continuing with other streams")
+            else:
+                # Wait a moment for battery monitoring to stabilize
+                logger.info("Waiting 0.5 seconds for battery monitoring to stabilize...")
+                await asyncio.sleep(0.5)
 
         if not self.is_streaming:
             self.is_streaming = True

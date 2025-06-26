@@ -639,6 +639,19 @@ export const useDeviceManager = create<DeviceState & {
             if (get().autoShowWindow) {
               window.electron?.ipcRenderer?.send('show-window');
             }
+            
+            // 디바이스 연결 즉시 engine WebSocket 연결 시도
+            // 이를 통해 스트리밍 시작과 동시에 데이터를 받을 수 있음
+            setTimeout(() => {
+              const engineStore = (window as any).engineStore;
+              if (engineStore && engineStore.getState) {
+                const { wsManager } = engineStore.getState();
+                if (wsManager && !wsManager.isConnected()) {
+                  console.log('Device connected - attempting engine WebSocket connection');
+                  wsManager.connect();
+                }
+              }
+            }, 1000); // 1초 후 연결 시도
           }
           break;
         case 'device_disconnected':

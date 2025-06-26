@@ -1,17 +1,12 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, session, shell, dialog } from 'electron';
-import pkg from 'electron-updater';
-const { autoUpdater } = pkg;
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import Store from 'electron-store';
 import axios from 'axios';
 import fsExtra from 'fs-extra';
-import { fileURLToPath } from 'url';
+import * as os from 'os';
 
-// ES module equivalent of __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 type StoreSchema = {
   savedCredentials: {
@@ -69,6 +64,72 @@ interface PrepareExportResponse {
   zip_filename?: string;
   download_url?: string;
   full_server_zip_path?: string;
+}
+
+// Function to get the default export directory path for each OS
+function getDefaultExportPath(): string {
+  const appName = 'LinkBand';
+  const platform = os.platform();
+  
+  switch (platform) {
+    case 'win32':
+      // Windows: %APPDATA%/LinkBand/Exports
+      return path.join(app.getPath('userData'), 'Exports');
+    
+    case 'darwin':
+      // macOS: ~/Library/Application Support/LinkBand/Exports
+      return path.join(app.getPath('userData'), 'Exports');
+    
+    case 'linux':
+      // Linux: ~/.config/LinkBand/Exports or $XDG_CONFIG_HOME/LinkBand/Exports
+      return path.join(app.getPath('userData'), 'Exports');
+    
+    default:
+      // Fallback to userData/Exports for other platforms
+      return path.join(app.getPath('userData'), 'Exports');
+  }
+}
+
+// Function to ensure the default export directory exists
+async function ensureDefaultExportDirectory(): Promise<{ success: boolean; path: string; error?: string }> {
+  try {
+    const defaultPath = getDefaultExportPath();
+    
+    // Check if directory exists
+    const exists = await fsExtra.pathExists(defaultPath);
+    
+    if (!exists) {
+      // Create directory with full permissions
+      await fsExtra.ensureDir(defaultPath);
+      console.log(`Created default export directory: ${defaultPath}`);
+    } else {
+      console.log(`Default export directory already exists: ${defaultPath}`);
+    }
+    
+    // Verify the directory is writable
+    try {
+      await fsExtra.access(defaultPath, fs.constants.W_OK);
+    } catch (accessError) {
+      return {
+        success: false,
+        path: defaultPath,
+        error: 'Directory exists but is not writable'
+      };
+    }
+    
+    return {
+      success: true,
+      path: defaultPath
+    };
+    
+  } catch (error: any) {
+    console.error('Error ensuring default export directory:', error);
+    return {
+      success: false,
+      path: getDefaultExportPath(),
+      error: error.message || 'Failed to create directory'
+    };
+  }
 }
 
 function showWindow() {
@@ -141,114 +202,7 @@ async function gracefulShutdown() {
   }
 }
 
-// Auto-updater configuration
-function configureAutoUpdater() {
-  console.log('Configuring auto-updater...');
-  
-  // Configure autoUpdater settings
-  autoUpdater.autoDownload = false; // Don't auto-download, ask user first
-  autoUpdater.autoInstallOnAppQuit = true;
-  
-  // Check for updates on startup (after a delay)
-  setTimeout(() => {
-    autoUpdater.checkForUpdatesAndNotify();
-  }, 3000); // Wait 3 seconds after startup
-  
-  autoUpdater.on('checking-for-update', () => {
-    console.log('Checking for update...');
-    win?.webContents.send('update-checking');
-  });
 
-  autoUpdater.on('update-available', (info: any) => {
-    console.log('Update available:', info);
-    win?.webContents.send('update-available', info);
-    
-    // Ask user if they want to download the update
-    const dialogOpts = {
-      type: 'info' as const,
-      buttons: ['Download Now', 'Later'],
-      title: 'Update Available',
-      message: `A new version (${info.version}) is available!`,
-      detail: 'Would you like to download it now? The update will be installed when you restart the application.'
-    };
-
-    dialog.showMessageBox(dialogOpts).then((returnValue) => {
-      if (returnValue.response === 0) {
-        autoUpdater.downloadUpdate();
-      }
-    });
-  });
-
-  autoUpdater.on('update-not-available', (info: any) => {
-    console.log('Update not available:', info);
-    win?.webContents.send('update-not-available', info);
-  });
-
-  autoUpdater.on('error', (err: any) => {
-    console.log('Error in auto-updater:', err);
-    win?.webContents.send('update-error', err);
-  });
-
-  autoUpdater.on('download-progress', (progressObj: any) => {
-    let log_message = "Download speed: " + progressObj.bytesPerSecond;
-    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
-    log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
-    console.log(log_message);
-    win?.webContents.send('update-download-progress', progressObj);
-  });
-
-  autoUpdater.on('update-downloaded', (info: any) => {
-    console.log('Update downloaded:', info);
-    win?.webContents.send('update-downloaded', info);
-    
-    // Show dialog to restart and install update
-    const dialogOpts = {
-      type: 'info' as const,
-      buttons: ['Restart', 'Later'],
-      title: 'Application Update',
-      message: 'A new version has been downloaded. Restart the application to apply the update?',
-      detail: 'The update will be applied when you restart the application.'
-    };
-
-    dialog.showMessageBox(dialogOpts).then((returnValue) => {
-      if (returnValue.response === 0) autoUpdater.quitAndInstall();
-    });
-  });
-
-  // IPC handlers for manual update check
-  ipcMain.handle('check-for-updates', async () => {
-    try {
-      console.log('Manual update check requested');
-      const result = await autoUpdater.checkForUpdates();
-      return { success: true, updateInfo: result };
-    } catch (error: any) {
-      console.error('Error checking for updates:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('download-update', async () => {
-    try {
-      console.log('Manual update download requested');
-      await autoUpdater.downloadUpdate();
-      return { success: true };
-    } catch (error: any) {
-      console.error('Error downloading update:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('quit-and-install', () => {
-    try {
-      console.log('Quit and install requested');
-      autoUpdater.quitAndInstall();
-      return { success: true };
-    } catch (error: any) {
-      console.error('Error installing update:', error);
-      return { success: false, error: error.message };
-    }
-  });
-}
 
 // Tray functionality disabled for standalone desktop app
 // function createTray() {
@@ -280,6 +234,13 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       return;
     }
 
+    // Prevent multiple simultaneous start attempts
+    if (serverStatus.status === 'starting') {
+      console.log('Python server is already starting, rejecting duplicate request');
+      resolve({ success: false, message: 'Python server is already starting', status: serverStatus });
+      return;
+    }
+
     try {
       console.log('Starting Python server...');
       
@@ -304,35 +265,62 @@ async function startPythonServer(): Promise<ServerControlResponse> {
           pythonExecutable = 'python3';
         }
       } else {
-        // Production mode - use system Python
+        // Production mode - use standalone Python server
         const resourcesPath = process.resourcesPath;
-        pythonPath = path.join(resourcesPath, 'python_core', 'run_server.py');
         
-        // Use system Python (installed by installer scripts)
-        pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+        // Determine which standalone server to use based on architecture
+        const arch = process.arch;
+        let serverName: string;
         
-        console.log('Using system Python:', pythonExecutable);
+        if (process.platform === 'darwin') {
+          if (arch === 'arm64') {
+            serverName = 'linkband-server-macos-arm64-final';
+          } else {
+            serverName = 'linkband-server-macos-x64';
+          }
+        } else if (process.platform === 'win32') {
+          serverName = 'linkband-server-windows.exe';
+        } else {
+          serverName = 'linkband-server-linux';
+        }
+        
+        pythonExecutable = path.join(resourcesPath, serverName);
+        pythonPath = ''; // No script path needed for standalone executable
+        
+        console.log('Using standalone Python server:', pythonExecutable);
+        console.log('Architecture:', arch);
+        console.log('Platform:', process.platform);
       }
     
-    console.log('Starting Python server from:', pythonPath);
+    console.log('Starting Python server from:', pythonPath || 'standalone executable');
     console.log('Using Python executable:', pythonExecutable);
     console.log('Development mode:', isDev);
     console.log('Resources path:', process.resourcesPath);
     
     // Check if executable exists
-    if (!fs.existsSync(pythonExecutable) && !isDev) {
+    if (!fs.existsSync(pythonExecutable)) {
       console.error(`Python executable not found at: ${pythonExecutable}`);
       updateServerStatus({ status: 'error', lastError: `Python executable not found: ${pythonExecutable}` });
       resolve({ success: false, message: `Python executable not found: ${pythonExecutable}`, status: serverStatus });
       return;
     }
     
-    // Check if Python script exists
-    if (pythonPath && !fs.existsSync(pythonPath)) {
+    // Check if Python script exists (only for development mode)
+    if (isDev && pythonPath && !fs.existsSync(pythonPath)) {
       console.error(`Python script not found at: ${pythonPath}`);
       updateServerStatus({ status: 'error', lastError: `Python script not found: ${pythonPath}` });
       resolve({ success: false, message: `Python script not found: ${pythonPath}`, status: serverStatus });
       return;
+    }
+    
+    // Make sure the standalone executable has execute permissions (macOS/Linux)
+    if (!isDev && (process.platform === 'darwin' || process.platform === 'linux')) {
+      try {
+        fs.chmodSync(pythonExecutable, 0o755);
+        console.log('Set execute permissions for standalone server');
+      } catch (error) {
+        console.warn('Could not set execute permissions:', error);
+      }
     }
     
       // Set up environment for bundled Python
@@ -366,10 +354,11 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       }
       
       // Prepare spawn arguments
-      const spawnArgs = [pythonPath];
+      const spawnArgs = isDev && pythonPath ? [pythonPath] : [];
+      const cwd = isDev && pythonPath ? path.dirname(pythonPath) : path.dirname(pythonExecutable);
       
       pythonProcess = spawn(pythonExecutable, spawnArgs, {
-        cwd: path.dirname(pythonPath),
+        cwd: cwd,
         env: pythonEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false
@@ -512,6 +501,7 @@ function getPythonServerStatus(): ServerStatus {
   return { ...serverStatus };
 }
 
+
 // Handle uncaught exceptions to prevent crashes
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
@@ -623,15 +613,26 @@ app.whenReady().then(() => {
     createWindow();
   }
 
-  // Configure auto-updater
-  configureAutoUpdater();
-
-  // Start Python server on app startup
-  startPythonServer().then(result => {
-    console.log('Python server startup result:', result);
+  // Ensure default export directory exists
+  ensureDefaultExportDirectory().then(result => {
+    if (result.success) {
+      console.log('Default export directory ready:', result.path);
+    } else {
+      console.error('Failed to create default export directory:', result.error);
+    }
   }).catch(error => {
-    console.error('Failed to start Python server on startup:', error);
+    console.error('Error setting up default export directory:', error);
   });
+
+  // Start Python server on app startup with delay to ensure stability
+  setTimeout(() => {
+    startPythonServer().then(result => {
+      console.log('Python server startup result:', result);
+    }).catch(error => {
+      console.error('Failed to start Python server on startup:', error);
+    });
+  }, 2000); // 2 second delay to let the app fully initialize
+
 });
 
 app.on('window-all-closed', () => {
@@ -714,6 +715,10 @@ ipcMain.handle('get-python-server-status', async (): Promise<ServerStatus> => {
   return getPythonServerStatus();
 });
 
+
+ipcMain.handle('quit-and-install', async () => {
+});
+
 // Legacy event handler for backward compatibility
 ipcMain.on('stop-python-server', () => {
   stopPythonServer();
@@ -731,6 +736,25 @@ ipcMain.handle('set-saved-credentials', (_, credentials) => {
 ipcMain.handle('clear-saved-credentials', () => {
   (store as any).delete('savedCredentials');
   return true;
+});
+
+// Get default export path IPC handler
+ipcMain.handle('get-default-export-path', async () => {
+  try {
+    const result = await ensureDefaultExportDirectory();
+    return {
+      success: result.success,
+      path: result.path,
+      error: result.error
+    };
+  } catch (error: any) {
+    console.error('Error getting default export path:', error);
+    return {
+      success: false,
+      path: getDefaultExportPath(),
+      error: error.message || 'Failed to get default export path'
+    };
+  }
 });
 
 // Directory selection handler
@@ -801,8 +825,8 @@ ipcMain.handle('read-markdown-file', async (event, filePath: string) => {
     let fullPath: string;
     
     if (app.isPackaged) {
-      // 프로덕션 모드: dist 폴더에서 읽기
-      fullPath = path.join(__dirname, '../docs', filePath);
+      // 프로덕션 모드: extraResources에서 읽기
+      fullPath = path.join(process.resourcesPath, 'docs', filePath);
     } else {
       // 개발 모드: public 폴더에서 읽기
       fullPath = path.join(__dirname, '../public/docs', filePath);
@@ -877,42 +901,47 @@ ipcMain.handle('open-session-folder', async (event, sessionId: string) => {
   }
   console.log(`[IPC] Received open-session-folder request for session ID: ${sessionId}`);
 
-  const sessionRelativePathFromBackend = await getSessionDataPath(sessionId); 
+  const sessionDataPathFromBackend = await getSessionDataPath(sessionId); 
 
-  if (sessionRelativePathFromBackend && typeof sessionRelativePathFromBackend === 'string') {
+  if (sessionDataPathFromBackend && typeof sessionDataPathFromBackend === 'string') {
     let absoluteDataPath: string;
     
-    // 개발 모드와 프로덕션 모드 구분
+    // 백엔드에서 반환하는 경로가 이미 절대 경로인지 확인
+    if (path.isAbsolute(sessionDataPathFromBackend)) {
+      // 이미 절대 경로인 경우 그대로 사용
+      absoluteDataPath = sessionDataPathFromBackend;
+    } else {
+      // 상대 경로인 경우에만 기존 로직 적용
       if (app.isPackaged) {
         // 프로덕션 모드: 앱 번들 내부의 python_core 경로 사용
         const resourcesPath = process.resourcesPath;
-      absoluteDataPath = path.join(resourcesPath, 'python_core', sessionRelativePathFromBackend);
+        absoluteDataPath = path.join(resourcesPath, 'python_core', sessionDataPathFromBackend);
       } else {
         // 개발 모드: 프로젝트 루트 기준으로 경로 설정
         const projectRoot = path.resolve(__dirname, '../../'); 
         
         // 개발 모드에서는 electron-app/data에 저장되므로 경로 조정
-      // sessionRelativePathFromBackend이 "data/session_XXX" 형식이라면
-      const sessionName = sessionRelativePathFromBackend.split('/').pop(); // session_XXX 부분만 추출
+        const sessionName = sessionDataPathFromBackend.split('/').pop(); // session_XXX 부분만 추출
         if (sessionName) {
           absoluteDataPath = path.join(projectRoot, 'electron-app', 'data', sessionName);
         } else {
           // sessionName을 추출할 수 없는 경우 원본 경로 사용
-        absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+          absoluteDataPath = path.join(projectRoot, 'python_core', sessionDataPathFromBackend);
         }
         
         // 만약 electron-app/data에 없다면 python_core/data도 확인
         if (!await fsExtra.pathExists(absoluteDataPath)) {
-        absoluteDataPath = path.join(projectRoot, 'python_core', sessionRelativePathFromBackend);
+          absoluteDataPath = path.join(projectRoot, 'python_core', sessionDataPathFromBackend);
+        }
       }
     }
 
-    console.log(`[IPC] Backend session relative path: ${sessionRelativePathFromBackend}`);
+    console.log(`[IPC] Backend session data path: ${sessionDataPathFromBackend}`);
     console.log(`[IPC] Attempting to open absolute path: ${absoluteDataPath}`);
 
     try {
       if (await fsExtra.pathExists(absoluteDataPath)) {
-          await shell.openPath(absoluteDataPath);
+        await shell.openPath(absoluteDataPath);
         console.log(`[IPC] Successfully opened folder: ${absoluteDataPath}`);
         return { success: true, message: `Folder ${absoluteDataPath} opened.` };
       } else {
@@ -924,7 +953,7 @@ ipcMain.handle('open-session-folder', async (event, sessionId: string) => {
       return { success: false, message: `Failed to open folder: ${error.message}` };
     }
   } else {
-    const errorMessage = `Could not retrieve or validate data path for session ${sessionId}. Path from backend: ${sessionRelativePathFromBackend}`;
+    const errorMessage = `Could not retrieve or validate data path for session ${sessionId}. Path from backend: ${sessionDataPathFromBackend}`;
     console.error(`[IPC] ${errorMessage}`);
     return { success: false, message: errorMessage };
   }

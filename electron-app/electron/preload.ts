@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('electron', {
     readMarkdownFile: (filePath: string) => ipcRenderer.invoke('read-markdown-file', filePath),
     selectDirectory: () => ipcRenderer.invoke('select-directory'),
     getDefaultDataPath: () => ipcRenderer.invoke('get-default-data-path'),
+    getDefaultExportPath: () => ipcRenderer.invoke('get-default-export-path'),
     checkDirectory: (path: string) => ipcRenderer.invoke('check-directory', path),
   },
   // Python Server Control APIs

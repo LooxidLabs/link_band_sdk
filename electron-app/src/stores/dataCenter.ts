@@ -276,4 +276,27 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
       useUiStore.getState().showSnackbar({ message: errorMessage, severity: 'error' });
     }
   },
+
+  // Get default export path
+  getDefaultExportPath: async (): Promise<string> => {
+    try {
+      if ((window as any).electron && (window as any).electron.fs && (window as any).electron.fs.getDefaultExportPath) {
+        const result = await (window as any).electron.fs.getDefaultExportPath();
+        if (result.success) {
+          console.log('[Store] Default export path:', result.path);
+          return result.path;
+        } else {
+          console.warn('[Store] Failed to get default export path:', result.error);
+          // Return fallback path
+          return '~/Documents/LinkBand Exports';
+        }
+      } else {
+        console.warn('[Store] Electron API not available, using fallback path');
+        return '~/Documents/LinkBand Exports';
+      }
+    } catch (error: any) {
+      console.error('[Store] Error getting default export path:', error);
+      return '~/Documents/LinkBand Exports';
+    }
+  },
 })); 

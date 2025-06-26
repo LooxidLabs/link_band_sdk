@@ -44,9 +44,10 @@ export function StatusBar({
   useEffect(() => {
     startMetricsPolling();
     
+    // Refresh server status less frequently to avoid interference
     const interval = setInterval(() => {
       refreshStatus();
-    }, 2000); // Refresh every 2 seconds
+    }, 5000); // Refresh every 5 seconds instead of 2
     
     return () => {
       clearInterval(interval);

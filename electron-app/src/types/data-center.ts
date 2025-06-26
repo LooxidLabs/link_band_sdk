@@ -77,6 +77,7 @@ export interface DataCenterStore extends DataCenterState {
   fetchSessions: () => Promise<void>; // Added
   exportSession: (sessionId: string) => Promise<void>; // Added (replaces handleDownload)
   openSessionFolder: (sessionId: string) => Promise<void>; // Added (replaces handleOpenFolder)
+  getDefaultExportPath: () => Promise<string>; // Added for default export path
 }
 
 export interface RecordingStatusResponse {

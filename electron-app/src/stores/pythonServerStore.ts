@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { metricsApi } from '../api/metrics';
 
 interface ServerStatus {
   status: 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
@@ -22,6 +23,8 @@ interface PythonServerState {
   lastMessage: string | null;
   // UI sync state - simple boolean for UI components
   isRunning: boolean;
+  // Metrics verification state
+  isVerifyingMetrics: boolean;
 }
 
 interface PythonServerActions {
@@ -35,6 +38,7 @@ interface PythonServerActions {
   setLoading: (loading: boolean) => void;
   setMessage: (message: string) => void;
   setRunning: (running: boolean) => void;
+  verifyMetricsApi: () => Promise<void>;
 }
 
 interface PythonServerStore extends PythonServerState, PythonServerActions {}
@@ -48,7 +52,8 @@ const initialState: PythonServerState = {
   logs: [],
   isLoading: false,
   lastMessage: null,
-  isRunning: false
+  isRunning: false,
+  isVerifyingMetrics: false
 };
 
 export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
@@ -83,7 +88,15 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
 
   // Async Actions
   startServer: async () => {
-    const { setLoading, setMessage, setStatus, setRunning } = get();
+    const { setLoading, setMessage, setStatus, setRunning, verifyMetricsApi } = get();
+    
+    // Prevent multiple simultaneous start attempts
+    const currentStatus = get().status;
+    if (currentStatus.status === 'starting' || currentStatus.status === 'running') {
+      console.log('Server is already starting or running, ignoring start request');
+      return;
+    }
+    
     setLoading(true);
     setMessage('Starting Python server...');
 
@@ -93,6 +106,11 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
       if (result.status) {
         setStatus(result.status);
         setRunning(result.status.status === 'running' || result.status.status === 'starting');
+        
+        // If server is starting, begin metrics verification
+        if (result.status.status === 'starting') {
+          verifyMetricsApi();
+        }
       }
     } catch (error: any) {
       setMessage(`Failed to start server: ${error.message}`);
@@ -167,6 +185,79 @@ export const usePythonServerStore = create<PythonServerStore>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to refresh server status:', error);
     }
+  },
+
+  verifyMetricsApi: async () => {
+    const { setMessage, setStatus, setRunning } = get();
+    const currentStatus = get().status;
+    
+    // Only verify if server is in starting state
+    if (currentStatus.status !== 'starting') {
+      return;
+    }
+
+    set({ isVerifyingMetrics: true });
+    setMessage('Verifying server readiness...');
+
+    let attempts = 0;
+    const maxAttempts = 30; // 30 attempts = 30 seconds max
+    
+    const checkMetrics = async (): Promise<boolean> => {
+      try {
+        await metricsApi.getMetrics();
+        return true; // API is responding
+      } catch (error) {
+        return false; // API not ready yet
+      }
+    };
+
+    const pollMetrics = async () => {
+      while (attempts < maxAttempts && get().status.status === 'starting') {
+        attempts++;
+        console.log(`Checking metrics API readiness... attempt ${attempts}/${maxAttempts}`);
+        
+        const isReady = await checkMetrics();
+        
+        if (isReady) {
+          console.log('Metrics API is ready! Server is fully operational.');
+          setMessage('Server is ready!');
+          setStatus({
+            ...currentStatus,
+            status: 'running'
+          });
+          setRunning(true);
+          set({ isVerifyingMetrics: false });
+          return;
+        }
+        
+        // Wait 1 second before next attempt
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // If we reach here, verification failed
+      console.warn('Metrics API verification timed out');
+      setMessage('Server started but API verification timed out');
+      setStatus({
+        ...currentStatus,
+        status: 'running', // Still mark as running, but with warning
+        lastError: 'API verification timed out'
+      });
+      setRunning(true);
+      set({ isVerifyingMetrics: false });
+    };
+
+    // Start polling in background
+    pollMetrics().catch(error => {
+      console.error('Error during metrics verification:', error);
+      setMessage('Server started but verification failed');
+      setStatus({
+        ...currentStatus,
+        status: 'running',
+        lastError: 'Verification failed'
+      });
+      setRunning(true);
+      set({ isVerifyingMetrics: false });
+    });
   }
 }));
 
@@ -195,6 +286,11 @@ export const setupPythonServerEventListeners = () => {
     const store = usePythonServerStore.getState();
     store.setStatus(status);
     store.setRunning(status.status === 'running' || status.status === 'starting');
+    
+    // If server just started, begin metrics verification
+    if (status.status === 'starting') {
+      store.verifyMetricsApi();
+    }
   });
 
   // Listen for logs
@@ -212,6 +308,8 @@ export const setupPythonServerEventListeners = () => {
     usePythonServerStore.getState().setMessage(`Python server stopped with code: ${info.code}`);
   });
 
-  // Initial status fetch
-  store.refreshStatus();
+  // Initial status fetch - only once when listeners are set up
+  setTimeout(() => {
+    store.refreshStatus();
+  }, 1000); // Delay to ensure backend is ready
 }; 

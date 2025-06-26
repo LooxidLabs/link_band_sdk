@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Settings, RotateCcw, AlertCircle, CheckCircle } from 'lucide-react';
+import { useDataCenterStore } from '../../stores/dataCenter';
 
 export interface RecordingOptionsData {
   sessionName: string;
@@ -28,7 +29,29 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
   pathValidation,
   onPathValidation
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
+  const { getDefaultExportPath } = useDataCenterStore();
+
+  // 컴포넌트 마운트 시 기본 export 경로가 설정되지 않았다면 설정
+  useEffect(() => {
+    const initializeDefaultPath = async () => {
+      // 현재 exportPath가 기본값인 경우에만 새로운 기본 경로로 업데이트
+      if (options.exportPath === '~/link-band-sdk/data' || !options.exportPath) {
+        try {
+          const defaultPath = await getDefaultExportPath();
+          onOptionsChange({
+            ...options,
+            exportPath: defaultPath
+          });
+          onPathValidation(defaultPath);
+        } catch (error) {
+          console.error('Failed to get default export path:', error);
+        }
+      }
+    };
+
+    initializeDefaultPath();
+  }, []); // 빈 의존성 배열로 마운트 시에만 실행
 
   // 기본값 생성 함수
   const getDefaultSessionName = () => {
@@ -39,15 +62,18 @@ export const RecordingOptions: React.FC<RecordingOptionsProps> = ({
     return `session_${year}_${month}_${day}`;
   };
 
-  const getDefaultOptions = (): RecordingOptionsData => ({
-    sessionName: getDefaultSessionName(),
-    dataFormat: 'JSON',
-    exportPath: '~/link-band-sdk/data'  // 초기화 시 기본 경로를 ~/link-band-sdk/data로 설정
-  });
+  const getDefaultOptions = async (): Promise<RecordingOptionsData> => {
+    const defaultPath = await getDefaultExportPath();
+    return {
+      sessionName: getDefaultSessionName(),
+      dataFormat: 'JSON',
+      exportPath: defaultPath  // 동적으로 기본 export 경로 설정
+    };
+  };
 
   // 설정 초기화
-  const handleReset = () => {
-    const defaultOptions = getDefaultOptions();
+  const handleReset = async () => {
+    const defaultOptions = await getDefaultOptions();
     onOptionsChange(defaultOptions);
     onPathValidation(defaultOptions.exportPath);
   };

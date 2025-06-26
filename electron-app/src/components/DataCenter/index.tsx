@@ -50,7 +50,7 @@ const DataCenter: React.FC = () => {
   const [recordingOptions, setRecordingOptions] = useState<RecordingOptionsData>({
     sessionName: getDefaultSessionName(),
     dataFormat: 'JSON',
-    exportPath: '~/link-band-sdk/data'  // 초기값을 "~/link-band-sdk/data"로 설정
+    exportPath: ''  // 초기값을 빈 문자열로 설정하여 useEffect에서 설정하도록 함
   });
 
   // 폴더 경로 검증 상태
@@ -134,11 +134,45 @@ const DataCenter: React.FC = () => {
     }
   };
 
-  // 초기 경로 검증
+  // 초기 기본 export 경로 설정 및 검증
   useEffect(() => {
-    console.log('Initial path validation for:', recordingOptions.exportPath);
-    validatePath(recordingOptions.exportPath);
-  }, []);
+    const initializeExportPath = async () => {
+      if (!recordingOptions.exportPath) {
+        try {
+          const defaultPath = await (window as any).electron?.fs?.getDefaultExportPath?.();
+          if (defaultPath?.success) {
+            console.log('Setting default export path:', defaultPath.path);
+            setRecordingOptions(prev => ({
+              ...prev,
+              exportPath: defaultPath.path
+            }));
+            validatePath(defaultPath.path);
+          } else {
+            console.warn('Failed to get default export path, using fallback');
+            const fallbackPath = '~/Documents/LinkBand Exports';
+            setRecordingOptions(prev => ({
+              ...prev,
+              exportPath: fallbackPath
+            }));
+            validatePath(fallbackPath);
+          }
+        } catch (error) {
+          console.error('Error getting default export path:', error);
+          const fallbackPath = '~/Documents/LinkBand Exports';
+          setRecordingOptions(prev => ({
+            ...prev,
+            exportPath: fallbackPath
+          }));
+          validatePath(fallbackPath);
+        }
+      } else {
+        console.log('Initial path validation for:', recordingOptions.exportPath);
+        validatePath(recordingOptions.exportPath);
+      }
+    };
+
+    initializeExportPath();
+  }, []); // 빈 의존성 배열로 마운트 시에만 실행
 
   useEffect(() => {
     fetchRecordingStatus();

@@ -16,8 +16,13 @@ interface TopNavigationProps {
 
 export const TopNavigation: React.FC<TopNavigationProps> = ({ menuName }) => {
   
-  // Get server status from Python server store - use simple isRunning flag
-  const { isRunning: engineRunning, refreshStatus } = usePythonServerStore();
+  // Get server status from Python server store - use detailed status info
+  const { 
+    status: serverStatus, 
+    isRunning: engineRunning, 
+    isVerifyingMetrics,
+    refreshStatus 
+  } = usePythonServerStore();
   
   // Get device connection status
   const deviceStatus = useDeviceStore((state) => state.deviceStatus);
@@ -40,13 +45,9 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ menuName }) => {
     return cleanup;
   }, []);
   
-  // Refresh status on mount and periodically
+  // Refresh status only once on mount
   useEffect(() => {
     refreshStatus();
-    const timer = setTimeout(() => {
-      refreshStatus();
-    }, 1000);
-    return () => clearTimeout(timer);
   }, [refreshStatus]);
   
   // Convert menu id to display name
@@ -80,12 +81,19 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ menuName }) => {
           <div className="flex items-center space-x-2">
             <Cpu className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Engine:</span>
-            <Badge 
-              variant={engineRunning ? "default" : "destructive"}
-              className={engineRunning ? "bg-cyan-600 hover:bg-cyan-700" : "bg-red-600 hover:bg-red-700"}
-            >
-              {engineRunning ? "Started" : "Stopped"}
-            </Badge>
+            {serverStatus.status === 'starting' && isVerifyingMetrics ? (
+              <Badge className="bg-yellow-600 hover:bg-yellow-700 flex items-center gap-1">
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Loading...
+              </Badge>
+            ) : (
+              <Badge 
+                variant={engineRunning ? "default" : "destructive"}
+                className={engineRunning ? "bg-cyan-600 hover:bg-cyan-700" : "bg-red-600 hover:bg-red-700"}
+              >
+                {engineRunning ? "Started" : "Stopped"}
+              </Badge>
+            )}
           </div>
 
           {/* Device Connection Status */}

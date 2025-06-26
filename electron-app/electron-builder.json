@@ -5,17 +5,25 @@
     "output": "release",
     "buildResources": "resources"
   },
+  "asar": false,
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
-    "public/**/*",
-    "!public/docs/**/*"
+    "public/**/*"
   ],
   "extraResources": [
     {
       "from": "../python_core",
       "to": "python_core",
       "filter": ["**/*", "!**/__pycache__/", "!**/*.pyc", "!**/dist/**", "!**/build/**"]
+    },
+    {
+      "from": "../installers/distribution/macos-arm64/linkband-server-macos-arm64-final",
+      "to": "linkband-server-macos-arm64-final"
+    },
+    {
+      "from": "../installers/distribution/macos-intel/linkband-server-macos-x64",
+      "to": "linkband-server-macos-x64"
     },
     {
       "from": "public/docs",

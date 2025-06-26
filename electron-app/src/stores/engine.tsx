@@ -63,10 +63,10 @@ class WebSocketManager {
         return;
       }
 
-      // 디바이스가 연결되어 있고 스트리밍 중인 경우에만 연결 시도
-      if (deviceStore.deviceStatus?.is_connected && 
-          engineStore.connectionInfo?.is_streaming === true) {
-        console.log('Auto-connecting to WebSocket...', {
+      // 디바이스가 연결되어 있으면 WebSocket 연결 시도 (스트리밍 상태 무관)
+      // 스트리밍이 시작되면 자동으로 데이터를 받을 수 있도록 미리 연결
+      if (deviceStore.deviceStatus?.is_connected) {
+        console.log('Auto-connecting to WebSocket (device connected)...', {
           deviceStatus: deviceStore.deviceStatus?.is_connected,
           isStreaming: engineStore.connectionInfo?.is_streaming
         });
@@ -523,7 +523,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
   // 자동 연결 시작
   wsManager.startAutoConnect();
 
-  return {
+  const store = {
     // Initial state
     engineStatus: null,
     connectionInfo: null,
@@ -799,4 +799,9 @@ export const useEngineStore = create<EngineState>((set, get) => {
       wsManager.connect();
     },
   };
+
+  // Make store accessible globally for device manager
+  (window as any).engineStore = { getState: get };
+
+  return store;
 }); 
