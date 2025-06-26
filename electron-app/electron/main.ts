@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, session, shell, dialog } from 'electron';
-// Completely disable electron-updater
-let autoUpdater: any = null;
+import pkg from 'electron-updater';
+const { autoUpdater } = pkg;
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
@@ -143,13 +143,16 @@ async function gracefulShutdown() {
 
 // Auto-updater configuration
 function configureAutoUpdater() {
-  if (!autoUpdater) {
-    console.warn('Auto-updater not available, skipping configuration');
-    return;
-  }
-
-  // Configure autoUpdater
-  autoUpdater.checkForUpdatesAndNotify();
+  console.log('Configuring auto-updater...');
+  
+  // Configure autoUpdater settings
+  autoUpdater.autoDownload = false; // Don't auto-download, ask user first
+  autoUpdater.autoInstallOnAppQuit = true;
+  
+  // Check for updates on startup (after a delay)
+  setTimeout(() => {
+    autoUpdater.checkForUpdatesAndNotify();
+  }, 3000); // Wait 3 seconds after startup
   
   autoUpdater.on('checking-for-update', () => {
     console.log('Checking for update...');
@@ -159,6 +162,21 @@ function configureAutoUpdater() {
   autoUpdater.on('update-available', (info: any) => {
     console.log('Update available:', info);
     win?.webContents.send('update-available', info);
+    
+    // Ask user if they want to download the update
+    const dialogOpts = {
+      type: 'info' as const,
+      buttons: ['Download Now', 'Later'],
+      title: 'Update Available',
+      message: `A new version (${info.version}) is available!`,
+      detail: 'Would you like to download it now? The update will be installed when you restart the application.'
+    };
+
+    dialog.showMessageBox(dialogOpts).then((returnValue) => {
+      if (returnValue.response === 0) {
+        autoUpdater.downloadUpdate();
+      }
+    });
   });
 
   autoUpdater.on('update-not-available', (info: any) => {
@@ -199,23 +217,36 @@ function configureAutoUpdater() {
 
   // IPC handlers for manual update check
   ipcMain.handle('check-for-updates', async () => {
-    if (!autoUpdater) {
-      throw new Error('Auto-updater not available');
-    }
     try {
+      console.log('Manual update check requested');
       const result = await autoUpdater.checkForUpdates();
-      return result;
-    } catch (error) {
+      return { success: true, updateInfo: result };
+    } catch (error: any) {
       console.error('Error checking for updates:', error);
-      throw error;
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('download-update', async () => {
+    try {
+      console.log('Manual update download requested');
+      await autoUpdater.downloadUpdate();
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error downloading update:', error);
+      return { success: false, error: error.message };
     }
   });
 
   ipcMain.handle('quit-and-install', () => {
-    if (!autoUpdater) {
-      throw new Error('Auto-updater not available');
+    try {
+      console.log('Quit and install requested');
+      autoUpdater.quitAndInstall();
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error installing update:', error);
+      return { success: false, error: error.message };
     }
-    autoUpdater.quitAndInstall();
   });
 }
 
@@ -592,8 +623,8 @@ app.whenReady().then(() => {
     createWindow();
   }
 
-  // Auto-updater completely disabled
-  // configureAutoUpdater();
+  // Configure auto-updater
+  configureAutoUpdater();
 
   // Start Python server on app startup
   startPythonServer().then(result => {
