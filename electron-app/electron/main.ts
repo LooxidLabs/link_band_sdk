@@ -256,13 +256,23 @@ async function startPythonServer(): Promise<ServerControlResponse> {
         // Development mode - use relative paths and virtual environment python
         pythonPath = path.join(__dirname, '../../python_core/run_server.py');
         
-        // Try to use virtual environment python first
-        const venvPython = path.join(__dirname, '../../venv/bin/python3');
+        // Try to use virtual environment python first - different paths for different OS
+        let venvPython: string;
+        if (process.platform === 'win32') {
+          venvPython = path.join(__dirname, '../../venv/Scripts/python.exe');
+        } else {
+          venvPython = path.join(__dirname, '../../venv/bin/python3');
+        }
+        
         if (fs.existsSync(venvPython)) {
           pythonExecutable = venvPython;
         } else {
-          // Fallback to system python3
-          pythonExecutable = 'python3';
+          // Fallback to system python - use 'python' on Windows, 'python3' on others
+          if (process.platform === 'win32') {
+            pythonExecutable = 'python';
+          } else {
+            pythonExecutable = 'python3';
+          }
         }
       } else {
         // Production mode - use standalone Python server
