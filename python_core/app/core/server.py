@@ -334,44 +334,76 @@ class WebSocketServer:
                             except Exception as scan_error:
                                 print(f"Scan failed during auto-connect: {scan_error}")
                         
+                        # 스캔된 디바이스들 가져오기
+                        scanned_devices = getattr(self.device_manager, '_cached_devices', [])
+                        
                         for device in registered_devices:
                             address = device.get('address')
-                            if address:
-                                # 연결 시도 횟수 제한 (3번 실패 후 60초 대기)
-                                if address not in connection_attempts:
-                                    connection_attempts[address] = {'count': 0, 'last_attempt': 0}
-                                
-                                attempt_info = connection_attempts[address]
-                                
-                                # 3번 연속 실패 후 60초 대기
-                                if attempt_info['count'] >= 3:
-                                    if current_time - attempt_info['last_attempt'] < 60:
-                                        continue  # 아직 대기 시간
-                                    else:
-                                        attempt_info['count'] = 0  # 대기 시간 끝, 재시도
-                                
-                                # 마지막 시도로부터 최소 15초 간격 유지
-                                if current_time - attempt_info['last_attempt'] < 15:
-                                    continue
-                                
-                                print(f"Auto-connecting to {address} (attempt {attempt_info['count'] + 1}/3)")
-                                attempt_info['last_attempt'] = current_time
-                                attempt_info['count'] += 1
-                                
-                                # 캐시된 디바이스 사용해서 연결 시도 (스캔 중복 방지)
-                                success = await self.device_manager.connect(address, use_cached_device=True)
-                                if success:
-                                    print(f"Successfully auto-connected to {address}")
-                                    connection_attempts[address]['count'] = 0  # 성공 시 카운터 리셋
-                                    # 연결 성공 이벤트 브로드캐스트
-                                    await self.broadcast_event(EventType.DEVICE_CONNECTED, {
-                                        "address": address,
-                                        "name": self.device_manager.device_name or "Unknown",
-                                        "connection_type": "auto"
-                                    })
-                                    break
+                            device_name = device.get('name', '')
+                            
+                            if not address:
+                                continue
+                            
+                            # 연결 시도 횟수 제한 (3번 실패 후 60초 대기)
+                            if address not in connection_attempts:
+                                connection_attempts[address] = {'count': 0, 'last_attempt': 0}
+                            
+                            attempt_info = connection_attempts[address]
+                            
+                            # 3번 연속 실패 후 60초 대기
+                            if attempt_info['count'] >= 3:
+                                if current_time - attempt_info['last_attempt'] < 60:
+                                    continue  # 아직 대기 시간
                                 else:
-                                    print(f"Auto-connect failed to {address}")
+                                    attempt_info['count'] = 0  # 대기 시간 끝, 재시도
+                            
+                            # 마지막 시도로부터 최소 15초 간격 유지
+                            if current_time - attempt_info['last_attempt'] < 15:
+                                continue
+                            
+                            # 크로스 플랫폼 주소 매칭: 이름으로 현재 플랫폼의 주소 찾기
+                            target_address = address
+                            if device_name and scanned_devices:
+                                # 스캔된 디바이스 중에서 같은 이름을 가진 디바이스 찾기
+                                for scanned_device in scanned_devices:
+                                    scanned_name = getattr(scanned_device, 'name', None) or 'Unknown'
+                                    scanned_addr = getattr(scanned_device, 'address', None)
+                                    
+                                    # 정확한 이름 매칭 또는 LXB- 접두사 매칭
+                                    if (scanned_name == device_name or 
+                                        (device_name.startswith('LXB-') and scanned_name.startswith('LXB-'))):
+                                        if scanned_addr != address:
+                                            print(f"Cross-platform address update: {device_name}")
+                                            print(f"  Registered: {address}")
+                                            print(f"  Current platform: {scanned_addr}")
+                                            # 레지스트리의 주소 업데이트
+                                            self.device_registry.update_device_address(address, scanned_addr, device_name)
+                                            target_address = scanned_addr
+                                        else:
+                                            target_address = scanned_addr
+                                        break
+                            
+                            print(f"Auto-connecting to {target_address} (attempt {attempt_info['count'] + 1}/3)")
+                            if target_address != address:
+                                print(f"  Device name: {device_name}")
+                            
+                            attempt_info['last_attempt'] = current_time
+                            attempt_info['count'] += 1
+                            
+                            # 캐시된 디바이스 사용해서 연결 시도 (스캔 중복 방지)
+                            success = await self.device_manager.connect(target_address, use_cached_device=True)
+                            if success:
+                                print(f"Successfully auto-connected to {target_address}")
+                                connection_attempts[address]['count'] = 0  # 성공 시 카운터 리셋
+                                # 연결 성공 이벤트 브로드캐스트
+                                await self.broadcast_event(EventType.DEVICE_CONNECTED, {
+                                    "address": target_address,
+                                    "name": self.device_manager.device_name or device_name or "Unknown",
+                                    "connection_type": "auto"
+                                })
+                                break
+                            else:
+                                print(f"Auto-connect failed to {target_address}")
                 
                 # 15초마다 체크 (더 긴 간격으로 시스템 부하 감소)
                 await asyncio.sleep(15)
@@ -534,11 +566,47 @@ class WebSocketServer:
         try:
             print(f"Attempting connection to {device_address}")
             
+            # 크로스 플랫폼 주소 매칭: 등록된 디바이스 이름으로 현재 플랫폼의 주소 찾기
+            target_address = device_address
+            registered_device = None
+            
+            # 등록된 디바이스에서 해당 주소 찾기
+            for device in self.device_registry.get_registered_devices():
+                if device.get('address') == device_address:
+                    registered_device = device
+                    break
+            
+            # 등록된 디바이스가 있고 이름이 있으면 현재 스캔된 디바이스에서 같은 이름 찾기
+            if registered_device and registered_device.get('name'):
+                device_name = registered_device['name']
+                scanned_devices = getattr(self.device_manager, '_cached_devices', [])
+                
+                if scanned_devices:
+                    for scanned_device in scanned_devices:
+                        scanned_name = getattr(scanned_device, 'name', None) or 'Unknown'
+                        scanned_addr = getattr(scanned_device, 'address', None)
+                        
+                        # 정확한 이름 매칭 또는 LXB- 접두사 매칭
+                        if (scanned_name == device_name or 
+                            (device_name.startswith('LXB-') and scanned_name.startswith('LXB-'))):
+                            if scanned_addr and scanned_addr != device_address:
+                                print(f"Cross-platform address mapping found:")
+                                print(f"  Requested: {device_address}")
+                                print(f"  Device name: {device_name}")
+                                print(f"  Current platform address: {scanned_addr}")
+                                # 레지스트리의 주소 업데이트
+                                self.device_registry.update_device_address(device_address, scanned_addr, device_name)
+                                target_address = scanned_addr
+                            elif scanned_addr:
+                                target_address = scanned_addr
+                            break
+            
             # DeviceManager의 connect 메서드가 이미 스캔을 포함하므로 직접 연결 시도
-            if not await self.device_manager.connect(device_address):
-                print(f"Failed to connect to device {device_address}")
+            if not await self.device_manager.connect(target_address):
+                print(f"Failed to connect to device {target_address}")
                 await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
                     "address": device_address,
+                    "target_address": target_address,
                     "reason": "connection_failed"
                 })
                 return
