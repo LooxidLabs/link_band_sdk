@@ -57,6 +57,7 @@ installers/downloads/
 electron-app/.env
 
 # Large binary files and releases
+installers/releases/
 installers/releases/*.zip
 installers/distribution/*/linkband-server-*
 python_core/dist/
@@ -66,3 +67,14 @@ python_core/build/
 *.app
 *.deb
 *.rpm
+python_core.zip
+
+# Large data files
+electron-app/data/
+*.json
+electron-app/data/session_*/
+data/session_*/
+
+# Backup files
+*.bak
+*.backup
