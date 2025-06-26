@@ -39,7 +39,7 @@ app = FastAPI(
 
     ## Features
 
-    ### 🔗 Device Management
+    ### Device Management
     - **Bluetooth Discovery**: Scan and discover nearby Link Band devices
     - **Connection Control**: Connect/disconnect devices with automatic pairing
     - **Device Registry**: Register frequently used devices for quick access

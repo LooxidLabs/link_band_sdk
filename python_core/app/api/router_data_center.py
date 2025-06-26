@@ -145,16 +145,16 @@ async def start_recording_endpoint(
 ):
     session_name = session_create.session_name if session_create and session_create.session_name else None
     settings = session_create.settings if session_create and session_create.settings else None
-    print(f"🎬 Start recording request: session_name={session_name}")
+    print(f"Start recording request: session_name={session_name}")
     try:
         result = await recording_service.start_recording(session_name=session_name, settings=settings)
         if result.get("status") == "fail":
-            print(f"❌ Recording start failed: {result.get('message')}")
+            print(f"Recording start failed: {result.get('message')}")
             raise HTTPException(status_code=400, detail=result.get("message"))
-        print(f"✅ Recording started: {result.get('session_name')}")
+        print(f"Recording started: {result.get('session_name')}")
         return result
     except Exception as e:
-        print(f"❌ Recording start error: {e}")
+        print(f"Recording start error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/stop-recording", 
@@ -214,16 +214,16 @@ async def stop_recording_endpoint(
     Raises:
         HTTPException: If stopping fails
     """
-    print("🛑 Stop recording request")
+    print("Stop recording request")
     try:
         result = await recording_service.stop_recording()
         if result.get("status") == "fail":
-            print(f"❌ Recording stop failed: {result.get('message')}")
+            print(f"Recording stop failed: {result.get('message')}")
             raise HTTPException(status_code=400, detail=result.get("message"))
-        print(f"✅ Recording stopped: {result.get('session_name')}")
+        print(f"Recording stopped: {result.get('session_name')}")
         return result
     except Exception as e:
-        print(f"❌ Recording stop error: {e}")
+        print(f"Recording stop error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/recording-status", 

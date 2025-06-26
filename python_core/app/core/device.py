@@ -135,25 +135,25 @@ class DeviceManager:
     async def connect(self, address: str) -> bool:
         """Connect to a specific BLE device by address."""
         if self._connection_status == DeviceStatus.CONNECTED and self._client:
-            print(f"⚠️  Already connected to {self.device_address}")
+            print(f"Already connected to {self.device_address}")
             return False
 
-        print(f"🔍 Connecting to {address}...")
+        print(f"Connecting to {address}...")
         try:
             # BleakScanner.find_device_by_address를 사용해서 더 안정적으로 디바이스 찾기
             device = await BleakScanner.find_device_by_address(address, timeout=10.0)
             
             if not device:
-                print(f"❌ Device {address} not found")
+                print(f"Device {address} not found")
                 return False
 
-            print(f"✅ Found device: {device.name} ({device.address})")
+            print(f"Found device: {device.name} ({device.address})")
             self._client = BleakClient(device, disconnected_callback=self._handle_disconnect)
             
             try:
                 await self._client.connect(timeout=15.0)  # 타임아웃 증가
             except Exception as connect_error:
-                print(f"❌ Connection failed: {connect_error}")
+                print(f"Connection failed: {connect_error}")
                 await self._cleanup_connection()
                 return False
 
@@ -163,23 +163,23 @@ class DeviceManager:
                 raw_name = getattr(self._client, 'name', None) or device.name
                 self.device_name = str(raw_name) if raw_name is not None else self.device_address
                 self._connection_status = DeviceStatus.CONNECTED
-                print(f"🎉 Connected to {self.device_name} ({self.device_address})")
+                print(f"Connected to {self.device_name} ({self.device_address})")
                 
                 # 배터리 모니터링 먼저 시작
                 battery_success = await self.start_battery_monitoring()
                 if not battery_success:
-                    print("⚠️  Battery monitoring failed")
+                    print("Battery monitoring failed")
                 
                 # 연결 성공 후 자동으로 데이터 수집 시작
                 acquisition_success = await self.start_data_acquisition()
                 if not acquisition_success:
-                    print("❌ Data acquisition failed")
+                    print("Data acquisition failed")
                     await self._cleanup_connection()
                     return False
                 
                 return True
             else:
-                print(f"❌ Connection verification failed")
+                print(f"Connection verification failed")
                 await self._cleanup_connection()
                 return False
                 

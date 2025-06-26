@@ -307,7 +307,7 @@ class WebSocketServer:
         if hasattr(self, 'stream_engine'):
             await self.stream_engine.stop()
         
-        print("🔌 WebSocket server stopped")
+        print("WebSocket server stopped")
 
     async def _auto_connect_loop(self):
         """Periodically check and connect to registered devices"""
@@ -336,20 +336,20 @@ class WebSocketServer:
                                     else:
                                         attempt_info['count'] = 0  # 대기 시간 끝, 재시도
                                 
-                                print(f"🔍 Auto-connecting to {address} (attempt {attempt_info['count'] + 1})")
+                                print(f"Auto-connecting to {address} (attempt {attempt_info['count'] + 1})")
                                 attempt_info['last_attempt'] = current_time
                                 attempt_info['count'] += 1
                                 
                                 await self._run_connect_and_notify(address)
                                 if self.device_manager.is_connected():
-                                    print(f"✅ Successfully connected to {address}")
+                                    print(f"Successfully connected to {address}")
                                     connection_attempts[address]['count'] = 0  # 성공 시 카운터 리셋
                                     break
                 await asyncio.sleep(6)  # 6초마다 체크 (더 긴 간격)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"❌ Auto-connect error: {e}")
+                print(f"Auto-connect error: {e}")
                 await asyncio.sleep(6)
 
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
@@ -501,11 +501,11 @@ class WebSocketServer:
     async def _run_connect_and_notify(self, device_address: str):
         """Connect to device and start notifications."""
         try:
-            print(f"🔍 Attempting connection to {device_address}")
+            print(f"Attempting connection to {device_address}")
             
             # DeviceManager의 connect 메서드가 이미 스캔을 포함하므로 직접 연결 시도
             if not await self.device_manager.connect(device_address):
-                print(f"❌ Failed to connect to device {device_address}")
+                print(f"Failed to connect to device {device_address}")
                 await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
                     "address": device_address,
                     "reason": "connection_failed"
@@ -1429,7 +1429,7 @@ class WebSocketServer:
         try:
             await websocket.accept()
             self.connected_clients[client_id] = websocket
-            print(f"🔗 WebSocket client connected")
+            print(f"WebSocket client connected")
 
             # Send initial status
             await self.send_status(websocket)
@@ -1457,7 +1457,7 @@ class WebSocketServer:
         try:
             await websocket.accept()
             self.connected_clients[client_id] = websocket
-            print(f"🔗 Processed data client connected")
+            print(f"Processed data client connected")
 
             # Add data callback for this client
             async def data_callback(data: Dict[str, Any]):
@@ -1494,19 +1494,19 @@ class WebSocketServer:
                     import json
                     data = json.loads(data)
                 except json.JSONDecodeError:
-                    print(f"❌ Invalid JSON string: {data}")
+                    print(f"Invalid JSON string: {data}")
                     return
             
             # 딕셔너리가 아닌 경우 처리 중단
             if not isinstance(data, dict):
-                print(f"❌ Invalid data type: {type(data)}")
+                print(f"Invalid data type: {type(data)}")
                 return
             
             # health_check는 로그하지 않음 (너무 빈번함)
             if data.get('command') != 'health_check':
-                print(f"📡 Client message: {data.get('command', 'unknown')}")
+                print(f"Client message: {data.get('command', 'unknown')}")
         except Exception as e:
-            print(f"❌ Client message error: {e}")
+            print(f"Client message error: {e}")
             # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
 
     async def handle_command(self, client_id: str, data: Dict[str, Any]):
@@ -1548,7 +1548,7 @@ class WebSocketServer:
             # 명령어 메시지는 이미 handle_client_message에서 처리됨
             pass
         except Exception as e:
-            print(f"❌ Command error: {e}")
+            print(f"Command error: {e}")
             # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
 
     async def handle_data(self, client_id: str, data: Dict[str, Any]):
@@ -1577,7 +1577,7 @@ class WebSocketServer:
         """Handle client disconnection."""
         if client_id in self.connected_clients:
             del self.connected_clients[client_id]
-            print(f"🔌 WebSocket client disconnected")
+            print(f"WebSocket client disconnected")
 
     async def send_to_client(self, client_id: str, data: Dict[str, Any]):
         """Send data to a specific client."""
@@ -1630,7 +1630,7 @@ class WebSocketServer:
         if hasattr(self, 'stream_engine'):
             await self.stream_engine.stop()
         
-        print("🔌 FastAPI WebSocket server stopped")
+        print("FastAPI WebSocket server stopped")
 
     async def _handle_processed_data(self, data_type: str, processed_data: dict):
         """Handle processed data from device manager"""
