@@ -491,12 +491,16 @@ class WebSocketServer:
                     await self.send_error_to_client(websocket, "Command message missing command")
                     return
 
+                # [FIX] Do not send a direct response to the initial handshake.
+                # Let the periodic status update handle it. This avoids race conditions on Windows.
+                if command == "check_device_connection":
+                    logger.info("Received initial handshake command. No direct response will be sent.")
+                    return
+
                 logger.info(f"Processing command: {command} with payload: {payload}")
 
                 # Command handling logic
-                if command == "check_device_connection":
-                    await self._send_current_device_status(websocket)
-                elif command == "check_bluetooth_status":
+                if command == "check_bluetooth_status":
                     is_bluetooth_available = await self._check_bluetooth_status()
                     await self._broadcast_bluetooth_status(is_bluetooth_available)
                 elif command == "scan_devices":

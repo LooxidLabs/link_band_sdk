@@ -54,12 +54,14 @@ function App() {
   }, []);
 
   // Effect to start WebSocket connection only when Python server is running
+  /*
   useEffect(() => {
     if (pythonServerStatus.status === 'running') {
       console.log('Python server is running, attempting to start WebSocket manager.');
       startWebSocketManager();
     }
   }, [pythonServerStatus.status, startWebSocketManager]);
+  */
 
   const renderMainContent = () => {
     switch (activeMenu) {

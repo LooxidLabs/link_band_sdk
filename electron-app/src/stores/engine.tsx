@@ -50,11 +50,15 @@ class WebSocketManager {
   }
 
   start() {
-    console.log('WebSocketManager start method called.');
-    this.startAutoConnect();
+    // DO NOT START AUTOMATICALLY
+    // this.startAutoConnect();
+    console.log('WebSocketManager is initialized but not started automatically.');
   }
 
   startAutoConnect() {
+    // DISABLED FOR MANUAL TESTING
+    return;
+    /*
     if (this.autoConnectTimer) {
       clearInterval(this.autoConnectTimer);
     }
@@ -97,6 +101,7 @@ class WebSocketManager {
         }
       }, 1000);
     }, startupDelay);
+    */
   }
 
   private startConnectionCheck() {
@@ -117,6 +122,9 @@ class WebSocketManager {
   }
 
   private startHealthCheck() {
+    // DISABLED FOR MANUAL TESTING
+    return;
+    /*
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
     }
@@ -134,6 +142,7 @@ class WebSocketManager {
         this.onConnectionChange?.(false);
       }
     }, healthCheckInterval);
+    */
   }
 
   private isConnected(): boolean {
@@ -237,6 +246,8 @@ class WebSocketManager {
             this.healthCheckTimer = null;
           }
 
+          // DISABLED FOR MANUAL TESTING
+          /*
           // Don't attempt reconnection if server is not ready (code 1011)
           if (event.code === 1011) {
             console.log('Server not ready, will retry through auto-connect');
@@ -254,6 +265,7 @@ class WebSocketManager {
             console.log('Max reconnection attempts reached');
             this.onConnectionChange?.(false);
           }
+          */
           resolve(false);
         };
 
