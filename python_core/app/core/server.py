@@ -106,10 +106,16 @@ class WebSocketServer:
                     f"DataRecorder {'IS' if self.data_recorder else 'IS NOT'} configured. "
                     f"DeviceManager {'IS' if self.device_manager else 'IS NOT'} configured. "
                     f"DeviceRegistry {'IS' if self.device_registry else 'IS NOT'} configured.")
+        self.fastapi_ready = False  # Add flag to track FastAPI readiness
 
     def setup_routes(self):
         """Setup FastAPI routes and WebSocket endpoints."""
         pass  # Routes are now handled in main.py
+
+    def set_fastapi_ready(self):
+        """Mark FastAPI as ready to accept connections."""
+        self.fastapi_ready = True
+        logger.info("FastAPI marked as ready for WebSocket connections")
 
     async def initialize(self):
         """Initialize the WebSocket server."""
@@ -206,6 +212,12 @@ class WebSocketServer:
         """Handle new client connections"""
         client_address = websocket.remote_address
         logger.info(f"New connection attempt from {client_address}")
+
+        # Wait for FastAPI to be fully ready before accepting connections
+        if not self.fastapi_ready:
+            logger.warning(f"Rejecting connection from {client_address} - FastAPI not ready yet")
+            await websocket.close(1011, "Server not ready")
+            return
 
         # 같은 주소의 이전 연결을 제거
         for client in list(self.clients):

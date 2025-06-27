@@ -225,6 +225,10 @@ async def startup_event():
     
     print("Link Band SDK Server ready!")
     print("WebSocket server initialized")  # Signal for Electron main process
+    
+    # Mark FastAPI as ready to accept WebSocket connections
+    app.state.ws_server.set_fastapi_ready()
+    print("Auto-connect loop started")
 
 @app.on_event("shutdown")
 async def shutdown_event():

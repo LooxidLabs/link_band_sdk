@@ -4,6 +4,7 @@ import type { ConnectionInfo, EngineStatus } from '../types/engine';
 import type { EEGData, PPGData, AccData, BatteryData } from '../types/sensor';
 import { useDeviceStore } from './device';
 import { useSensorStore } from './sensor';
+import { usePythonServerStore } from './pythonServerStore';
 
 interface SensorData {
   timestamp: number;
@@ -53,31 +54,42 @@ class WebSocketManager {
       clearInterval(this.autoConnectTimer);
     }
 
-    this.autoConnectTimer = setInterval(() => {
-      const deviceStore = useDeviceStore.getState();
-      const engineStore = useEngineStore.getState();
+    // Add initial delay to ensure Python server is fully initialized
+    // This prevents connecting to WebSocket before FastAPI is ready
+    const startupDelay = 3000; // 3 seconds delay for server initialization
+    
+    console.log(`Waiting ${startupDelay}ms for Python server to fully initialize...`);
+    
+    setTimeout(() => {
+      console.log('Starting WebSocket auto-connect after server initialization delay');
+      
+      // Start the auto-connect interval
+      this.autoConnectTimer = setInterval(() => {
+        const deviceStore = useDeviceStore.getState();
+        const engineStore = useEngineStore.getState();
 
-      // 이미 연결되어 있으면 연결 시도하지 않음
-      if (this.isConnected()) {
-        // console.log('WebSocket is already connected');
-        return;
-      }
+        // 이미 연결되어 있으면 연결 시도하지 않음
+        if (this.isConnected()) {
+          // console.log('WebSocket is already connected');
+          return;
+        }
 
-      // 디바이스가 연결되어 있으면 WebSocket 연결 시도 (스트리밍 상태 무관)
-      // 스트리밍이 시작되면 자동으로 데이터를 받을 수 있도록 미리 연결
-      if (deviceStore.deviceStatus?.is_connected) {
-        console.log('Auto-connecting to WebSocket (device connected)...', {
-          deviceStatus: deviceStore.deviceStatus?.is_connected,
-          isStreaming: engineStore.connectionInfo?.is_streaming
-        });
-        this.connect();
-      } else {
-        // console.log('Auto-connect conditions not met:', {
-        //   deviceStatus: deviceStore.deviceStatus?.is_connected,
-        //   isStreaming: engineStore.connectionInfo?.is_streaming
-        // });
-      }
-    }, 1000);
+        // 디바이스가 연결되어 있으면 WebSocket 연결 시도 (스트리밍 상태 무관)
+        // 스트리밍이 시작되면 자동으로 데이터를 받을 수 있도록 미리 연결
+        if (deviceStore.deviceStatus?.is_connected) {
+          console.log('Auto-connecting to WebSocket (device connected)...', {
+            deviceStatus: deviceStore.deviceStatus?.is_connected,
+            isStreaming: engineStore.connectionInfo?.is_streaming
+          });
+          this.connect();
+        } else {
+          // console.log('Auto-connect conditions not met:', {
+          //   deviceStatus: deviceStore.deviceStatus?.is_connected,
+          //   isStreaming: engineStore.connectionInfo?.is_streaming
+          // });
+        }
+      }, 1000);
+    }, startupDelay);
   }
 
   private startConnectionCheck() {
@@ -125,6 +137,13 @@ class WebSocketManager {
     }
     if (this.isConnecting) {
       console.log('WebSocket connection attempt already in progress');
+      return;
+    }
+
+    // Check if Python server is ready
+    const pythonServerStore = usePythonServerStore.getState();
+    if (!pythonServerStore.isRunning) {
+      console.log('Python server is not running yet, skipping WebSocket connection');
       return;
     }
 
@@ -200,10 +219,19 @@ class WebSocketManager {
             this.healthCheckTimer = null;
           }
 
+          // Don't attempt reconnection if server is not ready (code 1011)
+          if (event.code === 1011) {
+            console.log('Server not ready, will retry through auto-connect');
+            resolve(false);
+            return;
+          }
+
           if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
-            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-            setTimeout(() => this.connect(), this.reconnectDelay);
+            // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+            const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
+            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) after ${delay}ms...`);
+            setTimeout(() => this.connect(), delay);
           } else {
             console.log('Max reconnection attempts reached');
             this.onConnectionChange?.(false);
