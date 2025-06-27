@@ -36,55 +36,67 @@ def get_python_executable():
         return sys.executable
 
 def run_server(host: str = "localhost", port: int = 8121) -> None:
-    """Run the MNE-enabled LinkBand server."""
+    """Run the LinkBand server using the tested and working fixed version."""
     try:
         # Get the directory containing this script
         script_dir = Path(__file__).parent
         
-        # Look for the MNE-enabled server binary - platform specific
+        # Use only the tested and working fixed version
         if sys.platform == "win32":
-            server_binary = script_dir / "dist" / "linkband-server-windows.exe"
-            if not server_binary.exists():
-                # Fallback to the distributed version
-                server_binary = script_dir.parent / "installers" / "distribution" / "windows" / "linkband-server-windows.exe"
-        else:
-            # macOS/Linux
-            server_binary = script_dir / "dist" / "linkband-server-macos-arm64-final"
-            if not server_binary.exists():
-                # Fallback to the distributed version
-                server_binary = script_dir.parent / "installers" / "distribution" / "macos-arm64" / "linkband-server-macos-arm64-final"
-        
-        if not server_binary.exists():
-            logger.error(f"MNE-enabled server binary not found at {server_binary}")
-            logger.info("Falling back to standalone_server.py")
+            # Primary: Use the tested linkband-server-windows-fixed.exe
+            server_binary = script_dir / "dist" / "linkband-server-windows-fixed.exe"
             
-            # Fallback to standalone_server.py using subprocess with proper Python
-            standalone_server = script_dir / "standalone_server.py"
-            if standalone_server.exists():
-                logger.info(f"Running standalone_server.py from {standalone_server}")
-                
-                # Get the appropriate Python executable
-                python_exe = get_python_executable()
-                
-                # Run standalone_server.py as subprocess
-                try:
-                    result = subprocess.run([
-                        python_exe, 
-                        str(standalone_server)
-                    ], cwd=str(script_dir), check=True)
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"standalone_server.py failed with exit code {e.returncode}")
-                    sys.exit(1)
-            else:
-                logger.error("standalone_server.py not found either")
+            if not server_binary.exists():
+                logger.error(f"Required server binary not found at {server_binary}")
+                logger.info("Please build the server first using: python build_windows_server_mne.py")
                 sys.exit(1)
-            return
+        else:
+            # macOS/Linux - use the appropriate binary
+            if sys.platform == "darwin":
+                if "arm64" in os.uname().machine.lower():
+                    server_binary = script_dir / "dist" / "linkband-server-macos-arm64-final"
+                else:
+                    server_binary = script_dir / "dist" / "linkband-server-macos-intel-final"
+            else:
+                server_binary = script_dir / "dist" / "linkband-server-linux"
+            
+            if not server_binary.exists():
+                logger.error(f"Server binary not found at {server_binary}")
+                logger.info("Falling back to standalone_server.py")
+                
+                # Fallback to standalone_server.py
+                standalone_server = script_dir / "standalone_server.py"
+                if standalone_server.exists():
+                    logger.info(f"Running standalone_server.py from {standalone_server}")
+                    
+                    # Get the appropriate Python executable
+                    python_exe = get_python_executable()
+                    
+                    # Run standalone_server.py as subprocess
+                    try:
+                        result = subprocess.run([
+                            python_exe, 
+                            str(standalone_server)
+                        ], cwd=str(script_dir), check=True)
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"standalone_server.py failed with exit code {e.returncode}")
+                        sys.exit(1)
+                else:
+                    logger.error("standalone_server.py not found either")
+                    sys.exit(1)
+                return
         
-        logger.info(f"Starting MNE-enabled LinkBand server from {server_binary}")
+        logger.info(f"Starting LinkBand server from {server_binary}")
         logger.info(f"Server will run on {host}:{port}")
+        logger.info("=" * 50)
+        logger.info("🚀 LinkBand SDK Server Starting...")
+        logger.info("📡 WebSocket server will be available at ws://localhost:18765")
+        logger.info("🌐 REST API will be available at http://localhost:8121")
+        logger.info("=" * 50)
         
-        # Make the binary executable
-        os.chmod(server_binary, 0o755)
+        # Make the binary executable (for macOS/Linux)
+        if sys.platform != "win32":
+            os.chmod(server_binary, 0o755)
         
         # Run the binary
         result = subprocess.run([str(server_binary)], check=True)

@@ -171,13 +171,32 @@ class WebSocketServer:
         try:
             # Create new server
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] Creating websockets.serve on {self.host}:{self.port}")
+            
+            # Windows 특화 WebSocket 서버 설정
+            server_kwargs = {
+                'family': socket.AF_INET,  # IPv4 전용으로 강제
+                'ping_interval': 20,       # 20초마다 ping 전송
+                'ping_timeout': 20         # 20초 내에 pong이 없으면 연결 종료
+            }
+            
+            # Windows에서 추가 안정성 설정
+            if platform.system() == 'Windows':
+                logger.info("[WEBSOCKET_SERVER_DEBUG] Applying Windows-specific WebSocket settings")
+                server_kwargs.update({
+                    'max_size': 2**20,      # 1MB 메시지 크기 제한
+                    'max_queue': 32,        # 큐 크기 제한
+                    'read_limit': 2**16,    # 64KB 읽기 버퍼
+                    'write_limit': 2**16,   # 64KB 쓰기 버퍼
+                    'close_timeout': 10,    # 연결 종료 타임아웃
+                    'ping_interval': 30,    # Windows에서 더 긴 ping 간격
+                    'ping_timeout': 30      # Windows에서 더 긴 ping 타임아웃
+                })
+            
             self.server = await websockets.serve(
                 self.handle_client,
                 self.host,
                 self.port,
-                family=socket.AF_INET,  # IPv4 전용으로 강제
-                ping_interval=20,       # 20초마다 ping 전송
-                ping_timeout=20         # 20초 내에 pong이 없으면 연결 종료
+                **server_kwargs
             )
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] websockets.serve created successfully")
             
@@ -330,33 +349,24 @@ class WebSocketServer:
             logger.info(f"[CONNECTION_DEBUG] Client connected from {client_address}. Total clients: {len(self.clients)}")
             logger.info(f"[CONNECTION_DEBUG] WebSocket state: closed={websocket.closed}, state={getattr(websocket, 'state', 'unknown')}")
 
-            # [FIX] Do not send any data immediately. Wait for the client's first message.
-            # This is to work around a race condition on Windows where the connection
-            # drops if the server sends data before receiving anything.
-            logger.info("[CONNECTION_DEBUG] Connection established. Waiting for client's initial handshake.")
+            # Send initial status immediately for faster user experience
+            logger.info("[CONNECTION_DEBUG] Connection established. Sending initial status.")
             
-            try:
-                # Wait for the first message with a timeout
-                message = await asyncio.wait_for(websocket.recv(), timeout=30.0)
-                logger.info("Initial handshake received. Connection is stable.")
-                await self.handle_client_message(websocket, message)
-            except asyncio.TimeoutError:
-                logger.warning(f"Client {client_address} did not send initial handshake. Closing connection.")
-                # No need to remove from self.clients, finally block will do it.
-                return
-            except websockets.exceptions.ConnectionClosed:
-                # This is expected if the client disconnects before sending the handshake
-                logger.info(f"Client {client_address} disconnected before handshake.")
-                return
-
-            # [WINDOWS FIX] Do not send any messages immediately after handshake
-            # Let the periodic status update handle initial status broadcasting
-            # This prevents connection drops on Windows
-            logger.info("Handshake completed. Letting periodic updates handle status broadcasting.")
+            # Add small delay to let connection stabilize on Windows
+            if platform.system() == 'Windows':
+                await asyncio.sleep(0.1)  # 100ms delay for Windows
+            
+            # Send current device status immediately
+            await self._send_current_device_status(websocket)
+            logger.info("[CONNECTION_DEBUG] Initial status sent successfully.")
 
             # Continue handling subsequent messages
             async for message in websocket:
-                await self.handle_client_message(websocket, message)
+                try:
+                    await self.handle_client_message(websocket, message)
+                except Exception as e:
+                    logger.error(f"Error handling message from {client_address}: {e}")
+                    # Continue processing other messages instead of breaking
 
         except websockets.exceptions.ConnectionClosed as e:
             logger.info(f"Client connection closed from {client_address}: {e}")
