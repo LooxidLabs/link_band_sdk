@@ -230,11 +230,12 @@ class WebSocketServer:
     async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
         """Handle new client connections with improved error handling for Windows"""
         client_address = websocket.remote_address
-        logger.info(f"New connection attempt from {client_address}")
+        logger.info(f"[CONNECTION_DEBUG] New connection attempt from {client_address}")
+        logger.info(f"[CONNECTION_DEBUG] WebSocket details: path={websocket.path}, headers={dict(websocket.request_headers)}")
 
         # Wait for FastAPI to be fully ready before accepting connections
         if not self.fastapi_ready:
-            logger.warning(f"Rejecting connection from {client_address} - FastAPI not ready yet")
+            logger.warning(f"[CONNECTION_DEBUG] Rejecting connection from {client_address} - FastAPI not ready yet")
             await websocket.close(1011, "Server not ready")
             return
 
@@ -251,12 +252,13 @@ class WebSocketServer:
         try:
             # 새 연결 추가
             self.clients.add(websocket)
-            logger.info(f"Client connected from {client_address}. Total clients: {len(self.clients)}")
+            logger.info(f"[CONNECTION_DEBUG] Client connected from {client_address}. Total clients: {len(self.clients)}")
+            logger.info(f"[CONNECTION_DEBUG] WebSocket state: closed={websocket.closed}, state={getattr(websocket, 'state', 'unknown')}")
 
             # [FIX] Do not send any data immediately. Wait for the client's first message.
             # This is to work around a race condition on Windows where the connection
             # drops if the server sends data before receiving anything.
-            logger.info("Connection established. Waiting for client's initial handshake.")
+            logger.info("[CONNECTION_DEBUG] Connection established. Waiting for client's initial handshake.")
             
             try:
                 # Wait for the first message with a timeout

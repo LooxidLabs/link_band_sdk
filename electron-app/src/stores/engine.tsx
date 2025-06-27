@@ -218,7 +218,10 @@ class WebSocketManager {
         this.ws = new WebSocket(url);
 
         this.ws.onopen = () => {
-          console.log(`WebSocket connected successfully to ${url}`);
+          console.log(`[WEBSOCKET_CONNECTION_DEBUG] WebSocket connected successfully to ${url}`);
+          console.log(`[WEBSOCKET_CONNECTION_DEBUG] WebSocket readyState: ${this.ws?.readyState}`);
+          console.log(`[WEBSOCKET_CONNECTION_DEBUG] WebSocket URL: ${this.ws?.url}`);
+          console.log(`[WEBSOCKET_CONNECTION_DEBUG] WebSocket protocol: ${this.ws?.protocol}`);
           clearTimeout(timeout);
           // this.reconnectAttempts = 0; // Temporarily disabled
           this.onConnectionChange?.(true);
@@ -226,7 +229,7 @@ class WebSocketManager {
           this.startConnectionCheck();
           
           // Send initial handshake message to keep connection alive
-          console.log('Sending initial handshake message');
+          console.log('[WEBSOCKET_CONNECTION_DEBUG] Sending initial handshake message');
           this.send({
             type: 'command',
             command: 'check_device_connection'
@@ -236,7 +239,13 @@ class WebSocketManager {
         };
 
         this.ws.onclose = (event) => {
-          console.log('WebSocket connection closed', event.code, event.reason);
+          console.log('[WEBSOCKET_CONNECTION_DEBUG] WebSocket connection closed', event.code, event.reason);
+          console.log('[WEBSOCKET_CONNECTION_DEBUG] Close event details:', {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+            type: event.type
+          });
           clearTimeout(timeout);
           this.ws = null;
           this.onConnectionChange?.(false);
@@ -270,7 +279,12 @@ class WebSocketManager {
         };
 
         this.ws.onerror = (error) => {
-          console.error(`WebSocket error for ${url}:`, error);
+          console.error(`[WEBSOCKET_CONNECTION_DEBUG] WebSocket error for ${url}:`, error);
+          console.error('[WEBSOCKET_CONNECTION_DEBUG] Error event details:', {
+            type: error.type,
+            target: error.target,
+            currentTarget: error.currentTarget
+          });
           clearTimeout(timeout);
           this.ws = null;
           this.onConnectionChange?.(false);
@@ -318,9 +332,24 @@ class WebSocketManager {
 
   send(message: any) {
     if (this.isConnected()) {
-      this.ws!.send(JSON.stringify(message));
+      const messageStr = JSON.stringify(message);
+      console.log('[WEBSOCKET_SEND_DEBUG] Sending message:', messageStr);
+      console.log('[WEBSOCKET_SEND_DEBUG] WebSocket state before send:', {
+        readyState: this.ws?.readyState,
+        url: this.ws?.url
+      });
+      try {
+        this.ws!.send(messageStr);
+        console.log('[WEBSOCKET_SEND_DEBUG] Message sent successfully');
+      } catch (error) {
+        console.error('[WEBSOCKET_SEND_DEBUG] Error sending message:', error);
+      }
     } else {
-      console.error('Cannot send message: WebSocket is not connected');
+      console.error('[WEBSOCKET_SEND_DEBUG] Cannot send message: WebSocket is not connected');
+      console.error('[WEBSOCKET_SEND_DEBUG] Current WebSocket state:', {
+        ws: this.ws,
+        readyState: this.ws?.readyState
+      });
     }
   }
 
