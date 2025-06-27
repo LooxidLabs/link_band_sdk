@@ -24,7 +24,17 @@ def main():
         "numpy",
         "scipy", 
         "matplotlib",
-        "scikit-learn"
+        "scikit-learn",
+        "bleak",  # Bluetooth Low Energy
+        "fastapi",
+        "uvicorn",
+        "websockets",
+        "pydantic",
+        "starlette",
+        "heartpy",
+        "psutil",
+        "python-dotenv",
+        "python-multipart"
     ]
     
     for package in required_packages:
@@ -65,6 +75,19 @@ def main():
         "--hidden-import", "websockets",
         "--hidden-import", "asyncio",
         "--hidden-import", "sqlite3",
+        # Bluetooth and device communication
+        "--hidden-import", "bleak",
+        "--hidden-import", "bleak.backends",
+        "--hidden-import", "bleak.backends.winrt",
+        "--hidden-import", "bleak.backends.winrt.client",
+        "--hidden-import", "bleak.backends.winrt.scanner",
+        # FastAPI and web framework
+        "--hidden-import", "pydantic",
+        "--hidden-import", "starlette",
+        "--hidden-import", "starlette.applications",
+        "--hidden-import", "starlette.routing",
+        "--hidden-import", "starlette.responses",
+        "--hidden-import", "starlette.middleware",
         # MNE and scientific computing
         "--hidden-import", "mne",
         "--hidden-import", "numpy",
@@ -94,6 +117,12 @@ def main():
         "--hidden-import", "atexit",
         # Windows specific
         "--hidden-import", "winsound",
+        # Additional dependencies
+        "--hidden-import", "heartpy",
+        "--hidden-import", "psutil",
+        "--hidden-import", "dotenv",
+        "--hidden-import", "multipart",
+        "--hidden-import", "importlib_metadata",
         "standalone_server.py"
     ]
     
