@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useDeviceStore } from "./stores/device";
 import { useEngineStore } from "./stores/engine";
 import { useUIStore } from "./stores/uiStore";
-import { usePythonServerStore, setupPythonServerEventListeners } from "./stores/pythonServerStore";
+import { setupPythonServerEventListeners } from "./stores/pythonServerStore";
 import { Sidebar } from './components/Sidebar';
 import { TopNavigation } from './components/TopNavigation';
 
@@ -28,12 +28,12 @@ function App() {
     startPolling: startEnginePolling,
     stopPolling: stopEnginePolling,
     isWebSocketConnected,
-    startWebSocketManager,
+    // startWebSocketManager, // Temporarily disabled
     // samplingRates
   } = useEngineStore();
 
   const { activeMenu } = useUIStore();
-  const { status: pythonServerStatus } = usePythonServerStore();
+  // const { status: pythonServerStatus } = usePythonServerStore(); // Temporarily disabled
 
   const isConnected = deviceStatus?.is_connected || false;
   const batteryLevel = deviceStatus?.battery_level || 0;

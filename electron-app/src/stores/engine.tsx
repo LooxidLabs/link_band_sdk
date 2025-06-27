@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { engineApi } from '../api/engine';
 import type { ConnectionInfo, EngineStatus } from '../types/engine';
 import type { EEGData, PPGData, AccData, BatteryData } from '../types/sensor';
-import { useDeviceStore } from './device';
+// import { useDeviceStore } from './device'; // Temporarily disabled
 import { useSensorStore } from './sensor';
 import { usePythonServerStore } from './pythonServerStore';
 
@@ -40,9 +40,9 @@ class WebSocketManager {
   private isConnecting = false;
   private messageHandler: (message: any) => void;
   public onConnectionChange: ((connected: boolean) => void) | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 2000;
+  // private reconnectAttempts = 0; // Temporarily disabled
+  // private maxReconnectAttempts = 5; // Temporarily disabled
+  // private reconnectDelay = 2000; // Temporarily disabled
 
   constructor(url: string, messageHandler: (message: any) => void) {
     this.url = url;
@@ -220,7 +220,7 @@ class WebSocketManager {
         this.ws.onopen = () => {
           console.log(`WebSocket connected successfully to ${url}`);
           clearTimeout(timeout);
-          this.reconnectAttempts = 0;
+          // this.reconnectAttempts = 0; // Temporarily disabled
           this.onConnectionChange?.(true);
           this.startHealthCheck();
           this.startConnectionCheck();
@@ -312,7 +312,7 @@ class WebSocketManager {
       this.ws.close();
       this.ws = null;
     }
-    this.reconnectAttempts = 0;
+    // this.reconnectAttempts = 0; // Temporarily disabled
     this.onConnectionChange?.(false);
   }
 
