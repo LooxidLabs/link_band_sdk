@@ -115,7 +115,10 @@ class WebSocketServer:
     def set_fastapi_ready(self):
         """Mark FastAPI as ready to accept connections."""
         self.fastapi_ready = True
-        logger.info("FastAPI marked as ready for WebSocket connections")
+        logger.info("========================================")
+        logger.info("🚀 FastAPI marked as ready for WebSocket connections")
+        logger.info("🔗 WebSocket connections will now be accepted")
+        logger.info("========================================")
 
     async def initialize(self):
         """Initialize the WebSocket server."""
@@ -232,6 +235,7 @@ class WebSocketServer:
         client_address = websocket.remote_address
         logger.info(f"[CONNECTION_DEBUG] New connection attempt from {client_address}")
         logger.info(f"[CONNECTION_DEBUG] WebSocket details: path={websocket.path}, headers={dict(websocket.request_headers)}")
+        logger.info(f"[CONNECTION_DEBUG] FastAPI ready status: {self.fastapi_ready}")
 
         # Wait for FastAPI to be fully ready before accepting connections
         if not self.fastapi_ready:

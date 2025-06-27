@@ -166,12 +166,18 @@ class WebSocketManager {
       return;
     }
 
-    this.isConnecting = true;
-    console.log('Attempting to connect to WebSocket server...', this.url);
-
-    // Platform detection
+    // Platform detection and additional delay for Windows
     const isWindows = navigator.userAgent.toLowerCase().includes('windows');
     console.log('Platform detected:', isWindows ? 'Windows' : 'Other');
+    
+    if (isWindows) {
+      console.log('Windows detected: Adding extra delay to ensure FastAPI is fully ready...');
+      await new Promise(resolve => setTimeout(resolve, 20000)); // 20 second delay for Windows
+      console.log('Windows delay complete, proceeding with connection...');
+    }
+
+    this.isConnecting = true;
+    console.log('Attempting to connect to WebSocket server...', this.url);
     console.log('Current location:', window.location.href);
 
     // Windows 특별 처리: 여러 URL 시도 (IPv6 포함)
@@ -475,6 +481,30 @@ export const useEngineStore = create<EngineState>((set, get) => {
   // WebSocket 메시지 핸들러
   const handleWebSocketMessage = (message: any) => {
     console.log('[WEBSOCKET_CLIENT_DEBUG] Received message:', message);
+
+    // Handle server status messages (initialization, ready, error)
+    if (message.type === 'server_status') {
+      console.log('[WEBSOCKET_CLIENT_DEBUG] Server status message:', message);
+      
+      switch (message.status) {
+        case 'initializing':
+          console.log(`[WEBSOCKET_CLIENT_DEBUG] Server initializing: ${message.message}`);
+          if (message.retry_after) {
+            console.log(`[WEBSOCKET_CLIENT_DEBUG] Will retry after ${message.retry_after} seconds`);
+          }
+          break;
+        case 'ready':
+          console.log(`[WEBSOCKET_CLIENT_DEBUG] Server ready: ${message.message}`);
+          break;
+        case 'error':
+          console.error(`[WEBSOCKET_CLIENT_DEBUG] Server error: ${message.message}`);
+          if (message.retry_after) {
+            console.log(`[WEBSOCKET_CLIENT_DEBUG] Suggested retry after ${message.retry_after} seconds`);
+          }
+          break;
+      }
+      return;
+    }
 
     // Handle handshake response
     if (message.type === 'handshake_response') {
