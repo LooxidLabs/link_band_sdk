@@ -175,7 +175,7 @@ async def startup_event():
     print("Starting Link Band SDK Server...")
 
     # Ensure required ports are available
-    ws_host = "localhost" 
+    ws_host = "127.0.0.1"  # IPv4 명시적 사용 (Windows 호환성)
     ws_port = 18765
     if not ensure_port_available(ws_port):
         print(f"Failed to free WebSocket port {ws_port}, server may fail to start")

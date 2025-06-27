@@ -105,8 +105,8 @@ class WebSocketManager {
 
     // Windows 특별 처리: 여러 URL 시도 (IPv6 포함)
     const urlsToTry = [
-      this.url,
-      'ws://127.0.0.1:18765',
+      this.url,  // 기본값: ws://127.0.0.1:18765
+      'ws://localhost:18765',
       'ws://[::1]:18765',  // IPv6 localhost
       'ws://0.0.0.0:18765'
     ];
@@ -327,8 +327,8 @@ type DeviceStateMethods = {
 type DeviceState = DeviceStateData & DeviceStateMethods;
 
 const MAX_DATA_POINTS = 1000;
-// Windows 호환성을 위해 localhost 사용
-const WS_URL = 'ws://localhost:18765';
+// Windows 호환성을 위해 127.0.0.1 우선 사용
+const WS_URL = 'ws://127.0.0.1:18765';
 
 // Windows 디버깅을 위한 추가 로깅
 console.log('=== WebSocket Debug Info ===');

@@ -16,6 +16,7 @@ import uuid
 from app.core.utils import ensure_port_available
 from app.data.data_recorder import DataRecorder
 from app.core.signal_processing import SignalProcessor
+import socket
 
 # Configure logging
 logging.basicConfig(
@@ -162,7 +163,8 @@ class WebSocketServer:
             self.server = await websockets.serve(
                 self.handle_client,
                 self.host,
-                self.port
+                self.port,
+                family=socket.AF_INET  # IPv4 전용으로 강제
             )
             
             # Start auto-connect task

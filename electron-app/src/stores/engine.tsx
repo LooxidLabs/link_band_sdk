@@ -133,8 +133,8 @@ class WebSocketManager {
 
     // Windows 특별 처리: 여러 URL 시도 (IPv6 포함)
     const urlsToTry = [
-      this.url,
-      'ws://127.0.0.1:18765',
+      this.url,  // 기본값: ws://127.0.0.1:18765
+      'ws://localhost:18765',
       'ws://[::1]:18765',  // IPv6 localhost
       'ws://0.0.0.0:18765'
     ];
@@ -329,8 +329,8 @@ interface EngineState {
   autoConnectWebSocket: () => void;
 }
 
-// Windows 호환성을 위해 localhost 사용
-const WS_URL = 'ws://localhost:18765';
+// Windows 호환성을 위해 127.0.0.1 우선 사용
+const WS_URL = 'ws://127.0.0.1:18765';
 
 // 샘플링 레이트 계산 및 업데이트 함수
 const updateSamplingRates = (state: EngineState): EngineState => {
