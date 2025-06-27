@@ -21,7 +21,7 @@ export function StatusBar({
   batteryLevel 
 }: StatusBarProps) {
   // Get Python server status
-  const { status: serverStatus, refreshStatus } = usePythonServerStore();
+  const { refreshStatus } = usePythonServerStore();
   // Get engine status from store
   const { engineStatus } = useEngineStore();
   
@@ -34,11 +34,6 @@ export function StatusBar({
   
   // State for recording duration
   const [recordingDuration, setRecordingDuration] = useState<string>('00.00 s');
-  
-  // Debug: Log server status changes
-  useEffect(() => {
-    console.log('StatusBar - Python Server Status:', serverStatus.status);
-  }, [serverStatus.status]);
   
   // Start metrics polling and refresh server status periodically
   useEffect(() => {
@@ -95,11 +90,6 @@ export function StatusBar({
     disk: systemMetrics?.disk?.toFixed(1) || 'N/A'
   };
 
-  // Debug logging
-  useEffect(() => {
-    console.log('StatusBar - System Metrics:', systemMetrics);
-  }, [systemMetrics]);
-
   return (
     <footer className="bg-card border-t border-border px-6 py-2">
       <div className="flex items-center justify-between text-xs text-foreground">
@@ -141,22 +131,22 @@ export function StatusBar({
         <div className="flex items-center space-x-4">
           <div className="flex items-center gap-1">
             <Brain className="h-3 w-3 text-chart-1" />
-            <span className="text-foreground">EEG: {systemStats.eeg.value?.toFixed(1) || '-'} {systemStats.eeg.unit}</span>
+            <span className="text-foreground">EEG: {isConnected && systemStats.eeg.value ? systemStats.eeg.value.toFixed(1) : '-'} {systemStats.eeg.unit}</span>
           </div>
 
           <div className="flex items-center gap-1">
             <HeartPulse className="h-3 w-3 text-chart-2" />
-            <span className="text-foreground">PPG: {systemStats.ppg.value?.toFixed(1) || '-'} {systemStats.ppg.unit}</span>
+            <span className="text-foreground">PPG: {isConnected && systemStats.ppg.value ? systemStats.ppg.value.toFixed(1) : '-'} {systemStats.ppg.unit}</span>
           </div>
 
           <div className="flex items-center gap-1">
             <Move3d className="h-3 w-3 text-chart-3" />
-            <span className="text-foreground">ACC: {systemStats.accel.value?.toFixed(1) || '-'} {systemStats.accel.unit}</span>
+            <span className="text-foreground">ACC: {isConnected && systemStats.accel.value ? systemStats.accel.value.toFixed(1) : '-'} {systemStats.accel.unit}</span>
           </div>
 
           <div className="flex items-center gap-1">
             <Battery className="h-3 w-3 text-chart-4" />
-            <span className="text-foreground">Battery: {systemStats.battery}%</span>
+            <span className="text-foreground">Battery: {isConnected && batteryLevel ? batteryLevel : '-'}%</span>
           </div>
         </div>
 

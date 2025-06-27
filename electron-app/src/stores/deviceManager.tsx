@@ -792,7 +792,9 @@ export const useDeviceManager = create<DeviceState & {
       wsManager.disconnect();
       setTimeout(() => {
         if (!wsManager.isConnectedPublic()) {
-          wsManager.connect();
+          // Temporarily disable WebSocket connection in deviceManager
+          // wsManager.connect();
+          console.log('DeviceManager WebSocket connection disabled - using engine WebSocket instead');
         }
       }, 2000);
     });
@@ -809,7 +811,7 @@ export const useDeviceManager = create<DeviceState & {
   }
 
   // 디바이스 등록 리스너 설정
-  wsManager.send({ command: 'get_registered_devices' });
+  // wsManager.send({ command: 'get_registered_devices' });
 
   // 클라우드 전송 샘플 수를 1초마다 상태로 반영
   setInterval(() => {
