@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 import numpy as np
 from scipy import signal
+from scipy.signal import butter, filtfilt, welch
 import logging
 import heartpy as hp
 import mne
@@ -40,6 +41,8 @@ PROCESSING_INTERVALS = {
     "acc": 0.5,    # Process every 0.5 second
     "bat": 1.0     # Process every 1 second
 }
+
+
 
 def bandpass_filter(data: np.ndarray, low_freq: float, high_freq: float, fs: float = 250) -> np.ndarray:
     """Apply bandpass filter to the input data"""
