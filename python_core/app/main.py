@@ -81,7 +81,7 @@ app = FastAPI(
 
     ## WebSocket Connection
 
-    Connect to `ws://localhost:18765/ws` for real-time data streaming after initializing the stream server.
+    Connect to `ws://localhost:18765` for real-time data streaming after initializing the stream server.
 
     ## Data Types
 
@@ -106,7 +106,7 @@ app = FastAPI(
     },
     servers=[
         {
-            "url": "http://localhost:18765",
+            "url": "http://localhost:8121",
             "description": "Development server"
         }
     ],
@@ -211,7 +211,7 @@ async def startup_event():
     print("[5/8] Configuring WebSocket server...")
     app.state.ws_server = WebSocketServer(
         host=ws_host, 
-        port=None,  # FastAPI에서 WebSocket 처리, 별도 서버 비활성화
+        port=ws_port,  # 별도 WebSocket 서버 18765 포트에서 실행
         data_recorder=app.state.data_recorder,
         device_manager=app.state.device_manager,
         device_registry=app.state.device_registry

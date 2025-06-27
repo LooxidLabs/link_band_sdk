@@ -45,7 +45,7 @@ def main():
             os.chdir(project_root)
             print(f"Running from source, working directory: {os.getcwd()}")
 
-        logger.info("Starting FastAPI server on localhost:18765")
+        logger.info("Starting FastAPI server on localhost:8121")
         logger.info(f"Python version: {sys.version}")
         logger.info(f"Working directory: {os.getcwd()}")
         logger.info(f"Python path: {sys.path[:3]}...")  # Show first 3 paths
@@ -54,7 +54,7 @@ def main():
         uvicorn.run(
             "app.main:app",
             host="localhost",
-            port=18765,
+            port=8121,
             reload=False,
             log_level="info",
             access_log=True
