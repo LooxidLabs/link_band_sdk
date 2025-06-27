@@ -105,20 +105,25 @@ class WebSocketTestClient:
     async def handle_processed_data(self, data: Dict[str, Any]):
         """Processed data 메시지 처리 (새로운 형식)"""
         sensor_type = data.get('sensor_type', 'unknown')
-        processed_info = data.get('data', {})
+        processed_data_array = data.get('data', [])
         timestamp = data.get('timestamp', 0)
         
         self.processed_data_count[sensor_type] = self.processed_data_count.get(sensor_type, 0) + 1
         
         print(f"🟢 PROCESSED {sensor_type.upper()}: timestamp: {timestamp:.3f}")
-        if sensor_type == 'eeg':
-            print(f"   Filtered: CH1 samples={len(processed_info.get('ch1_filtered', []))}, CH2 samples={len(processed_info.get('ch2_filtered', []))}")
-        elif sensor_type == 'ppg':
-            print(f"   Filtered: PPG samples={len(processed_info.get('filtered_ppg', []))}")
-        elif sensor_type == 'acc':
-            print(f"   Filtered: ACC samples={len(processed_info.get('filtered_acc', []))}")
-        elif sensor_type == 'battery':
-            print(f"   Level: {processed_info.get('level', 0)}%")
+        
+        if processed_data_array and len(processed_data_array) > 0:
+            processed_info = processed_data_array[0]  # 첫 번째 요소 사용
+            if sensor_type == 'eeg':
+                print(f"   Filtered: CH1 samples={len(processed_info.get('ch1_filtered', []))}, CH2 samples={len(processed_info.get('ch2_filtered', []))}")
+            elif sensor_type == 'ppg':
+                print(f"   Filtered: PPG samples={len(processed_info.get('filtered_ppg', []))}")
+            elif sensor_type == 'acc':
+                print(f"   Filtered: ACC samples={len(processed_info.get('filtered_acc', []))}")
+            elif sensor_type == 'battery':
+                print(f"   Level: {processed_info.get('level', 0)}%")
+        else:
+            print(f"   No processed data in array")
 
     async def handle_legacy_processed_data(self, data: Dict[str, Any]):
         """Legacy processed data 메시지 처리 (기존 형식)"""
