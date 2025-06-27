@@ -17,6 +17,7 @@ from app.core.utils import ensure_port_available
 from app.data.data_recorder import DataRecorder
 from app.core.signal_processing import SignalProcessor
 import socket
+import platform
 
 # Configure logging
 logging.basicConfig(
@@ -803,6 +804,13 @@ class WebSocketServer:
 
     async def stream_eeg_data(self):
         logger.info("EEG stream task started.")
+        
+        # Windows 디버깅
+        if platform.system() == 'Windows':
+            logger.info(f"[WINDOWS DEBUG] EEG stream task running on Windows")
+            logger.info(f"[WINDOWS DEBUG] device_manager: {self.device_manager}")
+            logger.info(f"[WINDOWS DEBUG] is_streaming: {self.is_streaming}")
+        
         SEND_INTERVAL = 0.04  # 25Hz (40ms)
         NO_DATA_TIMEOUT = 5.0 # 5초 동안 데이터 없으면 경고 후 종료
         last_data_time = time.time()
@@ -824,107 +832,123 @@ class WebSocketServer:
 
         try:
             while self.is_streaming:
-                await asyncio.sleep(SEND_INTERVAL)
-                if not self.is_streaming: break
+                try:
+                    current_time = time.time()
+                    
+                    if not self.is_streaming: break
 
-                raw_data = await self.device_manager.get_and_clear_eeg_buffer()
-                processed_data = await self.device_manager.get_and_clear_processed_eeg_buffer()
-                
-                current_time = time.time()
-                
-                # logger.info(f"[STREAM_EEG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
-                # if self.data_recorder:
-                #     logger.info(f"[STREAM_EEG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
-                
-                raw_data_len = len(raw_data) if raw_data else 0
-                processed_data_len = len(processed_data) if processed_data else 0
-                # logger.info(f"[STREAM_EEG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                    eeg_buffer = self.device_manager.get_and_clear_eeg_buffer()
+                    
+                    # Windows 디버깅
+                    if platform.system() == 'Windows' and (consecutive_no_data == 0 or consecutive_no_data % 25 == 0):
+                        logger.info(f"[WINDOWS DEBUG] EEG buffer check - Buffer length: {len(eeg_buffer)}")
+                        logger.info(f"[WINDOWS DEBUG] Device connected: {self.device_manager.is_connected()}")
+                    
+                    if eeg_buffer:
+                        try:
+                            processed_data = await self.device_manager.get_and_clear_processed_eeg_buffer()
+                        except Exception as e:
+                            logger.error(f"[WINDOWS ERROR] Failed to get processed EEG buffer: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            processed_data = None
+                    
+                    raw_data_len = len(eeg_buffer) if eeg_buffer else 0
+                    processed_data_len = len(processed_data) if processed_data else 0
+                    # logger.info(f"[STREAM_EEG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
 
-                if raw_data_len > 0:
-                    logger.debug(f"[STREAM_EEG_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
-                if processed_data_len > 0:
-                    logger.debug(f"[STREAM_EEG_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
+                    if raw_data_len > 0:
+                        logger.debug(f"[STREAM_EEG_DEBUG] First raw sample type: {type(eeg_buffer[0]) if raw_data_len > 0 else 'N/A'}")
+                    if processed_data_len > 0:
+                        logger.debug(f"[STREAM_EEG_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
 
-                if self.data_recorder and self.data_recorder.is_recording:
-                    logger.info(f"[STREAM_EEG_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
-                    if raw_data:
-                        for i, sample in enumerate(raw_data): 
-                            if isinstance(sample, dict):
-                                self.data_recorder.add_data(
-                                    data_type=f"{device_id_for_filename}_eeg_raw",
-                                    data=sample 
-                                )
-                            else:
-                                logger.warning(f"Skipping non-dict EEG raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                    if self.data_recorder and self.data_recorder.is_recording:
+                        logger.info(f"[STREAM_EEG_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                        if eeg_buffer:
+                            for i, sample in enumerate(eeg_buffer): 
+                                if isinstance(sample, dict):
+                                    self.data_recorder.add_data(
+                                        data_type=f"{device_id_for_filename}_eeg_raw",
+                                        data=sample 
+                                    )
+                                else:
+                                    logger.warning(f"Skipping non-dict EEG raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                        if processed_data:
+                            for i, sample in enumerate(processed_data): 
+                                if isinstance(sample, dict):
+                                    self.data_recorder.add_data(
+                                        data_type=f"{device_id_for_filename}_eeg_processed",
+                                        data=sample
+                                    )
+                                else:
+                                    logger.warning(f"Skipping non-dict EEG processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
+                    
+                    if eeg_buffer:
+                        raw_message = {
+                            "type": "raw_data",
+                            "sensor_type": "eeg",
+                            "device_id": raw_device_id, # Broadcast original device_id
+                            "timestamp": current_time,
+                            "data": eeg_buffer
+                        }
+                        try:
+                            await self.broadcast(json.dumps(raw_message))
+                            total_samples_sent += len(eeg_buffer)
+                            samples_since_last_log += len(eeg_buffer)
+                            
+                            for sample in eeg_buffer:
+                                if isinstance(sample, dict) and "timestamp" in sample:
+                                    timestamp_buffer.append(sample["timestamp"])
+                            cutoff_time = current_time - WINDOW_SIZE
+                            timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
+                            if eeg_buffer and isinstance(eeg_buffer, list) and len(eeg_buffer) > 0 and isinstance(eeg_buffer[0], dict):
+                                self._update_sampling_rate('eeg', eeg_buffer)
+                        except Exception as e:
+                            logger.error(f"Error broadcasting raw EEG data: {e}", exc_info=True)
+
                     if processed_data:
-                        for i, sample in enumerate(processed_data): 
-                            if isinstance(sample, dict):
-                                self.data_recorder.add_data(
-                                    data_type=f"{device_id_for_filename}_eeg_processed",
-                                    data=sample
-                                )
-                            else:
-                                logger.warning(f"Skipping non-dict EEG processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
-                
-                if raw_data:
-                    raw_message = {
-                        "type": "raw_data",
-                        "sensor_type": "eeg",
-                        "device_id": raw_device_id, # Broadcast original device_id
-                        "timestamp": current_time,
-                        "data": raw_data
-                    }
-                    try:
-                        await self.broadcast(json.dumps(raw_message))
-                        total_samples_sent += len(raw_data)
-                        samples_since_last_log += len(raw_data)
-                        
-                        for sample in raw_data:
-                            if isinstance(sample, dict) and "timestamp" in sample:
-                                timestamp_buffer.append(sample["timestamp"])
-                        cutoff_time = current_time - WINDOW_SIZE
-                        timestamp_buffer = [ts for ts in timestamp_buffer if ts > cutoff_time]
-                        if raw_data and isinstance(raw_data, list) and len(raw_data) > 0 and isinstance(raw_data[0], dict):
-                            self._update_sampling_rate('eeg', raw_data)
-                    except Exception as e:
-                        logger.error(f"Error broadcasting raw EEG data: {e}", exc_info=True)
+                        processed_message = {
+                            "type": "processed_data",
+                            "sensor_type": "eeg",
+                            "device_id": raw_device_id, # Broadcast original device_id
+                            "timestamp": current_time,
+                            "data": processed_data
+                        }
+                        try:
+                            await self.broadcast(json.dumps(processed_message))
+                        except Exception as e:
+                            logger.error(f"Error broadcasting processed EEG data: {e}", exc_info=True)
 
-                if processed_data:
-                    processed_message = {
-                        "type": "processed_data",
-                        "sensor_type": "eeg",
-                        "device_id": raw_device_id, # Broadcast original device_id
-                        "timestamp": current_time,
-                        "data": processed_data
-                    }
-                    try:
-                        await self.broadcast(json.dumps(processed_message))
-                    except Exception as e:
-                        logger.error(f"Error broadcasting processed EEG data: {e}", exc_info=True)
-
-                if raw_data or processed_data:
-                    last_data_time = current_time
-                    if current_time - last_log_time >= 1.0:
-                        logger.info(f"[EEG] Samples/sec: {samples_since_last_log:4d} | "
-                                  f"Total: {total_samples_sent:6d} | "
-                                  f"Raw Buffer: {len(raw_data) if raw_data else 0:4d} | "
-                                  f"Processed Buffer: {len(processed_data) if processed_data else 0:4d} samples")
-                        samples_since_last_log = 0
-                        last_log_time = current_time
-                    if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
-                        if len(timestamp_buffer) > 1:
-                            intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
-                            if intervals:
-                                avg_interval = sum(intervals) / len(intervals)
-                                actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
-                                logger.info(f"[EEG] Actual sampling rate: {actual_rate:.2f} Hz "
-                                          f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
-                                if isinstance(self.device_sampling_stats, dict) and 'eeg' in self.device_sampling_stats and isinstance(self.device_sampling_stats['eeg'], dict):
-                                    self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
+                    if eeg_buffer or processed_data:
+                        last_data_time = current_time
+                        if current_time - last_log_time >= 1.0:
+                            logger.info(f"[EEG] Samples/sec: {samples_since_last_log:4d} | "
+                                      f"Total: {total_samples_sent:6d} | "
+                                      f"Raw Buffer: {len(eeg_buffer) if eeg_buffer else 0:4d} | "
+                                      f"Processed Buffer: {len(processed_data) if processed_data else 0:4d} samples")
+                            samples_since_last_log = 0
+                            last_log_time = current_time
+                        if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
+                            if len(timestamp_buffer) > 1:
+                                intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] for i in range(len(timestamp_buffer)-1)]
+                                if intervals:
+                                    avg_interval = sum(intervals) / len(intervals)
+                                    actual_rate = 1.0 / avg_interval if avg_interval > 0 else 0
+                                    logger.info(f"[EEG] Actual sampling rate: {actual_rate:.2f} Hz "
+                                              f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
+                                    if isinstance(self.device_sampling_stats, dict) and 'eeg' in self.device_sampling_stats and isinstance(self.device_sampling_stats['eeg'], dict):
+                                        self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
                         last_rate_log_time = current_time
-                elif time.time() - last_data_time > NO_DATA_TIMEOUT:
-                    logger.warning("No EEG data received for too long, stopping EEG stream task.")
-                    break # Exit loop if no data
+                    elif time.time() - last_data_time > NO_DATA_TIMEOUT:
+                        logger.warning("No EEG data received for too long, stopping EEG stream task.")
+                        break # Exit loop if no data
+
+                except asyncio.CancelledError:
+                    logger.info("EEG stream task received cancellation.")
+                except Exception as e:
+                    logger.error(f"Error in EEG stream loop: {e}", exc_info=True)
+                finally:
+                    logger.info(f"EEG stream task finished. Total samples sent: {total_samples_sent}")
 
         except asyncio.CancelledError:
             logger.info("EEG stream task received cancellation.")

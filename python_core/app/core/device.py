@@ -910,28 +910,28 @@ class DeviceManager:
         except Exception as e:
             self.logger.error(f"Error processing battery data: {e}", exc_info=True)
 
-    async def get_and_clear_eeg_buffer(self) -> List[Any]:
+    def get_and_clear_eeg_buffer(self) -> List[Any]:
         """Get a copy of the EEG buffer and clear it."""
         buffer_copy = self._eeg_buffer.copy()
         self._eeg_buffer.clear()
         self.logger.debug(f"Getting and clearing EEG buffer: {len(buffer_copy)} samples")
         return buffer_copy
 
-    async def get_and_clear_ppg_buffer(self) -> List[Any]:
+    def get_and_clear_ppg_buffer(self) -> List[Any]:
         """Get a copy of the PPG buffer and clear it."""
         buffer_copy = self._ppg_buffer.copy()
         self._ppg_buffer.clear()
         self.logger.debug(f"Getting and clearing PPG buffer: {len(buffer_copy)} samples")
         return buffer_copy
 
-    async def get_and_clear_acc_buffer(self) -> List[Any]:
+    def get_and_clear_acc_buffer(self) -> List[Any]:
         """Get a copy of the accelerometer buffer and clear it."""
         buffer_copy = self._acc_buffer.copy()
         self._acc_buffer.clear()
         self.logger.debug(f"Getting and clearing ACC buffer: {len(buffer_copy)} samples")
         return buffer_copy
 
-    async def get_and_clear_battery_buffer(self) -> List[Any]:
+    def get_and_clear_battery_buffer(self) -> List[Any]:
         """Get a copy of the battery buffer and clear it."""
         buffer_copy = self._battery_buffer.copy()
         self._battery_buffer.clear()
@@ -939,13 +939,13 @@ class DeviceManager:
         return buffer_copy
 
     # Legacy method - use specific getters instead
-    async def get_buffered_data(self) -> Dict[str, Any]:
+    def get_buffered_data(self) -> Dict[str, Any]:
         """Get all buffered data and clear buffers."""
         return {
-            "eeg": await self.get_and_clear_eeg_buffer(),
-            "ppg": await self.get_and_clear_ppg_buffer(),
-            "acc": await self.get_and_clear_acc_buffer(),
-            "battery": await self.get_and_clear_battery_buffer()
+            "eeg": self.get_and_clear_eeg_buffer(),
+            "ppg": self.get_and_clear_ppg_buffer(),
+            "acc": self.get_and_clear_acc_buffer(),
+            "battery": self.get_and_clear_battery_buffer()
         }
 
     def clear_buffers(self):
