@@ -229,8 +229,13 @@ async def startup_event():
     print("[6/8] Services initialized [OK]")
 
     print("[7/8] Starting WebSocket server...")
-    print(f"[7/8] Using FastAPI WebSocket endpoints only (no separate server)")
-    print(f"[7/8] WebSocket server ready on FastAPI [OK]")
+    try:
+        await app.state.ws_server.initialize()
+        print(f"[7/8] WebSocket server started on {ws_host}:{ws_port} [OK]")
+    except Exception as e:
+        print(f"[7/8] Failed to start WebSocket server: {e} [FAIL]")
+        import traceback
+        print(f"[7/8] Traceback: {traceback.format_exc()}")
         
     print(f"[7/8] About to init stream service...")
     try:

@@ -109,10 +109,10 @@ class WebSocketManager {
 
     // Windows 특별 처리: 여러 URL 시도 (IPv6 포함)
     const urlsToTry = [
-      this.url,  // 기본값: ws://127.0.0.1:18765
-      'ws://localhost:18765',
-      'ws://[::1]:18765',  // IPv6 localhost
-      'ws://0.0.0.0:18765'
+      this.url,  // 기본값: ws://127.0.0.1:8121/ws
+      'ws://localhost:8121/ws',
+      'ws://[::1]:8121/ws',  // IPv6 localhost
+      'ws://0.0.0.0:8121/ws'
     ];
     
     console.log('URLs to try:', urlsToTry);

@@ -13,34 +13,34 @@ logger = logging.getLogger(__name__)
 
 async def test_websocket_connection():
     """Test WebSocket connection to Link Band server"""
-    uri = "ws://localhost:18765/"
+    uri = "ws://localhost:18765"
     
     try:
-        logger.info(f" Attempting to connect to {uri}")
+        logger.info(f"Attempting to connect to {uri}")
         async with websockets.connect(uri) as websocket:
             logger.info("WebSocket connection successful!")
             
             # Test 1: Send health check
-            logger.info(" Sending health check...")
+            logger.info("Sending health check...")
             health_check = {"command": "health_check"}
             await websocket.send(json.dumps(health_check))
             
             # Wait for response
             try:
                 response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-                logger.info(f" Received: {response}")
+                logger.info(f"Received: {response}")
             except asyncio.TimeoutError:
-                logger.warning("??No response received within 5 seconds")
+                logger.warning("No response received within 5 seconds")
             
             # Test 2: Check device connection
-            logger.info(" Checking device connection...")
+            logger.info("Checking device connection...")
             device_check = {"command": "check_device_connection"}
             await websocket.send(json.dumps(device_check))
             
             # Wait for response
             try:
                 response = await asyncio.wait_for(websocket.recv(), timeout=5.0)
-                logger.info(f" Received: {response}")
+                logger.info(f"Received: {response}")
             except asyncio.TimeoutError:
                 logger.warning("No response received within 5 seconds")
             

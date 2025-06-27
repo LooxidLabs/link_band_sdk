@@ -15,26 +15,26 @@ async def test_websocket_connection():
     """Test WebSocket connection to Link Band server"""
     import socket
     
-    # Check if FastAPI server is running (WebSocket will be on same port)
-    logger.info("Checking if FastAPI server (port 8121) is running for WebSocket...")
+    # Check if WebSocket server is running (port 18765)
+    logger.info("Checking if WebSocket server (port 18765) is running...")
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(3)
-        result = sock.connect_ex(('localhost', 8121))
+        result = sock.connect_ex(('localhost', 18765))
         sock.close()
         
         if result == 0:
-            logger.info("Port 8121 is open - WebSocket should be available at /ws endpoint")
+            logger.info("Port 18765 is open - WebSocket server is running")
         else:
-            logger.error(f"Port 8121 is not accepting connections (error code: {result})")
-            logger.error("FastAPI server is not running")
+            logger.error(f"Port 18765 is not accepting connections (error code: {result})")
+            logger.error("WebSocket server is not running")
             return
     except Exception as e:
-        logger.error(f"Failed to check port 8121: {e}")
+        logger.error(f"Failed to check port 18765: {e}")
         return
     
     # Now try WebSocket connection
-    uri = "ws://localhost:8121/ws"  # FastAPI WebSocket endpoint
+    uri = "ws://localhost:18765"
     
     try:
         logger.info(f"Attempting WebSocket connection to {uri}")
