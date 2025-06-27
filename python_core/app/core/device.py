@@ -476,7 +476,7 @@ class DeviceManager:
         return None
 
     async def start_data_acquisition(self):
-        """Start receiving data notifications from the connected device."""
+        """Start receiving data notifications from the device."""
         if not self.is_connected() or not self._client:
             self.logger.warning("Cannot start data acquisition: Not connected.")
             return False
@@ -486,6 +486,12 @@ class DeviceManager:
 
         self.logger.info("Starting data acquisition (EEG, PPG, ACC)...")
         
+        # Windows 디버깅
+        import platform
+        if platform.system() == 'Windows':
+            self.logger.info(f"[WINDOWS DEBUG] Running on Windows, BleakClient: {self._client}")
+            self.logger.info(f"[WINDOWS DEBUG] Services available: {self._client.services is not None}")
+        
         # 서비스가 준비되었는지 확인
         if not self._client.services:
             self.logger.warning("Services not ready for data acquisition")
@@ -494,19 +500,51 @@ class DeviceManager:
         success = True
         try:
             self.logger.info(f"Starting notify for EEG ({EEG_NOTIFY_CHAR_UUID})...")
+            
+            # Windows 디버깅: start_notify 전후 상태 확인
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] Before EEG start_notify")
+            
             await self._client.start_notify(EEG_NOTIFY_CHAR_UUID, self._handle_eeg)
+            
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] After EEG start_notify - SUCCESS")
+            
             self.logger.info("EEG notify started.")
 
             self.logger.info(f"Starting notify for PPG ({PPG_CHAR_UUID})...")
+            
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] Before PPG start_notify")
+            
             await self._client.start_notify(PPG_CHAR_UUID, self._handle_ppg)
+            
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] After PPG start_notify - SUCCESS")
+            
             self.logger.info("PPG notify started.")
 
             self.logger.info(f"Starting notify for ACC ({ACCELEROMETER_CHAR_UUID})...")
+            
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] Before ACC start_notify")
+            
             await self._client.start_notify(ACCELEROMETER_CHAR_UUID, self._handle_acc)
+            
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] After ACC start_notify - SUCCESS")
+            
             self.logger.info("ACC notify started.")
 
             self._notifications_started = True
             self.logger.info("Data acquisition started successfully.")
+            
+            # Windows: 잠시 대기하여 notification이 시작되도록 함
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] Waiting 1 second for notifications to stabilize...")
+                await asyncio.sleep(1.0)
+                self.logger.info(f"[WINDOWS DEBUG] Wait complete")
+                
         except Exception as e:
             self.logger.error(f"Error starting notifications: {e}", exc_info=True)
             success = False
@@ -572,6 +610,11 @@ class DeviceManager:
     async def _handle_eeg(self, sender, data: bytearray):
         """Handle incoming EEG data, storing in buffer."""
         try:
+            # Windows 디버깅: 콜백 호출 확인
+            import platform
+            if platform.system() == 'Windows':
+                self.logger.info(f"[WINDOWS DEBUG] EEG callback called! Data length: {len(data)} bytes")
+            
             self.logger.debug(f"Received EEG data: {len(data)} bytes")
             if len(data) < 8:  # Minimum expected data length (4 bytes timestamp + 4 bytes EEG)
                 self.logger.warning(f"EEG data too short: {len(data)} bytes")
