@@ -830,9 +830,13 @@ class WebSocketServer:
         
         device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
 
+        consecutive_no_data = 0
+        
         try:
             while self.is_streaming:
                 try:
+                    await asyncio.sleep(SEND_INTERVAL)
+                    
                     current_time = time.time()
                     
                     if not self.is_streaming: break
@@ -920,6 +924,7 @@ class WebSocketServer:
                             logger.error(f"Error broadcasting processed EEG data: {e}", exc_info=True)
 
                     if eeg_buffer or processed_data:
+                        consecutive_no_data = 0  # 데이터가 있으면 카운터 리셋
                         last_data_time = current_time
                         if current_time - last_log_time >= 1.0:
                             logger.info(f"[EEG] Samples/sec: {samples_since_last_log:4d} | "
@@ -939,7 +944,10 @@ class WebSocketServer:
                                     if isinstance(self.device_sampling_stats, dict) and 'eeg' in self.device_sampling_stats and isinstance(self.device_sampling_stats['eeg'], dict):
                                         self.device_sampling_stats['eeg']['samples_per_sec'] = actual_rate
                         last_rate_log_time = current_time
-                    elif time.time() - last_data_time > NO_DATA_TIMEOUT:
+                    else:
+                        consecutive_no_data += 1  # 데이터가 없으면 카운터 증가
+                        
+                    if time.time() - last_data_time > NO_DATA_TIMEOUT:
                         logger.warning("No EEG data received for too long, stopping EEG stream task.")
                         break # Exit loop if no data
 
