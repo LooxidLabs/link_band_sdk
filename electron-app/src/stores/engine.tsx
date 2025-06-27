@@ -771,9 +771,11 @@ export const useEngineStore = create<EngineState>((set, get) => {
             error: { ...state.error, connection: null }
           }));
 
-          if (!wsManager.isConnectedPublic()) {
-            wsManager.connect();
-          }
+          // 자동 WebSocket 연결 비활성화 - 수동 연결만 허용
+          // if (!wsManager.isConnectedPublic()) {
+          //   wsManager.connect();
+          // }
+          console.log('WebSocket 자동 연결 비활성화됨 - 수동 연결 필요');
         } catch (error) {
           set(state => ({
             isLoading: { ...state.isLoading, connection: false },

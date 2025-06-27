@@ -711,18 +711,18 @@ export const useDeviceManager = create<DeviceState & {
               window.electron?.ipcRenderer?.send('show-window');
             }
             
-            // 디바이스 연결 즉시 engine WebSocket 연결 시도
-            // 이를 통해 스트리밍 시작과 동시에 데이터를 받을 수 있음
-            setTimeout(() => {
-              const engineStore = (window as any).engineStore;
-              if (engineStore && engineStore.getState) {
-                const { wsManager } = engineStore.getState();
-                if (wsManager && !wsManager.isConnected()) {
-                  console.log('Device connected - attempting engine WebSocket connection');
-                  wsManager.connect();
-                }
-              }
-            }, 1000); // 1초 후 연결 시도
+            // 디바이스 연결 시 engine WebSocket 자동 연결 비활성화
+            // setTimeout(() => {
+            //   const engineStore = (window as any).engineStore;
+            //   if (engineStore && engineStore.getState) {
+            //     const { wsManager } = engineStore.getState();
+            //     if (wsManager && !wsManager.isConnected()) {
+            //       console.log('Device connected - attempting engine WebSocket connection');
+            //       wsManager.connect();
+            //     }
+            //   }
+            // }, 1000); // 1초 후 연결 시도
+            console.log('디바이스 연결됨 - WebSocket 자동 연결 비활성화됨');
           }
           break;
         case 'device_disconnected':
@@ -792,15 +792,16 @@ export const useDeviceManager = create<DeviceState & {
   // Python 서버가 준비되면 WebSocket 연결 시도
   if ((window as any).electron?.ipcRenderer) {
     (window as any).electron.ipcRenderer.on('python-server-ready', () => {
-      console.log('Python server is ready, connecting to WebSocket...');
+      console.log('Python server is ready, but auto-connect is disabled');
       wsManager.disconnect();
-      setTimeout(() => {
-        if (!wsManager.isConnectedPublic()) {
-          // Temporarily disable WebSocket connection in deviceManager
-          // wsManager.connect();
-          console.log('DeviceManager WebSocket connection disabled - using engine WebSocket instead');
-        }
-      }, 2000);
+      // 자동 연결 완전히 비활성화
+      // setTimeout(() => {
+      //   if (!wsManager.isConnectedPublic()) {
+      //     wsManager.connect();
+      //     console.log('DeviceManager WebSocket connection disabled - using engine WebSocket instead');
+      //   }
+      // }, 2000);
+      console.log('DeviceManager WebSocket 자동 연결 비활성화됨 - 수동 연결 필요');
     });
 
     (window as any).electron.ipcRenderer.on('python-server-stopped', () => {
