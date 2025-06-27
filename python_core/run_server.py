@@ -4,6 +4,7 @@ import sys
 import subprocess
 from pathlib import Path
 import logging
+import asyncio
 
 # Configure logging
 logging.basicConfig(
@@ -11,6 +12,11 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Windows에서 ProactorEventLoop 대신 SelectorEventLoop를 사용하도록 강제
+# WebSocket 연결 안정성 문제를 해결하기 위함
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 def get_python_executable():
     """Get the appropriate Python executable (prefer venv if available)."""
