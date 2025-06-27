@@ -49,6 +49,11 @@ class WebSocketManager {
     this.messageHandler = messageHandler;
   }
 
+  start() {
+    console.log('WebSocketManager start method called.');
+    this.startAutoConnect();
+  }
+
   startAutoConnect() {
     if (this.autoConnectTimer) {
       clearInterval(this.autoConnectTimer);
@@ -373,6 +378,7 @@ interface EngineState {
   addBatData: (data: BatteryData[]) => void;
   clearData: () => void;
   autoConnectWebSocket: () => void;
+  startWebSocketManager: () => void;
 }
 
 // Windows 호환성을 위해 127.0.0.1 우선 사용
@@ -616,9 +622,6 @@ export const useEngineStore = create<EngineState>((set, get) => {
     }
   };
 
-  // 자동 연결 시작
-  wsManager.startAutoConnect();
-
   const store = {
     // Initial state
     engineStatus: null,
@@ -789,39 +792,37 @@ export const useEngineStore = create<EngineState>((set, get) => {
     },
 
     connectWebSocket: () => {
-      console.log('Connecting to WebSocket...');
-      console.log('Current WebSocket state before connect:', wsManager.isConnectedPublic());
-      set(state => ({ 
-        error: { ...state.error, connection: null },
-        isWebSocketConnected: false 
-      }));
-      wsManager.connect();
+      const wsManager = get().wsManager;
+      if (wsManager) wsManager.connect();
     },
-
     disconnectWebSocket: () => {
-      console.log('Disconnecting from WebSocket...');
-      console.log('Current WebSocket state before disconnect:', wsManager.isConnectedPublic());
-      wsManager.disconnect();
-      set({ 
-        isWebSocketConnected: false, 
-        connectionInfo: null,
-        error: { ...get().error, connection: null }
-      });
+      const wsManager = get().wsManager;
+      if (wsManager) wsManager.disconnect();
     },
-
     sendWebSocketMessage: (message: any) => {
-      wsManager.send(message);
+      const wsManager = get().wsManager;
+      if (wsManager) wsManager.send(message);
     },
-
-    // Sensor data methods
-    addEEGData: (newData: EEGData[]) => {
-      if (newData.length > 0) {
+    autoConnectWebSocket: () => {
+      const wsManager = get().wsManager;
+      if (wsManager) wsManager.startAutoConnect();
+    },
+    startWebSocketManager: () => {
+      console.log('Starting WebSocket Manager now that server is ready.');
+      const wsManager = get().wsManager;
+      if (wsManager) {
+        wsManager.start();
+      }
+    },
+    // Data handling methods
+    addEEGData: (data: EEGData[]) => {
+      if (data.length > 0) {
         const now = Date.now();
         set((state) => {
           const currentData = state.eegData || [];
           const newState = {
             ...state,
-            eegData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            eegData: [...currentData.slice(-MAX_DATA_POINTS + data.length), ...data],
             lastDataUpdate: now
           };
           return updateSamplingRates(newState);
@@ -829,14 +830,14 @@ export const useEngineStore = create<EngineState>((set, get) => {
       }
     },
 
-    addPPGData: (newData: PPGData[]) => {
-      if (newData.length > 0) {
+    addPPGData: (data: PPGData[]) => {
+      if (data.length > 0) {
         const now = Date.now();
         set((state) => {
           const currentData = state.ppgData || [];
           const newState = {
             ...state,
-            ppgData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            ppgData: [...currentData.slice(-MAX_DATA_POINTS + data.length), ...data],
             lastDataUpdate: now
           };
           return updateSamplingRates(newState);
@@ -844,14 +845,14 @@ export const useEngineStore = create<EngineState>((set, get) => {
       }
     },
 
-    addAccData: (newData: AccData[]) => {
-      if (newData.length > 0) {
+    addAccData: (data: AccData[]) => {
+      if (data.length > 0) {
         const now = Date.now();
         set((state) => {
           const currentData = state.accData || [];
           const newState = {
             ...state,
-            accData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            accData: [...currentData.slice(-MAX_DATA_POINTS + data.length), ...data],
             lastDataUpdate: now
           };
           return updateSamplingRates(newState);
@@ -859,14 +860,14 @@ export const useEngineStore = create<EngineState>((set, get) => {
       }
     },
 
-    addBatData: (newData: BatteryData[]) => {
-      if (newData.length > 0) {
+    addBatData: (data: BatteryData[]) => {
+      if (data.length > 0) {
         const now = Date.now();
         set((state) => {
           const currentData = state.batData || [];
           const newState = {
             ...state,
-            batData: [...currentData.slice(-MAX_DATA_POINTS + newData.length), ...newData],
+            batData: [...currentData.slice(-MAX_DATA_POINTS + data.length), ...data],
             lastDataUpdate: now
           };
           return updateSamplingRates(newState);
@@ -881,18 +882,6 @@ export const useEngineStore = create<EngineState>((set, get) => {
         accData: [],
         batData: []
       });
-    },
-
-    autoConnectWebSocket: () => {
-      const currentState = get();
-
-      // 이미 연결되어 있으면 연결 시도하지 않음
-      if (currentState.isWebSocketConnected) {
-        return;
-      }
-
-      // 연결 시도
-      wsManager.connect();
     },
   };
 
