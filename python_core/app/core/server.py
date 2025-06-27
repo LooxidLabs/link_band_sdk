@@ -628,22 +628,17 @@ class WebSocketServer:
                     await self.send_error_to_client(websocket, "Command message missing command")
                     return
 
-                # Send a simple handshake response to test Windows compatibility
+                # Handle check_device_connection command (maintain client compatibility)
                 if command == "check_device_connection":
                     logger.info("[WEBSOCKET_DEBUG] Processing check_device_connection command")
                     try:
+                        # Send simple handshake response for compatibility
                         response = {
                             "type": "handshake_response",
                             "status": "connected",
                             "message": "WebSocket connection established"
                         }
-                        response_json = json.dumps(response)
-                        logger.info(f"[WEBSOCKET_DEBUG] Sending handshake response: {response_json}")
-                        
-                        # Check WebSocket state before sending
-                        logger.info(f"[WEBSOCKET_DEBUG] WebSocket state: closed={websocket.closed}, state={getattr(websocket, 'state', 'unknown')}")
-                        
-                        await websocket.send(response_json)
+                        await websocket.send(json.dumps(response))
                         logger.info("[WEBSOCKET_DEBUG] Handshake response sent successfully")
                     except Exception as e:
                         logger.error(f"[WEBSOCKET_DEBUG] Error sending handshake response: {e}", exc_info=True)
@@ -677,7 +672,42 @@ class WebSocketServer:
                     await self.start_streaming(websocket)
                 elif command == "stop_streaming":
                     await self.stop_streaming()
+                elif command == "get_device_status":
+                    # Send current device status as event (for compatibility)
+                    is_connected = self.device_manager.is_connected()
+                    device_info = self.device_manager.get_device_info() if is_connected else None
+                    registered_devices = self.device_registry.get_registered_devices()
+                    
+                    status_data = {
+                        "connected": is_connected,
+                        "device_info": device_info,
+                        "is_streaming": self.is_streaming if is_connected else False,
+                        "registered_devices": registered_devices,
+                        "clients_connected": len(self.clients)
+                    }
+                    
+                    # Add battery info if available
+                    if is_connected and hasattr(self.device_manager, 'battery_level') and self.device_manager.battery_level is not None:
+                        status_data["battery"] = {
+                            "level": self.device_manager.battery_level,
+                            "timestamp": time.time()
+                        }
+                    
+                    await self.send_event_to_client(websocket, EventType.DEVICE_INFO, status_data)
+                elif command == "get_stream_status":
+                    # Send streaming status
+                    stream_status = {
+                        "is_streaming": self.is_streaming,
+                        "connected_clients": len(self.clients),
+                        "device_connected": self.device_manager.is_connected()
+                    }
+                    
+                    if self.is_streaming:
+                        stream_status["stream_stats"] = self.data_stream_stats
+                    
+                    await self.send_event_to_client(websocket, EventType.STATUS, stream_status)
                 elif command == "health_check":
+                    # Send health check response in expected format
                     await websocket.send(json.dumps({
                         "type": "health_check_response",
                         "status": "ok",
