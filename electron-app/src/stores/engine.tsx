@@ -81,16 +81,20 @@ class WebSocketManager {
   }
 
   private startConnectionCheck() {
+    // 재연결 로직은 onclose 핸들러에서 처리하므로 이 메서드는 비활성화
+    // 중복 재연결 시도를 방지하기 위해 주석 처리
+    /*
     if (this.checkConnectionTimer) {
       clearInterval(this.checkConnectionTimer);
     }
 
     this.checkConnectionTimer = setInterval(() => {
       if (!this.isConnected()) {
-        console.log('Connection check: WebSocket is not connected');
-        this.onConnectionChange?.(false);
+        console.log('Connection check: WebSocket is not connected, attempting to reconnect...');
+        this.connect();
       }
-    }, 5000);
+    }, 1000);
+    */
   }
 
   private startHealthCheck() {
@@ -98,6 +102,7 @@ class WebSocketManager {
       clearInterval(this.healthCheckTimer);
     }
 
+    // 5초마다 health check 수행 (1초는 너무 빈번함)
     this.healthCheckTimer = setInterval(() => {
       if (this.isConnected()) {
         this.send({
@@ -106,7 +111,7 @@ class WebSocketManager {
       } else {
         this.onConnectionChange?.(false);
       }
-    }, 1000);
+    }, 5000);
   }
 
   private isConnected(): boolean {

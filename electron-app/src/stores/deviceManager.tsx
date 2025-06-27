@@ -55,6 +55,9 @@ class WebSocketManager {
   }
 
   private startConnectionCheck() {
+    // 재연결 로직은 onclose 핸들러에서 처리하므로 이 메서드는 비활성화
+    // 중복 재연결 시도를 방지하기 위해 주석 처리
+    /*
     // 기존 타이머 정리
     if (this.checkConnectionTimer) {
       clearInterval(this.checkConnectionTimer);
@@ -67,6 +70,7 @@ class WebSocketManager {
         this.connect();
       }
     }, 1000);
+    */
   }
 
   private startHealthCheck() {
@@ -74,14 +78,14 @@ class WebSocketManager {
       clearInterval(this.healthCheckTimer);
     }
 
-    // 1초마다 health check 수행
+    // 5초마다 health check 수행 (1초는 너무 빈번함)
     this.healthCheckTimer = setInterval(() => {
       if (this.isConnected()) {
         this.send({
           command: 'health_check'
         });
       }
-    }, 1000);
+    }, 5000);
   }
 
   private isConnected(): boolean {
