@@ -351,7 +351,7 @@ class WebSocketServer:
             # 새 연결 추가
             self.clients.add(websocket)
             logger.info(f"[CONNECTION_DEBUG] Client connected from {client_address}. Total clients: {len(self.clients)}")
-            logger.info(f"[CONNECTION_DEBUG] WebSocket state: closed={websocket.closed}, state={getattr(websocket, 'state', 'unknown')}")
+            logger.info(f"[CONNECTION_DEBUG] WebSocket state: state={getattr(websocket, 'state', 'unknown')}")
 
             # Send initial status immediately for faster user experience
             logger.info("[CONNECTION_DEBUG] Connection established. Sending initial status.")
@@ -389,7 +389,7 @@ class WebSocketServer:
             if websocket in self.clients:
                 self.clients.remove(websocket)
                 try:
-                    if not websocket.closed:
+                    if hasattr(websocket, 'close') and not getattr(websocket, 'closed', False):
                         await websocket.close(1000, "Normal closure")
                 except Exception as e:
                     logger.debug(f"Error closing websocket: {e}")  # Reduced to debug level
