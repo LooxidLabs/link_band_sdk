@@ -191,24 +191,16 @@ class WebSocketServer:
 
     async def _periodic_status_update(self):
         """주기적으로 모든 클라이언트에게 상태를 업데이트합니다."""
+        # [WINDOWS FIX] Temporarily disable periodic status updates
+        # This prevents connection drops on Windows
+        logger.info("Periodic status updates disabled for Windows compatibility")
         while True:
             try:
-                if self.clients:  # 연결된 클라이언트가 있을 때만 실행
-                    is_connected = self.device_manager.is_connected()
-                    device_info = self.device_manager.get_device_info() if is_connected else None
-                    registered_devices = self.device_registry.get_registered_devices()
-                    
-                    status_data = {
-                        "connected": is_connected,
-                        "device_info": device_info,
-                        "is_streaming": self.is_streaming if is_connected else False,
-                        "registered_devices": registered_devices,
-                        "clients_connected": len(self.clients)
-                    }
-                    await self.broadcast_event(EventType.DEVICE_INFO, status_data)
+                # Just sleep without sending any messages
+                pass
             except Exception as e:
                 logger.error(f"Error in periodic status update: {e}")
-            await asyncio.sleep(1)  # 1초마다 업데이트
+            await asyncio.sleep(10)  # 10초마다 체크 (메시지 전송 없음)
 
     async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
         """Handle new client connections with improved error handling for Windows"""
