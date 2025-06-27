@@ -39,12 +39,16 @@ async def test_websocket_connection():
     try:
         logger.info(f"Attempting WebSocket connection to {uri}")
         
-        # Try with detailed error handling
-        async with websockets.connect(
+        # Try with detailed error handling (Windows compatible)
+        # Use asyncio.wait_for for timeout instead of websockets timeout parameter
+        connection_task = websockets.connect(
             uri,
-            timeout=10,  # 10 second timeout
             ping_interval=None,  # Disable ping for testing
-        ) as websocket:
+        )
+        
+        websocket = await asyncio.wait_for(connection_task, timeout=10.0)
+        
+        async with websocket:
             logger.info("WebSocket connection successful!")
             
             # Test 1: Send health check
