@@ -682,6 +682,9 @@ class DeviceManager:
                     # 처리된 데이터를 processed buffer에 저장
                     self._add_to_buffer(self._processed_eeg_buffer, processed_data, self.PROCESSED_BUFFER_SIZE)
                     # self.logger.info(f"Added {processed_data['ch1_mean']} processed EEG samples to buffer")
+                    
+                    # WebSocket으로 브로드캐스트하기 위해 콜백 호출
+                    await self._notify_processed_data("eeg", processed_data)
                 
         except Exception as e:
             self.logger.error(f"Error handling EEG data: {e}")
@@ -739,6 +742,9 @@ class DeviceManager:
                 processed_data = await self.signal_processor.process_ppg_data()
                 if processed_data:
                     self._add_to_buffer(self._processed_ppg_buffer, processed_data, self.PROCESSED_BUFFER_SIZE)
+                    
+                    # WebSocket으로 브로드캐스트하기 위해 콜백 호출
+                    await self._notify_processed_data("ppg", processed_data)
 
         except Exception as e:
             self.logger.error(f"Error processing PPG data: {e}", exc_info=True)
@@ -792,6 +798,9 @@ class DeviceManager:
                 processed_data = await self.signal_processor.process_acc_data()
                 if processed_data:
                     self._add_to_buffer(self._processed_acc_buffer, processed_data, self.PROCESSED_BUFFER_SIZE)
+                    
+                    # WebSocket으로 브로드캐스트하기 위해 콜백 호출
+                    await self._notify_processed_data("acc", processed_data)
                 
                 
 
@@ -906,6 +915,9 @@ class DeviceManager:
                     self._add_to_buffer(self._battery_buffer, battery_data, self.BATTERY_BUFFER_SIZE)
                     # self.bat_sample_count += 1
                     self.logger.info(f"Battery level updated: {new_battery_level}% (Buffer size: {len(self._battery_buffer)})")
+                    
+                    # WebSocket으로 브로드캐스트하기 위해 콜백 호출
+                    asyncio.create_task(self._notify_processed_data("battery", battery_data))
                     
         except Exception as e:
             self.logger.error(f"Error processing battery data: {e}", exc_info=True)
