@@ -51,13 +51,13 @@ app = FastAPI(
     - **Signal Processing**: Real-time filtering and processing
     - **Multiple Clients**: Support for multiple concurrent WebSocket connections
 
-    ### 💾 Data Recording & Management
+    ### Data Recording & Management
     - **Session Recording**: Start/stop recording sessions with metadata
     - **Multi-format Storage**: JSON and CSV export options
     - **Session Management**: Browse, analyze, and export recorded sessions
     - **Data Quality**: Signal quality monitoring and validation
 
-    ### 📈 System Monitoring
+    ### System Monitoring
     - **Performance Metrics**: CPU, memory, and system health monitoring
     - **Data Quality Metrics**: Signal quality and error rate tracking
     - **Device Metrics**: Connection stability and device performance

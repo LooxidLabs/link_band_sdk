@@ -20,6 +20,11 @@
     "electron:preview": "npm run build && tsc -p electron && tsc -p electron/tsconfig.preload.json && node -e \"require('fs').copyFileSync('electron/appIcon.png', 'dist-electron/appIcon.png')\" && electron ."
   },
   "dependencies": {
+    "@ant-design/icons": "^6.0.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.1.2",
+    "@mui/material": "^7.1.2",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-avatar": "^1.1.10",
@@ -46,6 +51,7 @@
     "@radix-ui/react-toggle-group": "^1.1.10",
     "@radix-ui/react-tooltip": "^1.2.7",
     "@tailwindcss/typography": "^0.5.16",
+    "antd": "^5.26.2",
     "autoprefixer": "^10.4.21",
     "axios": "^1.10.0",
     "class-variance-authority": "^0.7.1",
@@ -60,6 +66,7 @@
     "postcss": "^8.5.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^6.30.1",
     "recharts": "^3.0.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.4.17",

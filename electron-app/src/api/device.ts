@@ -73,12 +73,16 @@ export const deviceApi = {
 
   getDeviceStatus: async (): Promise<DeviceStatus> => {
     try {
-      // console.log("Device API Base URL:", API_BASE_URL);
       const response = await axios.get<DeviceStatus>(`${API_BASE_URL}/device/status`, { headers });
       return response.data;
     } catch (error: unknown) {
       if (isAxiosError(error)) {
         console.error('Error getting device status:', error.message);
+        console.error('Error details:', {
+          url: `${API_BASE_URL}/device/status`,
+          status: error.response?.status,
+          data: error.response?.data
+        });
         if (error.response) {
           console.error('Response data:', error.response.data);
           console.error('Response status:', error.response.status);

@@ -111,7 +111,11 @@ class WebSocketManager {
       } else {
         this.onConnectionChange?.(false);
       }
+<<<<<<< HEAD
     }, 5000);
+=======
+    }, 30000);
+>>>>>>> 7f7d2d05e93c9f7fdbbc4d7b57b34b71c6cda57f
   }
 
   private isConnected(): boolean {
