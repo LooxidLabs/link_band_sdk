@@ -66,6 +66,8 @@ a = Analysis(
          'fastapi',
          'fastapi.middleware',
          'fastapi.middleware.cors',
+         'fastapi.staticfiles',
+         'fastapi.responses',
          'websockets',
          'websockets.server',
          'websockets.protocol',
