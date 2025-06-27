@@ -89,9 +89,9 @@ def run_server(host: str = "localhost", port: int = 8121) -> None:
         logger.info(f"Starting LinkBand server from {server_binary}")
         logger.info(f"Server will run on {host}:{port}")
         logger.info("=" * 50)
-        logger.info("🚀 LinkBand SDK Server Starting...")
-        logger.info("📡 WebSocket server will be available at ws://localhost:18765")
-        logger.info("🌐 REST API will be available at http://localhost:8121")
+        logger.info("LinkBand SDK Server Starting...")
+        logger.info("WebSocket server will be available at ws://localhost:18765/ws")
+        logger.info("REST API will be available at http://localhost:18765")
         logger.info("=" * 50)
         
         # Make the binary executable (for macOS/Linux)
@@ -111,4 +111,4 @@ def run_server(host: str = "localhost", port: int = 8121) -> None:
         sys.exit(1)
 
 if __name__ == "__main__":
-    run_server(host="localhost", port=8121)
+    run_server(host="localhost", port=18765)

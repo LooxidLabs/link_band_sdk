@@ -116,13 +116,19 @@ class WebSocketServer:
         """Mark FastAPI as ready to accept connections."""
         self.fastapi_ready = True
         logger.info("========================================")
-        logger.info("🚀 FastAPI marked as ready for WebSocket connections")
-        logger.info("🔗 WebSocket connections will now be accepted")
+        logger.info("FastAPI marked as ready for WebSocket connections")
+        logger.info("WebSocket connections will now be accepted")
         logger.info("========================================")
 
     async def initialize(self):
         """Initialize the WebSocket server."""
         logger.info("Initializing WebSocket server...")
+
+        # If port is None, we're using FastAPI WebSocket endpoints only
+        if self.port is None:
+            logger.info("Port is None, skipping standalone WebSocket server initialization")
+            self.set_fastapi_ready()
+            return True
 
         # 서버 재시작
         # If a server already exists, close it before creating a new one
@@ -208,12 +214,12 @@ class WebSocketServer:
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] Starting periodic status update task")
             asyncio.create_task(self._periodic_status_update())
             
-            logger.info(f"[WEBSOCKET_SERVER_DEBUG] ✅ WebSocket server initialized on {self.host}:{self.port}")
+            logger.info(f"[WEBSOCKET_SERVER_DEBUG] WebSocket server initialized on {self.host}:{self.port}")
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] Server object: {self.server}")
             self.server_initialized = True
             return True
         except Exception as e:
-            logger.error(f"[WEBSOCKET_SERVER_DEBUG] ❌ Failed to initialize WebSocket server: {e}")
+            logger.error(f"[WEBSOCKET_SERVER_DEBUG] Failed to initialize WebSocket server: {e}")
             logger.error(f"[WEBSOCKET_SERVER_DEBUG] Exception type: {type(e)}")
             import traceback
             logger.error(f"[WEBSOCKET_SERVER_DEBUG] Traceback: {traceback.format_exc()}")
@@ -261,7 +267,7 @@ class WebSocketServer:
         """Handle new client connections with improved error handling for Windows"""
         client_address = websocket.remote_address
         logger.info(f"[CONNECTION_DEBUG] New connection attempt from {client_address}")
-        logger.info(f"[CONNECTION_DEBUG] WebSocket details: path={websocket.path}, headers={dict(websocket.request_headers)}")
+        # logger.info(f"[CONNECTION_DEBUG] WebSocket details: path={getattr(websocket, 'path', 'N/A')}, headers={dict(getattr(websocket, 'request_headers', {}))}")
         logger.info(f"[CONNECTION_DEBUG] FastAPI ready status: {self.fastapi_ready}")
 
         # Wait for FastAPI to be fully ready before accepting connections
@@ -442,6 +448,12 @@ class WebSocketServer:
         """Start the WebSocket server"""
         logger.info("[START_DEBUG] WebSocket server start() method called")
         logger.info(f"[START_DEBUG] Current server state: {self.server}")
+        
+        # If port is None, we're using FastAPI WebSocket endpoints only
+        if self.port is None:
+            logger.info("[START_DEBUG] Port is None, using FastAPI WebSocket endpoints only")
+            self.set_fastapi_ready()
+            return
         
         if not self.server:
             logger.info("[START_DEBUG] Server not initialized, calling initialize()...")
@@ -1943,9 +1955,9 @@ class WebSocketServer:
             'type': 'status',
             'timestamp': time.time(),
             'data': {
-                'connected_devices': len(self.device_manager.get_connected_devices()),
+                'connected_devices': 1 if self.device_manager.is_connected() else 0,
                 'connected_clients': len(self.connected_clients),
-                'stream_engine_status': self.stream_engine.get_status()
+                'stream_engine_status': getattr(self, 'stream_engine', {}).get_status() if hasattr(self, 'stream_engine') else {}
             }
         }
         await websocket.send_json(status)

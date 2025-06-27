@@ -81,7 +81,7 @@ app = FastAPI(
 
     ## WebSocket Connection
 
-    Connect to `ws://localhost:18765` for real-time data streaming after initializing the stream server.
+    Connect to `ws://localhost:18765/ws` for real-time data streaming after initializing the stream server.
 
     ## Data Types
 
@@ -106,7 +106,7 @@ app = FastAPI(
     },
     servers=[
         {
-            "url": "http://localhost:8121",
+            "url": "http://localhost:18765",
             "description": "Development server"
         }
     ],
@@ -211,7 +211,7 @@ async def startup_event():
     print("[5/8] Configuring WebSocket server...")
     app.state.ws_server = WebSocketServer(
         host=ws_host, 
-        port=ws_port, 
+        port=None,  # FastAPI에서 WebSocket 처리, 별도 서버 비활성화
         data_recorder=app.state.data_recorder,
         device_manager=app.state.device_manager,
         device_registry=app.state.device_registry
@@ -229,14 +229,8 @@ async def startup_event():
     print("[6/8] Services initialized [OK]")
 
     print("[7/8] Starting WebSocket server...")
-    print(f"[7/8] About to call ws_server.start()...")
-    try:
-        await app.state.ws_server.start()
-        print(f"[7/8] WebSocket server started on {ws_host}:{ws_port} [OK]")
-    except Exception as e:
-        print(f"[7/8] Error starting WebSocket server: {e} [FAIL]")
-        import traceback
-        print(f"[7/8] Traceback: {traceback.format_exc()}")
+    print(f"[7/8] Using FastAPI WebSocket endpoints only (no separate server)")
+    print(f"[7/8] WebSocket server ready on FastAPI [OK]")
         
     print(f"[7/8] About to init stream service...")
     try:
