@@ -191,8 +191,6 @@ class WebSocketServer:
                 server_kwargs.update({
                     'max_size': 2**20,      # 1MB 메시지 크기 제한
                     'max_queue': 32,        # 큐 크기 제한
-                    'read_limit': 2**16,    # 64KB 읽기 버퍼
-                    'write_limit': 2**16,   # 64KB 쓰기 버퍼
                     'close_timeout': 10,    # 연결 종료 타임아웃
                     'ping_interval': 30,    # Windows에서 더 긴 ping 간격
                     'ping_timeout': 30      # Windows에서 더 긴 ping 타임아웃
