@@ -7,6 +7,7 @@ import os
 import sys
 import uvicorn
 import logging
+import asyncio
 from pathlib import Path
 
 # Configure logging
@@ -15,6 +16,12 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Windows에서 ProactorEventLoop 대신 SelectorEventLoop를 사용하도록 강제
+# WebSocket 연결 안정성 문제를 해결하기 위함
+if sys.platform == "win32":
+    print("Windows detected: Using SelectorEventLoop to prevent WebSocket connection issues")
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 def main():
     """Run the FastAPI server directly using uvicorn."""
