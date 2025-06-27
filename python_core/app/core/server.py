@@ -430,9 +430,17 @@ class WebSocketServer:
 
     async def start(self):
         """Start the WebSocket server"""
+        logger.info("[START_DEBUG] WebSocket server start() method called")
+        logger.info(f"[START_DEBUG] Current server state: {self.server}")
+        
         if not self.server:
+            logger.info("[START_DEBUG] Server not initialized, calling initialize()...")
             await self.initialize()
-        logger.info("WebSocket server started")
+            logger.info("[START_DEBUG] Initialize() completed")
+        else:
+            logger.info("[START_DEBUG] Server already initialized, skipping initialize()")
+            
+        logger.info("[START_DEBUG] WebSocket server start() method completed")
 
     async def stop(self):
         """Stop the WebSocket server."""

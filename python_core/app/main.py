@@ -229,17 +229,23 @@ async def startup_event():
     print("[6/8] Services initialized [OK]")
 
     print("[7/8] Starting WebSocket server...")
+    print(f"[7/8] About to call ws_server.start()...")
     try:
         await app.state.ws_server.start()
         print(f"[7/8] WebSocket server started on {ws_host}:{ws_port} [OK]")
     except Exception as e:
         print(f"[7/8] Error starting WebSocket server: {e} [FAIL]")
+        import traceback
+        print(f"[7/8] Traceback: {traceback.format_exc()}")
         
+    print(f"[7/8] About to init stream service...")
     try:
         await app.state.stream_service.init_stream() 
         print("[7/8] Stream service ready [OK]")
     except Exception as e:
         print(f"[7/8] Error initializing stream service: {e} [FAIL]")
+        import traceback
+        print(f"[7/8] Traceback: {traceback.format_exc()}")
     
     print("[8/8] Finalizing server initialization...")
     print("=== Link Band SDK Server ready! ===")
