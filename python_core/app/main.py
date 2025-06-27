@@ -276,10 +276,15 @@ async def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    logger.info(f"[FASTAPI_WS_DEBUG] New WebSocket connection attempt to /ws endpoint")
+    logger.info(f"[FASTAPI_WS_DEBUG] WebSocket client: {websocket.client}")
+    
     if hasattr(app.state, 'ws_server') and app.state.ws_server:
+        logger.info(f"[FASTAPI_WS_DEBUG] Delegating to ws_server.handle_websocket_connection")
         await app.state.ws_server.handle_websocket_connection(websocket)
     else:
-        logger.error("WebSocketServer not initialized in app.state for /ws endpoint.")
+        logger.error("[FASTAPI_WS_DEBUG] WebSocketServer not initialized in app.state for /ws endpoint.")
+        logger.error(f"[FASTAPI_WS_DEBUG] Closing connection with code 1011")
         await websocket.close(code=1011) 
 
 @app.websocket("/ws/processed")

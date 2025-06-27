@@ -170,6 +170,7 @@ class WebSocketServer:
 
         try:
             # Create new server
+            logger.info(f"[WEBSOCKET_SERVER_DEBUG] Creating websockets.serve on {self.host}:{self.port}")
             self.server = await websockets.serve(
                 self.handle_client,
                 self.host,
@@ -178,18 +179,25 @@ class WebSocketServer:
                 ping_interval=20,       # 20초마다 ping 전송
                 ping_timeout=20         # 20초 내에 pong이 없으면 연결 종료
             )
+            logger.info(f"[WEBSOCKET_SERVER_DEBUG] websockets.serve created successfully")
             
             # Start auto-connect task
+            logger.info(f"[WEBSOCKET_SERVER_DEBUG] Starting auto-connect task")
             self.auto_connect_task = asyncio.create_task(self._auto_connect_loop())
             
             # Start periodic status update
+            logger.info(f"[WEBSOCKET_SERVER_DEBUG] Starting periodic status update task")
             asyncio.create_task(self._periodic_status_update())
             
-            logger.info(f"WebSocket server initialized on {self.host}:{self.port}")
+            logger.info(f"[WEBSOCKET_SERVER_DEBUG] ✅ WebSocket server initialized on {self.host}:{self.port}")
+            logger.info(f"[WEBSOCKET_SERVER_DEBUG] Server object: {self.server}")
             self.server_initialized = True
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize WebSocket server: {e}")
+            logger.error(f"[WEBSOCKET_SERVER_DEBUG] ❌ Failed to initialize WebSocket server: {e}")
+            logger.error(f"[WEBSOCKET_SERVER_DEBUG] Exception type: {type(e)}")
+            import traceback
+            logger.error(f"[WEBSOCKET_SERVER_DEBUG] Traceback: {traceback.format_exc()}")
             raise
 
     async def _periodic_status_update(self):
