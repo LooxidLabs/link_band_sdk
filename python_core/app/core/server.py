@@ -236,12 +236,31 @@ class WebSocketServer:
             self.clients.add(websocket)
             logger.info(f"Client connected from {client_address}. Total clients: {len(self.clients)}")
 
-            # 연결 즉시 블루투스 상태 확인 및 전송
+            # [FIX] Do not send any data immediately. Wait for the client's first message.
+            # This is to work around a race condition on Windows where the connection
+            # drops if the server sends data before receiving anything.
+            logger.info("Connection established. Waiting for client's initial handshake.")
+            
+            try:
+                # Wait for the first message with a timeout
+                message = await asyncio.wait_for(websocket.recv(), timeout=30.0)
+                logger.info("Initial handshake received. Connection is stable.")
+                await self.handle_client_message(websocket, message)
+            except asyncio.TimeoutError:
+                logger.warning(f"Client {client_address} did not send initial handshake. Closing connection.")
+                # No need to remove from self.clients, finally block will do it.
+                return
+            except websockets.exceptions.ConnectionClosed:
+                # This is expected if the client disconnects before sending the handshake
+                logger.info(f"Client {client_address} disconnected before handshake.")
+                return
+
+            # Now that the connection is stable, send the initial status.
             is_bluetooth_available = await self._check_bluetooth_status()
             await self._broadcast_bluetooth_status(is_bluetooth_available)
-            
             await self._send_current_device_status(websocket)
 
+            # Continue handling subsequent messages
             async for message in websocket:
                 await self.handle_client_message(websocket, message)
 
