@@ -211,7 +211,7 @@ class WebSocketServer:
             await asyncio.sleep(1)  # 1초마다 업데이트
 
     async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
-        """Handle new client connections"""
+        """Handle new client connections with improved error handling for Windows"""
         client_address = websocket.remote_address
         logger.info(f"New connection attempt from {client_address}")
 
@@ -266,15 +266,25 @@ class WebSocketServer:
 
         except websockets.exceptions.ConnectionClosed as e:
             logger.info(f"Client connection closed from {client_address}: {e}")
+        except ConnectionResetError as e:
+            # Windows-specific: Handle connection reset errors gracefully
+            logger.warning(f"Connection reset by client {client_address}: {e}")
+        except OSError as e:
+            # Handle other OS-level connection errors
+            if e.errno in (995, 10054):  # WinError 995 or WSAECONNRESET
+                logger.warning(f"Windows connection error for client {client_address}: {e}")
+            else:
+                logger.error(f"OS error handling client {client_address}: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Error handling client {client_address}: {e}", exc_info=True)
         finally:
             if websocket in self.clients:
                 self.clients.remove(websocket)
                 try:
-                    await websocket.close(1000, "Normal closure")
+                    if not websocket.closed:
+                        await websocket.close(1000, "Normal closure")
                 except Exception as e:
-                    logger.error(f"Error closing websocket: {e}")
+                    logger.debug(f"Error closing websocket: {e}")  # Reduced to debug level
                 logger.info(f"Client disconnected from {client_address}. Total clients: {len(self.clients)}")
 
     async def _send_current_device_status(self, websocket: websockets.WebSocketServerProtocol):
@@ -491,10 +501,14 @@ class WebSocketServer:
                     await self.send_error_to_client(websocket, "Command message missing command")
                     return
 
-                # [FIX] Do not send a direct response to the initial handshake.
-                # Let the periodic status update handle it. This avoids race conditions on Windows.
+                # Send a simple acknowledgment for the initial handshake to keep connection alive
                 if command == "check_device_connection":
-                    logger.info("Received initial handshake command. No direct response will be sent.")
+                    logger.info("Received initial handshake command. Sending acknowledgment.")
+                    await websocket.send(json.dumps({
+                        "type": "handshake_ack",
+                        "status": "connected",
+                        "message": "Handshake acknowledged"
+                    }))
                     return
 
                 logger.info(f"Processing command: {command} with payload: {payload}")
@@ -1417,7 +1431,7 @@ class WebSocketServer:
         await self.broadcast(json.dumps(message))
 
     async def broadcast(self, message: str):
-        """Broadcast message to all connected clients with improved error handling."""
+        """Broadcast message to all connected clients with improved error handling for Windows."""
         if not self.clients:
             return
 
@@ -1440,6 +1454,17 @@ class WebSocketServer:
                 
             except websockets.exceptions.ConnectionClosed:
                 logger.debug(f"Connection closed for client {getattr(client, 'remote_address', 'unknown')}")
+                disconnected_clients.add(client)
+            except ConnectionResetError:
+                # Windows-specific: Handle connection reset errors
+                logger.debug(f"Connection reset for client {getattr(client, 'remote_address', 'unknown')}")
+                disconnected_clients.add(client)
+            except OSError as e:
+                # Handle Windows-specific OS errors
+                if e.errno in (995, 10054):  # WinError 995 or WSAECONNRESET
+                    logger.debug(f"Windows connection error for client {getattr(client, 'remote_address', 'unknown')}: {e}")
+                else:
+                    logger.warning(f"OS error sending to client {getattr(client, 'remote_address', 'unknown')}: {e}")
                 disconnected_clients.add(client)
             except asyncio.TimeoutError:
                 logger.warning(f"Timeout sending message to client {getattr(client, 'remote_address', 'unknown')}")

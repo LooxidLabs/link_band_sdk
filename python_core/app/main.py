@@ -14,7 +14,16 @@ from app.database.db_manager import DatabaseManager
 from fastapi.staticfiles import StaticFiles
 import os
 import sys
+import asyncio
+import platform
 from pathlib import Path
+
+# Windows에서 ProactorEventLoop 대신 SelectorEventLoop 강제 사용
+# 이는 Windows에서 발생하는 WebSocket "ghost connection" 문제를 해결합니다
+# 참조: https://bugs.python.org/issue39010
+if platform.system() == 'Windows':
+    print("Windows detected: Using SelectorEventLoop to prevent WebSocket connection issues")
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # 간략한 로깅 설정
 logging.basicConfig(
