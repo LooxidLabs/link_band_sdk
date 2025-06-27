@@ -41,37 +41,18 @@ def run_server(host: str = "localhost", port: int = 8121) -> None:
         # Get the directory containing this script
         script_dir = Path(__file__).parent
         
-        # Windows에서는 바로 standalone_server.py 실행
+        # Look for the MNE-enabled server binary - platform specific
         if sys.platform == "win32":
-            logger.info("Windows detected: Running standalone_server.py directly")
-            standalone_server = script_dir / "standalone_server.py"
-            if standalone_server.exists():
-                logger.info(f"Running standalone_server.py from {standalone_server}")
-                
-                # Get the appropriate Python executable
-                python_exe = get_python_executable()
-                
-                # Run standalone_server.py as subprocess
-                try:
-                    result = subprocess.run([
-                        python_exe, 
-                        str(standalone_server)
-                    ], cwd=str(script_dir), check=True)
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"standalone_server.py failed with exit code {e.returncode}")
-                    sys.exit(1)
-            else:
-                logger.error("standalone_server.py not found")
-                sys.exit(1)
-            return
-        
-        # macOS/Linux에서는 바이너리 실행 시도
-        # Look for the MNE-enabled server binary
-        server_binary = script_dir / "dist" / "linkband-server-macos-arm64-final"
-        
-        if not server_binary.exists():
-            # Fallback to the distributed version
-            server_binary = script_dir.parent / "installers" / "distribution" / "macos-arm64" / "linkband-server-macos-arm64-final"
+            server_binary = script_dir / "dist" / "linkband-server-windows.exe"
+            if not server_binary.exists():
+                # Fallback to the distributed version
+                server_binary = script_dir.parent / "installers" / "distribution" / "windows" / "linkband-server-windows.exe"
+        else:
+            # macOS/Linux
+            server_binary = script_dir / "dist" / "linkband-server-macos-arm64-final"
+            if not server_binary.exists():
+                # Fallback to the distributed version
+                server_binary = script_dir.parent / "installers" / "distribution" / "macos-arm64" / "linkband-server-macos-arm64-final"
         
         if not server_binary.exists():
             logger.error(f"MNE-enabled server binary not found at {server_binary}")
