@@ -456,19 +456,22 @@ class WebSocketServer:
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
         """Handle messages from clients"""
         try:
-            logger.info(f"Received message: {message}")
+            logger.info(f"[WEBSOCKET_DEBUG] Received raw message: {message}")
             # Parse JSON message if it's a string
             if isinstance(message, str):
                 try:
                     data = json.loads(message)
+                    logger.info(f"[WEBSOCKET_DEBUG] Parsed JSON data: {data}")
                 except json.JSONDecodeError:
                     logger.error(f"Invalid JSON message received: {message}")
                     return
             else:
                 data = message
+                logger.info(f"[WEBSOCKET_DEBUG] Non-string message data: {data}")
 
             # Handle ping/pong
             if isinstance(data, str) and data.strip() == "ping":
+                logger.info("[WEBSOCKET_DEBUG] Handling ping, sending pong")
                 await websocket.send("pong")
                 return
 
@@ -479,6 +482,7 @@ class WebSocketServer:
                 return
 
             message_type = data.get('type')
+            logger.info(f"[WEBSOCKET_DEBUG] Message type: {message_type}")
             if not message_type:
                 logger.warning("Message missing type")
                 await self.send_error_to_client(websocket, "Message missing type")
@@ -487,6 +491,7 @@ class WebSocketServer:
             if message_type == 'command':
                 command = data.get('command')
                 payload = data.get('payload', {})
+                logger.info(f"[WEBSOCKET_DEBUG] Command: {command}, Payload: {payload}")
                 
                 if not command:
                     logger.warning("Command message missing command")
@@ -495,17 +500,23 @@ class WebSocketServer:
 
                 # Send a simple handshake response to test Windows compatibility
                 if command == "check_device_connection":
-                    logger.info("Received initial handshake command. Sending simple response.")
+                    logger.info("[WEBSOCKET_DEBUG] Processing check_device_connection command")
                     try:
                         response = {
                             "type": "handshake_response",
                             "status": "connected",
                             "message": "WebSocket connection established"
                         }
-                        await websocket.send(json.dumps(response))
-                        logger.info("Handshake response sent successfully")
+                        response_json = json.dumps(response)
+                        logger.info(f"[WEBSOCKET_DEBUG] Sending handshake response: {response_json}")
+                        
+                        # Check WebSocket state before sending
+                        logger.info(f"[WEBSOCKET_DEBUG] WebSocket state: closed={websocket.closed}, state={getattr(websocket, 'state', 'unknown')}")
+                        
+                        await websocket.send(response_json)
+                        logger.info("[WEBSOCKET_DEBUG] Handshake response sent successfully")
                     except Exception as e:
-                        logger.error(f"Error sending handshake response: {e}")
+                        logger.error(f"[WEBSOCKET_DEBUG] Error sending handshake response: {e}", exc_info=True)
                     return
 
                 logger.info(f"Processing command: {command} with payload: {payload}")

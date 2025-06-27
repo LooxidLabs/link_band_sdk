@@ -445,12 +445,21 @@ export const useEngineStore = create<EngineState>((set, get) => {
   
   // WebSocket 메시지 핸들러
   const handleWebSocketMessage = (message: any) => {
-    // const now = Date.now();
-    // const dataLength = message.data.length;
+    console.log('[WEBSOCKET_CLIENT_DEBUG] Received message:', message);
 
-    // No longer needed - handshake acknowledgment removed for Windows compatibility
+    // Handle handshake response
+    if (message.type === 'handshake_response') {
+      console.log('[WEBSOCKET_CLIENT_DEBUG] Handshake response received:', message);
+      return;
+    }
 
-      // 데이터가 들어오면 isStreamingIdle을 false로 설정
+    // Handle health check response
+    if (message.type === 'health_check_response') {
+      console.log('[WEBSOCKET_CLIENT_DEBUG] Health check response received:', message);
+      return;
+    }
+
+    // 데이터가 들어오면 isStreamingIdle을 false로 설정
     set(() => ({ isStreamingIdle: false }));
 
     if (message.type === 'processed_data') {
