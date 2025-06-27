@@ -171,7 +171,9 @@ class WebSocketServer:
                 self.handle_client,
                 self.host,
                 self.port,
-                family=socket.AF_INET  # IPv4 전용으로 강제
+                family=socket.AF_INET,  # IPv4 전용으로 강제
+                ping_interval=20,       # 20초마다 ping 전송
+                ping_timeout=20         # 20초 내에 pong이 없으면 연결 종료
             )
             
             # Start auto-connect task
