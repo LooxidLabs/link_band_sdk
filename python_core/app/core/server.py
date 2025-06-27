@@ -191,16 +191,41 @@ class WebSocketServer:
 
     async def _periodic_status_update(self):
         """주기적으로 모든 클라이언트에게 상태를 업데이트합니다."""
-        # [WINDOWS FIX] Temporarily disable periodic status updates
-        # This prevents connection drops on Windows
-        logger.info("Periodic status updates disabled for Windows compatibility")
+        logger.info("[PERIODIC_DEBUG] Starting periodic status updates")
         while True:
             try:
-                # Just sleep without sending any messages
-                pass
+                if len(self.clients) > 0:
+                    logger.info(f"[PERIODIC_DEBUG] Sending periodic updates to {len(self.clients)} clients")
+                    
+                    # Check Bluetooth status
+                    is_bluetooth_available = await self._check_bluetooth_status()
+                    await self._broadcast_bluetooth_status(is_bluetooth_available)
+                    
+                    # Send device status
+                    is_connected = self.device_manager.is_connected()
+                    device_info = self.device_manager.get_device_info() if is_connected else None
+                    registered_devices = self.device_registry.get_registered_devices()
+
+                    # 배터리 정보 가져오기
+                    battery_data = []
+                    if is_connected and self.device_manager.battery_buffer:
+                        battery_data = [{"timestamp": time.time(), "level": self.device_manager.battery_level}] if self.device_manager.battery_level is not None else []
+                    
+                    status_data = {
+                        "connected": is_connected,
+                        "device_info": device_info,
+                        "is_streaming": self.is_streaming if is_connected else False,
+                        "registered_devices": registered_devices,
+                        "clients_connected": len(self.clients),
+                        "battery": battery_data[-1] if battery_data else None
+                    }
+                    await self.broadcast_event(EventType.DEVICE_INFO, status_data)
+                else:
+                    logger.debug("[PERIODIC_DEBUG] No clients connected, skipping periodic update")
+                    
             except Exception as e:
-                logger.error(f"Error in periodic status update: {e}")
-            await asyncio.sleep(10)  # 10초마다 체크 (메시지 전송 없음)
+                logger.error(f"[PERIODIC_DEBUG] Error in periodic status update: {e}", exc_info=True)
+            await asyncio.sleep(10)  # 10초마다 체크
 
     async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
         """Handle new client connections with improved error handling for Windows"""
@@ -1440,45 +1465,56 @@ class WebSocketServer:
 
     async def broadcast(self, message: str):
         """Broadcast message to all connected clients with improved error handling for Windows."""
+        logger.info(f"[BROADCAST_DEBUG] Attempting to broadcast message to {len(self.clients)} clients")
+        logger.info(f"[BROADCAST_DEBUG] Message preview: {message[:200]}...")
+        
         if not self.clients:
+            logger.info("[BROADCAST_DEBUG] No clients connected, skipping broadcast")
             return
 
         # 연결이 끊어진 클라이언트를 추적
         disconnected_clients = set()
+        successful_sends = 0
         
         # 클라이언트 목록을 복사하여 순회 중 수정 방지
         clients_copy = list(self.clients)
 
         # 각 클라이언트에 메시지 전송 시도
-        for client in clients_copy:
+        for i, client in enumerate(clients_copy):
             try:
+                client_addr = getattr(client, 'remote_address', 'unknown')
+                logger.info(f"[BROADCAST_DEBUG] Sending to client {i+1}/{len(clients_copy)} ({client_addr})")
+                
                 # 클라이언트 연결 상태 확인
                 if client.closed:
+                    logger.info(f"[BROADCAST_DEBUG] Client {client_addr} is already closed")
                     disconnected_clients.add(client)
                     continue
                     
                 # 메시지 전송 (타임아웃 설정)
                 await asyncio.wait_for(client.send(message), timeout=1.0)
+                successful_sends += 1
+                logger.info(f"[BROADCAST_DEBUG] Successfully sent to client {client_addr}")
                 
             except websockets.exceptions.ConnectionClosed:
-                logger.debug(f"Connection closed for client {getattr(client, 'remote_address', 'unknown')}")
+                logger.info(f"[BROADCAST_DEBUG] Connection closed for client {getattr(client, 'remote_address', 'unknown')}")
                 disconnected_clients.add(client)
             except ConnectionResetError:
                 # Windows-specific: Handle connection reset errors
-                logger.debug(f"Connection reset for client {getattr(client, 'remote_address', 'unknown')}")
+                logger.info(f"[BROADCAST_DEBUG] Connection reset for client {getattr(client, 'remote_address', 'unknown')}")
                 disconnected_clients.add(client)
             except OSError as e:
                 # Handle Windows-specific OS errors
                 if e.errno in (995, 10054):  # WinError 995 or WSAECONNRESET
-                    logger.debug(f"Windows connection error for client {getattr(client, 'remote_address', 'unknown')}: {e}")
+                    logger.info(f"[BROADCAST_DEBUG] Windows connection error for client {getattr(client, 'remote_address', 'unknown')}: {e}")
                 else:
-                    logger.warning(f"OS error sending to client {getattr(client, 'remote_address', 'unknown')}: {e}")
+                    logger.warning(f"[BROADCAST_DEBUG] OS error sending to client {getattr(client, 'remote_address', 'unknown')}: {e}")
                 disconnected_clients.add(client)
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout sending message to client {getattr(client, 'remote_address', 'unknown')}")
+                logger.warning(f"[BROADCAST_DEBUG] Timeout sending message to client {getattr(client, 'remote_address', 'unknown')}")
                 disconnected_clients.add(client)
             except Exception as e:
-                logger.debug(f"Error sending message to client {getattr(client, 'remote_address', 'unknown')}: {e}")
+                logger.error(f"[BROADCAST_DEBUG] Error sending message to client {getattr(client, 'remote_address', 'unknown')}: {e}", exc_info=True)
                 disconnected_clients.add(client)
 
         # 연결이 끊어진 클라이언트 정리
@@ -1491,8 +1527,9 @@ class WebSocketServer:
                 except Exception as e:
                     logger.debug(f"Error closing client: {e}")
 
+        logger.info(f"[BROADCAST_DEBUG] Broadcast complete: {successful_sends}/{len(clients_copy)} successful sends")
         if disconnected_clients:
-            logger.info(f"Cleaned up {len(disconnected_clients)} disconnected clients. Active clients: {len(self.clients)}")
+            logger.info(f"[BROADCAST_DEBUG] Cleaned up {len(disconnected_clients)} disconnected clients. Active clients: {len(self.clients)}")
 
     def get_connected_clients(self) -> int:
         """Get the number of currently connected clients"""
