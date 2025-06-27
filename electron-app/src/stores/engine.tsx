@@ -448,11 +448,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
     // const now = Date.now();
     // const dataLength = message.data.length;
 
-    // Handle handshake acknowledgment
-    if (message.type === 'handshake_ack') {
-      console.log('Handshake acknowledged by server:', message.message);
-      return;
-    }
+    // No longer needed - handshake acknowledgment removed for Windows compatibility
 
       // 데이터가 들어오면 isStreamingIdle을 false로 설정
     set(() => ({ isStreamingIdle: false }));

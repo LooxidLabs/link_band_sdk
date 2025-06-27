@@ -255,10 +255,10 @@ class WebSocketServer:
                 logger.info(f"Client {client_address} disconnected before handshake.")
                 return
 
-            # Now that the connection is stable, send the initial status.
-            is_bluetooth_available = await self._check_bluetooth_status()
-            await self._broadcast_bluetooth_status(is_bluetooth_available)
-            await self._send_current_device_status(websocket)
+            # [WINDOWS FIX] Do not send any messages immediately after handshake
+            # Let the periodic status update handle initial status broadcasting
+            # This prevents connection drops on Windows
+            logger.info("Handshake completed. Letting periodic updates handle status broadcasting.")
 
             # Continue handling subsequent messages
             async for message in websocket:
@@ -501,14 +501,10 @@ class WebSocketServer:
                     await self.send_error_to_client(websocket, "Command message missing command")
                     return
 
-                # Send a simple acknowledgment for the initial handshake to keep connection alive
+                # Simply acknowledge the handshake without sending a response to avoid Windows connection issues
                 if command == "check_device_connection":
-                    logger.info("Received initial handshake command. Sending acknowledgment.")
-                    await websocket.send(json.dumps({
-                        "type": "handshake_ack",
-                        "status": "connected",
-                        "message": "Handshake acknowledged"
-                    }))
+                    logger.info("Received initial handshake command. Connection established successfully.")
+                    # Do not send any response - let periodic status updates handle communication
                     return
 
                 logger.info(f"Processing command: {command} with payload: {payload}")
