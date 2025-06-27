@@ -169,10 +169,18 @@ class WebSocketServer:
                 logger.error(f"Error closing client connection: {e}")
         self.clients.clear()
 
-        # Check if port is available
-        if not ensure_port_available(self.port):
-            logger.error(f"Cannot start server: Port {self.port} is in use and could not be freed")
-            raise OSError(f"Port {self.port} is already in use")
+        # Check if port is available with multiple attempts
+        from app.core.utils import force_kill_port_processes
+        
+        if not ensure_port_available(self.port, max_retries=3):
+            # Try force kill as last resort
+            logger.warning(f"Standard port cleanup failed, trying force kill for port {self.port}")
+            force_kill_port_processes(self.port)
+            
+            # Final check
+            if not ensure_port_available(self.port, max_retries=1):
+                logger.error(f"Cannot start server: Port {self.port} is in use and could not be freed")
+                raise OSError(f"Port {self.port} is already in use")
 
         try:
             # Create new server
@@ -389,8 +397,18 @@ class WebSocketServer:
             if websocket in self.clients:
                 self.clients.remove(websocket)
                 try:
-                    if hasattr(websocket, 'close') and not getattr(websocket, 'closed', False):
-                        await websocket.close(1000, "Normal closure")
+                    if hasattr(websocket, 'close'):
+                        # Windows 호환성을 위한 closed 상태 확인
+                        is_closed = getattr(websocket, 'closed', None)
+                        if is_closed is None:
+                            try:
+                                state = getattr(websocket, 'state', None)
+                                is_closed = state is None or state != 1  # 1은 OPEN 상태
+                            except:
+                                is_closed = False
+                        
+                        if not is_closed:
+                            await websocket.close(1000, "Normal closure")
                 except Exception as e:
                     logger.debug(f"Error closing websocket: {e}")  # Reduced to debug level
                 logger.info(f"Client disconnected from {client_address}. Total clients: {len(self.clients)}")
@@ -476,6 +494,129 @@ class WebSocketServer:
             await self.stream_engine.stop()
         
         print("WebSocket server stopped")
+
+    async def shutdown(self):
+        """Complete shutdown of WebSocket server and cleanup all resources"""
+        logger.info("Starting complete WebSocket server shutdown...")
+        
+        try:
+            # 1. Cancel all background tasks first
+            tasks_to_cancel = []
+            
+            if hasattr(self, 'auto_connect_task') and self.auto_connect_task:
+                tasks_to_cancel.append(self.auto_connect_task)
+            
+            if hasattr(self, 'periodic_task') and self.periodic_task:
+                tasks_to_cancel.append(self.periodic_task)
+            
+            # Cancel all background tasks
+            for task in tasks_to_cancel:
+                if not task.done():
+                    task.cancel()
+                    logger.info(f"Cancelled task: {task}")
+            
+            # Wait for all tasks to complete cancellation
+            if tasks_to_cancel:
+                await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+                logger.info(f"Cancelled {len(tasks_to_cancel)} background tasks")
+            
+            # 2. Stop streaming if active
+            if self.is_streaming:
+                logger.info("Stopping active streaming...")
+                await self.stop_streaming()
+            
+            # 3. Close all WebSocket connections
+            if self.clients:
+                logger.info(f"Closing {len(self.clients)} WebSocket connections...")
+                close_tasks = []
+                for client in list(self.clients):
+                    # Windows 호환성을 위한 closed 상태 확인
+                    is_closed = getattr(client, 'closed', None)
+                    if is_closed is None:
+                        try:
+                            state = getattr(client, 'state', None)
+                            is_closed = state is None or state != 1  # 1은 OPEN 상태
+                        except:
+                            is_closed = False
+                    
+                    if not is_closed:
+                        close_tasks.append(self._close_client_safely(client))
+                
+                if close_tasks:
+                    await asyncio.gather(*close_tasks, return_exceptions=True)
+                
+                self.clients.clear()
+                logger.info("All WebSocket connections closed")
+            
+            # 4. Cleanup connected_clients dict
+            if hasattr(self, 'connected_clients'):
+                for client_id in list(self.connected_clients.keys()):
+                    await self.handle_client_disconnect(client_id)
+                self.connected_clients.clear()
+            
+            # 5. Stop the WebSocket server
+            if hasattr(self, 'server') and self.server:
+                logger.info("Stopping WebSocket server...")
+                self.server.close()
+                await self.server.wait_closed()
+                logger.info("WebSocket server stopped")
+                self.server = None
+            
+            # 6. Remove device callbacks
+            if hasattr(self, 'device_manager') and self.device_manager:
+                try:
+                    self.device_manager.remove_processed_data_callback(self._handle_processed_data)
+                except Exception as e:
+                    logger.warning(f"Error removing device callback: {e}")
+            
+            # 7. Cancel any remaining tasks in the current event loop
+            try:
+                current_task = asyncio.current_task()
+                all_tasks = [task for task in asyncio.all_tasks() if task != current_task and not task.done()]
+                
+                if all_tasks:
+                    logger.info(f"Cancelling {len(all_tasks)} remaining tasks...")
+                    for task in all_tasks:
+                        task.cancel()
+                    
+                    # Give tasks a moment to cancel gracefully
+                    await asyncio.sleep(0.1)
+                    
+                    # Wait for cancellation with timeout
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(*all_tasks, return_exceptions=True),
+                            timeout=2.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("Some tasks did not cancel within timeout")
+            
+            except Exception as e:
+                logger.warning(f"Error during task cleanup: {e}")
+            
+            logger.info("WebSocket server shutdown complete")
+            
+        except Exception as e:
+            logger.error(f"Error during WebSocket server shutdown: {e}")
+            import traceback
+            logger.error(f"Shutdown traceback: {traceback.format_exc()}")
+    
+    async def _close_client_safely(self, client):
+        """Safely close a WebSocket client connection"""
+        try:
+            # Windows 호환성을 위한 closed 상태 확인
+            is_closed = getattr(client, 'closed', None)
+            if is_closed is None:
+                try:
+                    state = getattr(client, 'state', None)
+                    is_closed = state is None or state != 1  # 1은 OPEN 상태
+                except:
+                    is_closed = False
+            
+            if not is_closed:
+                await client.close(code=1000, reason="Server shutdown")
+        except Exception as e:
+            logger.warning(f"Error closing client connection: {e}")
 
     async def _auto_connect_loop(self):
         """Periodically check and connect to registered devices"""
@@ -1620,8 +1761,17 @@ class WebSocketServer:
                 client_addr = getattr(client, 'remote_address', 'unknown')
                 logger.info(f"[BROADCAST_DEBUG] Sending to client {i+1}/{len(clients_copy)} ({client_addr})")
                 
-                # 클라이언트 연결 상태 확인
-                if getattr(client, 'closed', False):
+                # 클라이언트 연결 상태 확인 (Windows 호환성)
+                is_closed = getattr(client, 'closed', None)
+                if is_closed is None:
+                    # closed 속성이 없는 경우 state로 확인
+                    try:
+                        state = getattr(client, 'state', None)
+                        is_closed = state is None or state != 1  # 1은 OPEN 상태
+                    except:
+                        is_closed = False
+                
+                if is_closed:
                     logger.info(f"[BROADCAST_DEBUG] Client {client_addr} is already closed")
                     disconnected_clients.add(client)
                     continue

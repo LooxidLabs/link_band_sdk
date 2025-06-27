@@ -8,6 +8,7 @@ import sys
 import uvicorn
 import logging
 import asyncio
+import signal
 from pathlib import Path
 
 # Configure logging
@@ -23,9 +24,71 @@ if sys.platform == "win32":
     print("Windows detected: Using SelectorEventLoop to prevent WebSocket connection issues")
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+def setup_signal_handlers():
+    """Setup signal handlers for graceful shutdown"""
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        
+        # Try to stop any running asyncio tasks
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Cancel all tasks
+                tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
+                if tasks:
+                    logger.info(f"Cancelling {len(tasks)} running tasks...")
+                    for task in tasks:
+                        task.cancel()
+                
+                # Schedule shutdown
+                loop.create_task(graceful_shutdown())
+        except Exception as e:
+            logger.error(f"Error during signal handling: {e}")
+        
+        # Force exit if graceful shutdown doesn't work
+        logger.info("Forcing process exit...")
+        os._exit(0)
+    
+    # Register signal handlers for both SIGINT (Ctrl+C) and SIGTERM
+    signal.signal(signal.SIGINT, signal_handler)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, signal_handler)
+
+async def graceful_shutdown():
+    """Perform graceful shutdown of all services"""
+    try:
+        logger.info("Starting graceful shutdown...")
+        
+        # Import app to access state
+        from app.main import app
+        
+        # Shutdown WebSocket server
+        if hasattr(app.state, 'ws_server') and app.state.ws_server:
+            logger.info("Shutting down WebSocket server...")
+            await app.state.ws_server.shutdown()
+        
+        # Stop stream service
+        if hasattr(app.state, 'stream_service') and app.state.stream_service:
+            logger.info("Stopping stream service...")
+            await app.state.stream_service.stop_stream()
+        
+        # Disconnect device
+        if hasattr(app.state, 'device_manager') and app.state.device_manager:
+            if app.state.device_manager.is_connected():
+                logger.info("Disconnecting device...")
+                await app.state.device_manager.disconnect()
+        
+        logger.info("Graceful shutdown complete")
+        
+    except Exception as e:
+        logger.error(f"Error during graceful shutdown: {e}")
+
 def main():
     """Run the FastAPI server directly using uvicorn."""
     try:
+        # Setup signal handlers for graceful shutdown
+        setup_signal_handlers()
+        
         # Detect if we're running in PyInstaller bundle
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
             # Running in PyInstaller bundle

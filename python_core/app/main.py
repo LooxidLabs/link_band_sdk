@@ -260,6 +260,8 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     print("Shutting down Link Band SDK Server...")
+    
+    # Complete shutdown sequence
     if hasattr(app.state, 'stream_service') and app.state.stream_service:
         try:
             await app.state.stream_service.stop_stream()
@@ -269,10 +271,20 @@ async def shutdown_event():
     
     if hasattr(app.state, 'ws_server') and app.state.ws_server:
         try:
-            await app.state.ws_server.stop()
+            await app.state.ws_server.shutdown()  # Use complete shutdown instead of stop
             print("WebSocket server stopped")
         except Exception as e:
             print(f"Error stopping WebSocket server: {e}")
+    
+    # Disconnect device if connected
+    if hasattr(app.state, 'device_manager') and app.state.device_manager:
+        try:
+            if app.state.device_manager.is_connected():
+                await app.state.device_manager.disconnect()
+                print("Device disconnected")
+        except Exception as e:
+            print(f"Error disconnecting device: {e}")
+    
     print("Link Band SDK Server stopped")
 
 @app.get("/")
