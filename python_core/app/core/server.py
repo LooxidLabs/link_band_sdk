@@ -235,9 +235,22 @@ class WebSocketServer:
 
         # Wait for FastAPI to be fully ready before accepting connections
         if not self.fastapi_ready:
-            logger.warning(f"[CONNECTION_DEBUG] Rejecting connection from {client_address} - FastAPI not ready yet")
-            await websocket.close(1011, "Server not ready")
-            return
+            logger.warning(f"[CONNECTION_DEBUG] FastAPI not ready yet, waiting for {client_address}")
+            # Instead of immediately rejecting, wait a bit for FastAPI to be ready
+            max_wait_time = 10  # seconds
+            wait_interval = 0.1  # seconds
+            waited = 0
+            
+            while not self.fastapi_ready and waited < max_wait_time:
+                await asyncio.sleep(wait_interval)
+                waited += wait_interval
+                
+            if not self.fastapi_ready:
+                logger.warning(f"[CONNECTION_DEBUG] Rejecting connection from {client_address} - FastAPI still not ready after {max_wait_time}s")
+                await websocket.close(1011, "Server not ready")
+                return
+            else:
+                logger.info(f"[CONNECTION_DEBUG] FastAPI became ready after {waited:.1f}s for {client_address}")
 
         # 같은 주소의 이전 연결을 제거
         for client in list(self.clients):
