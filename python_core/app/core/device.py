@@ -672,6 +672,14 @@ class DeviceManager:
                     self._add_to_buffer(self._eeg_buffer, sample, self.EEG_BUFFER_SIZE)
                 self.eeg_sample_count += len(samples_to_add)
                 
+                # Raw data WebSocket 브로드캐스트
+                raw_data_package = {
+                    "timestamp": time.time(),
+                    "samples": samples_to_add,
+                    "count": len(samples_to_add)
+                }
+                await self._notify_raw_data("eeg", raw_data_package)
+                
                 # SignalProcessor 버퍼에 추가
                 self.signal_processor.add_to_buffer("eeg", samples_to_add)
                 # self.logger.info(f"Added {len(samples_to_add)} EEG samples to SignalProcessor buffer")
@@ -734,6 +742,14 @@ class DeviceManager:
                     self._add_to_buffer(self._ppg_buffer, sample, self.PPG_BUFFER_SIZE)
                 self.ppg_sample_count += len(samples_to_add)
                 
+                # Raw data WebSocket 브로드캐스트
+                raw_data_package = {
+                    "timestamp": time.time(),
+                    "samples": samples_to_add,
+                    "count": len(samples_to_add)
+                }
+                await self._notify_raw_data("ppg", raw_data_package)
+                
                 # SignalProcessor 버퍼에 추가
                 self.signal_processor.add_to_buffer("ppg", samples_to_add)
                 self.logger.debug(f"Added {len(samples_to_add)} PPG samples to SignalProcessor buffer")
@@ -790,6 +806,14 @@ class DeviceManager:
                 for sample in samples_to_add:
                     self._add_to_buffer(self._acc_buffer, sample, self.ACC_BUFFER_SIZE)
                 self.acc_sample_count += len(samples_to_add)
+                
+                # Raw data WebSocket 브로드캐스트
+                raw_data_package = {
+                    "timestamp": time.time(),
+                    "samples": samples_to_add,
+                    "count": len(samples_to_add)
+                }
+                await self._notify_raw_data("acc", raw_data_package)
                 
                 # SignalProcessor 버퍼에 추가
                 self.signal_processor.add_to_buffer("acc", samples_to_add)
@@ -916,6 +940,14 @@ class DeviceManager:
                     # self.bat_sample_count += 1
                     self.logger.info(f"Battery level updated: {new_battery_level}% (Buffer size: {len(self._battery_buffer)})")
                     
+                    # Raw data WebSocket 브로드캐스트 (배터리는 raw = processed)
+                    raw_data_package = {
+                        "timestamp": timestamp,
+                        "samples": [battery_data],  # 배터리는 단일 값이므로 리스트로 감싸기
+                        "count": 1
+                    }
+                    asyncio.create_task(self._notify_raw_data("battery", raw_data_package))
+                    
                     # WebSocket으로 브로드캐스트하기 위해 콜백 호출
                     asyncio.create_task(self._notify_processed_data("battery", battery_data))
                     
@@ -1010,6 +1042,24 @@ class DeviceManager:
                 await callback(data_type, processed_data)
             except Exception as e:
                 self.logger.error(f"Error in processed data callback: {e}")
+
+    async def _notify_raw_data(self, data_type: str, raw_data: dict):
+        """Notify callbacks about new raw data"""
+        # 클라이언트가 기대하는 형식으로 변경
+        message_data = {
+            "type": "raw_data",
+            "sensor_type": data_type,
+            "data": raw_data["samples"],
+            "timestamp": raw_data["timestamp"],
+            "count": raw_data["count"]
+        }
+        
+        for callback in self.processed_data_callbacks:
+            try:
+                # 직접 WebSocket으로 브로드캐스트하기 위해 특별한 키 사용
+                await callback("raw_data_broadcast", message_data)
+            except Exception as e:
+                self.logger.error(f"Error in raw data callback: {e}")
 
     async def get_and_clear_processed_eeg_buffer(self) -> List[Any]:
         """Get a copy of the processed EEG buffer and clear it."""

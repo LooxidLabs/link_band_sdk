@@ -590,7 +590,10 @@ class WebSocketServer:
                         task.cancel()
                     
                     # Give tasks a moment to cancel gracefully
-                    await asyncio.sleep(0.1)
+                    try:
+                        await asyncio.sleep(0.1)
+                    except asyncio.CancelledError:
+                        logger.info("Sleep cancelled during shutdown, continuing cleanup")
                     
                     # Wait for cancellation with timeout
                     try:
@@ -2184,7 +2187,13 @@ class WebSocketServer:
     async def _handle_processed_data(self, data_type: str, processed_data: dict):
         """Handle processed data from device manager"""
         try:
-            # Broadcast processed data to all clients
+            # Raw data 직접 브로드캐스트 처리
+            if data_type == "raw_data_broadcast":
+                # 클라이언트가 기대하는 raw_data 형식으로 직접 브로드캐스트
+                await self.broadcast(json.dumps(processed_data))
+                return
+            
+            # Processed data는 기존 방식대로 처리
             await self.broadcast_event(EventType.DATA_RECEIVED, {
                 'type': data_type,
                 'data': processed_data,
