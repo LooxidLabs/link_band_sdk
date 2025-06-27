@@ -68,6 +68,7 @@ class WebSocketServer:
         self.device_manager = device_manager
         self.device_registry = device_registry
         self.auto_connect_task: Optional[asyncio.Task] = None
+        self.periodic_task: Optional[asyncio.Task] = None  # 주기적 상태 업데이트 태스크
         self.data_stream_stats = {
             'eeg': {'samples_per_sec': 0},
             'ppg': {'samples_per_sec': 0},
@@ -186,23 +187,23 @@ class WebSocketServer:
             # Create new server
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] Creating websockets.serve on {self.host}:{self.port}")
             
-            # Windows 특화 WebSocket 서버 설정
+            # 크로스 플랫폼 WebSocket 서버 설정
             server_kwargs = {
-                'family': socket.AF_INET,  # IPv4 전용으로 강제
-                'ping_interval': 20,       # 20초마다 ping 전송
-                'ping_timeout': 20         # 20초 내에 pong이 없으면 연결 종료
+                'ping_interval': None,     # ping 비활성화 (handshake 문제 방지)
+                'ping_timeout': None,      # ping timeout 비활성화
+                'close_timeout': 10,       # 연결 종료 타임아웃
+                'max_size': 2**20,         # 1MB 메시지 크기 제한
+                'max_queue': 32,           # 큐 크기 제한
+                'compression': None        # 압축 비활성화 (안정성 향상)
             }
             
-            # Windows에서 추가 안정성 설정
+            # 플랫폼별 추가 설정
             if platform.system() == 'Windows':
                 logger.info("[WEBSOCKET_SERVER_DEBUG] Applying Windows-specific WebSocket settings")
-                server_kwargs.update({
-                    'max_size': 2**20,      # 1MB 메시지 크기 제한
-                    'max_queue': 32,        # 큐 크기 제한
-                    'close_timeout': 10,    # 연결 종료 타임아웃
-                    'ping_interval': 30,    # Windows에서 더 긴 ping 간격
-                    'ping_timeout': 30      # Windows에서 더 긴 ping 타임아웃
-                })
+                # Windows에서는 추가 설정 없이 기본값 사용
+            elif platform.system() == 'Darwin':  # macOS
+                logger.info("[WEBSOCKET_SERVER_DEBUG] Applying macOS-specific WebSocket settings")
+                server_kwargs['reuse_port'] = True
             
             self.server = await websockets.serve(
                 self.handle_client,
@@ -218,7 +219,7 @@ class WebSocketServer:
             
             # Start periodic status update
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] Starting periodic status update task")
-            asyncio.create_task(self._periodic_status_update())
+            self.periodic_task = asyncio.create_task(self._periodic_status_update())
             
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] WebSocket server initialized on {self.host}:{self.port}")
             logger.info(f"[WEBSOCKET_SERVER_DEBUG] Server object: {self.server}")
@@ -234,40 +235,49 @@ class WebSocketServer:
     async def _periodic_status_update(self):
         """주기적으로 모든 클라이언트에게 상태를 업데이트합니다."""
         logger.info("[PERIODIC_DEBUG] Starting periodic status updates")
-        while True:
-            try:
-                if len(self.clients) > 0:
-                    logger.info(f"[PERIODIC_DEBUG] Sending periodic updates to {len(self.clients)} clients")
-                    
-                    # Check Bluetooth status
-                    is_bluetooth_available = await self._check_bluetooth_status()
-                    await self._broadcast_bluetooth_status(is_bluetooth_available)
-                    
-                    # Send device status
-                    is_connected = self.device_manager.is_connected()
-                    device_info = self.device_manager.get_device_info() if is_connected else None
-                    registered_devices = self.device_registry.get_registered_devices()
+        try:
+            while True:
+                try:
+                    if len(self.clients) > 0:
+                        logger.info(f"[PERIODIC_DEBUG] Sending periodic updates to {len(self.clients)} clients")
+                        
+                        # Check Bluetooth status
+                        is_bluetooth_available = await self._check_bluetooth_status()
+                        await self._broadcast_bluetooth_status(is_bluetooth_available)
+                        
+                        # Send device status
+                        is_connected = self.device_manager.is_connected()
+                        device_info = self.device_manager.get_device_info() if is_connected else None
+                        registered_devices = self.device_registry.get_registered_devices()
 
-                    # 배터리 정보 가져오기
-                    battery_data = []
-                    if is_connected and self.device_manager.battery_buffer:
-                        battery_data = [{"timestamp": time.time(), "level": self.device_manager.battery_level}] if self.device_manager.battery_level is not None else []
-                    
-                    status_data = {
-                        "connected": is_connected,
-                        "device_info": device_info,
-                        "is_streaming": self.is_streaming if is_connected else False,
-                        "registered_devices": registered_devices,
-                        "clients_connected": len(self.clients),
-                        "battery": battery_data[-1] if battery_data else None
-                    }
-                    await self.broadcast_event(EventType.DEVICE_INFO, status_data)
-                else:
-                    logger.debug("[PERIODIC_DEBUG] No clients connected, skipping periodic update")
-                    
-            except Exception as e:
-                logger.error(f"[PERIODIC_DEBUG] Error in periodic status update: {e}", exc_info=True)
-            await asyncio.sleep(10)  # 10초마다 체크
+                        # 배터리 정보 가져오기
+                        battery_data = []
+                        if is_connected and self.device_manager.battery_buffer:
+                            battery_data = [{"timestamp": time.time(), "level": self.device_manager.battery_level}] if self.device_manager.battery_level is not None else []
+                        
+                        status_data = {
+                            "connected": is_connected,
+                            "device_info": device_info,
+                            "is_streaming": self.is_streaming if is_connected else False,
+                            "registered_devices": registered_devices,
+                            "clients_connected": len(self.clients),
+                            "battery": battery_data[-1] if battery_data else None
+                        }
+                        await self.broadcast_event(EventType.DEVICE_INFO, status_data)
+                    else:
+                        logger.debug("[PERIODIC_DEBUG] No clients connected, skipping periodic update")
+                        
+                except asyncio.CancelledError:
+                    logger.info("[PERIODIC_DEBUG] Periodic status update task cancelled")
+                    break
+                except Exception as e:
+                    logger.error(f"[PERIODIC_DEBUG] Error in periodic status update: {e}", exc_info=True)
+                
+                await asyncio.sleep(10)  # 10초마다 체크
+        except asyncio.CancelledError:
+            logger.info("[PERIODIC_DEBUG] Periodic status update task cancelled during shutdown")
+        except Exception as e:
+            logger.error(f"[PERIODIC_DEBUG] Unexpected error in periodic status update: {e}", exc_info=True)
 
     async def handle_client(self, websocket: websockets.WebSocketServerProtocol):
         """Handle new client connections with improved error handling for Windows"""
