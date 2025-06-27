@@ -167,12 +167,26 @@ class WebSocketServer:
 
         try:
             # Create new server
-            self.server = await websockets.serve(
-                self.handle_client,
-                self.host,
-                self.port,
-                family=socket.AF_INET  # IPv4 전용으로 강제
-            )
+            import platform
+            if platform.system() == "Windows":
+                # Windows에서는 더 큰 버퍼와 다른 설정이 필요할 수 있음
+                self.server = await websockets.serve(
+                    self.handle_client,
+                    self.host,
+                    self.port,
+                    family=socket.AF_INET,  # IPv4 전용으로 강제
+                    max_size=10 * 1024 * 1024,  # 10MB max message size
+                    max_queue=128,  # Larger message queue
+                    read_limit=2 ** 20,  # 1MB read limit
+                    write_limit=2 ** 20  # 1MB write limit
+                )
+            else:
+                self.server = await websockets.serve(
+                    self.handle_client,
+                    self.host,
+                    self.port,
+                    family=socket.AF_INET  # IPv4 전용으로 강제
+                )
             
             # Start auto-connect task
             self.auto_connect_task = asyncio.create_task(self._auto_connect_loop())
@@ -258,6 +272,9 @@ class WebSocketServer:
 
     async def _send_current_device_status(self, websocket: websockets.WebSocketServerProtocol):
         """Send the current device connection status to a specific client."""
+        # Give the connection a moment to stabilize (especially on Windows)
+        await asyncio.sleep(0.1)
+        
         is_connected = self.device_manager.is_connected()
         device_info = self.device_manager.get_device_info() if is_connected else None
         registered_devices = self.device_registry.get_registered_devices()
@@ -1402,6 +1419,10 @@ class WebSocketServer:
         # 클라이언트 목록을 복사하여 순회 중 수정 방지
         clients_copy = list(self.clients)
 
+        # Windows에서는 더 긴 타임아웃 필요
+        import platform
+        timeout_duration = 3.0 if platform.system() == "Windows" else 1.0
+
         # 각 클라이언트에 메시지 전송 시도
         for client in clients_copy:
             try:
@@ -1411,7 +1432,7 @@ class WebSocketServer:
                     continue
                     
                 # 메시지 전송 (타임아웃 설정)
-                await asyncio.wait_for(client.send(message), timeout=1.0)
+                await asyncio.wait_for(client.send(message), timeout=timeout_duration)
                 
             except websockets.exceptions.ConnectionClosed:
                 logger.debug(f"Connection closed for client {getattr(client, 'remote_address', 'unknown')}")
