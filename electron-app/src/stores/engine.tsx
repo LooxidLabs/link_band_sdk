@@ -56,9 +56,11 @@ class WebSocketManager {
 
     // Add initial delay to ensure Python server is fully initialized
     // This prevents connecting to WebSocket before FastAPI is ready
-    const startupDelay = 3000; // 3 seconds delay for server initialization
+    // Windows needs more time for server initialization
+    const isWindows = navigator.userAgent.toLowerCase().includes('windows');
+    const startupDelay = isWindows ? 5000 : 3000; // 5 seconds for Windows, 3 seconds for others
     
-    console.log(`Waiting ${startupDelay}ms for Python server to fully initialize...`);
+    console.log(`Platform: ${isWindows ? 'Windows' : 'Other'}, waiting ${startupDelay}ms for Python server to fully initialize...`);
     
     setTimeout(() => {
       console.log('Starting WebSocket auto-connect after server initialization delay');
@@ -114,7 +116,10 @@ class WebSocketManager {
       clearInterval(this.healthCheckTimer);
     }
 
-    // 5초마다 health check 수행 (1초는 너무 빈번함)
+    // Windows needs more frequent health checks to keep connection alive
+    const isWindows = navigator.userAgent.toLowerCase().includes('windows');
+    const healthCheckInterval = isWindows ? 10000 : 30000; // 10s for Windows, 30s for others
+
     this.healthCheckTimer = setInterval(() => {
       if (this.isConnected()) {
         this.send({
@@ -123,7 +128,7 @@ class WebSocketManager {
       } else {
         this.onConnectionChange?.(false);
       }
-    }, 30000);
+    }, healthCheckInterval);
   }
 
   private isConnected(): boolean {
@@ -205,6 +210,14 @@ class WebSocketManager {
           this.onConnectionChange?.(true);
           this.startHealthCheck();
           this.startConnectionCheck();
+          
+          // Send initial handshake message to keep connection alive
+          console.log('Sending initial handshake message');
+          this.send({
+            type: 'command',
+            command: 'check_device_connection'
+          });
+          
           resolve(true);
         };
 
