@@ -141,7 +141,7 @@ class WebSocketManager {
           this.ws.close();
           this.tryConnection(urls, index + 1);
         }
-      }, 3000); // 3초 타임아웃
+      }, 2000); // 2초 타임아웃
 
       this.ws.onopen = () => {
         clearTimeout(timeout);

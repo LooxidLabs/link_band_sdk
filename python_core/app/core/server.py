@@ -286,15 +286,15 @@ class WebSocketServer:
                 logger.error(f"[CONNECTION_DEBUG] Failed to send wait message to {client_address}: {e}")
             
             # Wait for FastAPI to be ready
-            max_wait_time = 60  # Increased to 60 seconds for Windows
+            max_wait_time = 10  # 10초로 단축
             wait_interval = 0.5  # seconds
             waited = 0
             
             while not self.fastapi_ready and waited < max_wait_time:
                 await asyncio.sleep(wait_interval)
                 waited += wait_interval
-                # Send periodic updates every 10 seconds
-                if waited % 10.0 < wait_interval:
+                # Send periodic updates every 2 seconds
+                if waited % 2.0 < wait_interval:
                     try:
                         update_message = {
                             "type": "server_status",
@@ -351,7 +351,7 @@ class WebSocketServer:
             # 새 연결 추가
             self.clients.add(websocket)
             logger.info(f"[CONNECTION_DEBUG] Client connected from {client_address}. Total clients: {len(self.clients)}")
-            logger.info(f"[CONNECTION_DEBUG] WebSocket state: state={getattr(websocket, 'state', 'unknown')}")
+            logger.info(f"[CONNECTION_DEBUG] WebSocket state: {getattr(websocket, 'state', 'unknown')}")
 
             # Send initial status immediately for faster user experience
             logger.info("[CONNECTION_DEBUG] Connection established. Sending initial status.")
@@ -1621,7 +1621,7 @@ class WebSocketServer:
                 logger.info(f"[BROADCAST_DEBUG] Sending to client {i+1}/{len(clients_copy)} ({client_addr})")
                 
                 # 클라이언트 연결 상태 확인
-                if client.closed:
+                if getattr(client, 'closed', False):
                     logger.info(f"[BROADCAST_DEBUG] Client {client_addr} is already closed")
                     disconnected_clients.add(client)
                     continue
@@ -1657,7 +1657,7 @@ class WebSocketServer:
             if client in self.clients:
                 self.clients.remove(client)
                 try:
-                    if not client.closed:
+                    if not getattr(client, 'closed', False):
                         await client.close(code=1000, reason="Client cleanup")
                 except Exception as e:
                     logger.debug(f"Error closing client: {e}")

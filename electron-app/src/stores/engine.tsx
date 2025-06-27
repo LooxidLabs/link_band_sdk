@@ -171,8 +171,8 @@ class WebSocketManager {
     console.log('Platform detected:', isWindows ? 'Windows' : 'Other');
     
     if (isWindows) {
-      console.log('Windows detected: Adding extra delay to ensure FastAPI is fully ready...');
-      await new Promise(resolve => setTimeout(resolve, 20000)); // 20 second delay for Windows
+      console.log('Windows detected: Adding minimal delay to ensure FastAPI is ready...');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay for Windows
       console.log('Windows delay complete, proceeding with connection...');
     }
 
@@ -218,7 +218,7 @@ class WebSocketManager {
           this.ws = null;
         }
         resolve(false);
-      }, 3000);
+      }, 2000); // 2초로 단축
 
       try {
         this.ws = new WebSocket(url);
