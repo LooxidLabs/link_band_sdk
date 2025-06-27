@@ -2193,7 +2193,13 @@ class WebSocketServer:
                 await self.broadcast(json.dumps(processed_data))
                 return
             
-            # Processed data는 기존 방식대로 처리
+            # Processed data 직접 브로드캐스트 처리
+            if data_type == "processed_data_broadcast":
+                # 클라이언트가 기대하는 processed_data 형식으로 직접 브로드캐스트
+                await self.broadcast(json.dumps(processed_data))
+                return
+            
+            # 기존 event 방식 (하위 호환성)
             await self.broadcast_event(EventType.DATA_RECEIVED, {
                 'type': data_type,
                 'data': processed_data,

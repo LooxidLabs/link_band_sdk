@@ -33,7 +33,7 @@ class WebSocketTestClient:
         print(f"\n📡 Listening for messages for {duration} seconds...")
         print("Expected message formats:")
         print("Raw data: {'type': 'raw_data', 'sensor_type': 'eeg', 'data': [...], 'timestamp': ..., 'count': ...}")
-        print("Processed data: {'type': 'event', 'event_type': 'data_received', 'data': {'type': 'eeg', 'data': {...}}}")
+        print("Processed data: {'type': 'processed_data', 'sensor_type': 'eeg', 'data': {...}, 'timestamp': ...}")
         print("-" * 80)
         
         start_time = time.time()
@@ -66,8 +66,10 @@ class WebSocketTestClient:
             
             if message_type == 'raw_data':
                 await self.handle_raw_data(data)
-            elif message_type == 'event' and data.get('event_type') == 'data_received':
+            elif message_type == 'processed_data':
                 await self.handle_processed_data(data)
+            elif message_type == 'event' and data.get('event_type') == 'data_received':
+                await self.handle_legacy_processed_data(data)  # 기존 형식 지원
             else:
                 print(f"📋 Other message: {message_type}")
                 
@@ -101,14 +103,32 @@ class WebSocketTestClient:
                 print(f"   Sample: Level={sample.get('level', 0)}%")
     
     async def handle_processed_data(self, data: Dict[str, Any]):
-        """Processed data 메시지 처리"""
+        """Processed data 메시지 처리 (새로운 형식)"""
+        sensor_type = data.get('sensor_type', 'unknown')
+        processed_info = data.get('data', {})
+        timestamp = data.get('timestamp', 0)
+        
+        self.processed_data_count[sensor_type] = self.processed_data_count.get(sensor_type, 0) + 1
+        
+        print(f"🟢 PROCESSED {sensor_type.upper()}: timestamp: {timestamp:.3f}")
+        if sensor_type == 'eeg':
+            print(f"   Filtered: CH1 samples={len(processed_info.get('ch1_filtered', []))}, CH2 samples={len(processed_info.get('ch2_filtered', []))}")
+        elif sensor_type == 'ppg':
+            print(f"   Filtered: PPG samples={len(processed_info.get('filtered_ppg', []))}")
+        elif sensor_type == 'acc':
+            print(f"   Filtered: ACC samples={len(processed_info.get('filtered_acc', []))}")
+        elif sensor_type == 'battery':
+            print(f"   Level: {processed_info.get('level', 0)}%")
+
+    async def handle_legacy_processed_data(self, data: Dict[str, Any]):
+        """Legacy processed data 메시지 처리 (기존 형식)"""
         event_data = data.get('data', {})
         sensor_type = event_data.get('type', 'unknown')
         processed_info = event_data.get('data', {})
         
         self.processed_data_count[sensor_type] = self.processed_data_count.get(sensor_type, 0) + 1
         
-        print(f"🟢 PROCESSED {sensor_type.upper()}: timestamp: {processed_info.get('timestamp', 0):.3f}")
+        print(f"🟡 LEGACY PROCESSED {sensor_type.upper()}: timestamp: {processed_info.get('timestamp', 0):.3f}")
         if sensor_type == 'eeg':
             print(f"   Filtered: CH1 samples={len(processed_info.get('ch1_filtered', []))}, CH2 samples={len(processed_info.get('ch2_filtered', []))}")
         elif sensor_type == 'ppg':
