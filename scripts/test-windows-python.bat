@@ -3,7 +3,19 @@ echo ============================================================
 echo Windows Python Environment Test for Link Band SDK
 echo ============================================================
 
-cd /d "%~dp0\..\python_core"
+cd /d "%~dp0\.."
+
+REM Check if virtual environment exists
+if exist "venv_windows\Scripts\activate.bat" (
+    echo Using virtual environment...
+    call venv_windows\Scripts\activate.bat
+) else (
+    echo WARNING: Virtual environment not found. Using system Python.
+    echo Run setup-windows-venv.bat first for best results.
+    echo.
+)
+
+cd python_core
 
 echo.
 echo 1. Testing Python environment...
