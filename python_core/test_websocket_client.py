@@ -77,6 +77,8 @@ class WebSocketTestClient:
             print(f"❌ JSON decode error: {e}")
         except Exception as e:
             print(f"❌ Error handling message: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def handle_raw_data(self, data: Dict[str, Any]):
         """Raw data 메시지 처리"""

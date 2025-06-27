@@ -221,9 +221,9 @@ class SignalProcessor:
             # Get data from buffer
             buffer_data = self.get_buffer_data("eeg")
             
-            # Check if we have enough data
-            if len(buffer_data) < 2000:  # 최소 1초의 데이터
-                logger.warning(f"Insufficient EEG data points: {len(buffer_data)} < 2000")
+            # Check if we have enough data (최소 2초의 데이터)
+            if len(buffer_data) < 500:  # 250Hz * 2s = 500 samples
+                logger.warning(f"Insufficient EEG data points: {len(buffer_data)} < 500")
                 return None
             
             # logger.info(f"Processing {len(buffer_data)} EEG samples")
@@ -379,9 +379,9 @@ class SignalProcessor:
             # Get data from buffer
             buffer_data = self.get_buffer_data("ppg")
             
-            # Check if we have enough data
-            if len(buffer_data) < 3000:  # 최소 60초의 데이터
-                logger.warning(f"Insufficient PPG data points: {len(buffer_data)} < 3000")
+            # Check if we have enough data (최소 10초의 데이터)
+            if len(buffer_data) < 500:  # 50Hz * 10s = 500 samples
+                logger.warning(f"Insufficient PPG data points: {len(buffer_data)} < 500")
                 return None
             
             # logger.info(f"Processing {len(buffer_data)} PPG samples")
