@@ -493,10 +493,19 @@ class WebSocketServer:
                     await self.send_error_to_client(websocket, "Command message missing command")
                     return
 
-                # Simply acknowledge the handshake without sending a response to avoid Windows connection issues
+                # Send a simple handshake response to test Windows compatibility
                 if command == "check_device_connection":
-                    logger.info("Received initial handshake command. Connection established successfully.")
-                    # Do not send any response - let periodic status updates handle communication
+                    logger.info("Received initial handshake command. Sending simple response.")
+                    try:
+                        response = {
+                            "type": "handshake_response",
+                            "status": "connected",
+                            "message": "WebSocket connection established"
+                        }
+                        await websocket.send(json.dumps(response))
+                        logger.info("Handshake response sent successfully")
+                    except Exception as e:
+                        logger.error(f"Error sending handshake response: {e}")
                     return
 
                 logger.info(f"Processing command: {command} with payload: {payload}")
