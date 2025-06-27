@@ -188,25 +188,25 @@ async def startup_event():
     ws_port = 18765
     print("[1/8] Checking port availability...")
     if not ensure_port_available(ws_port):
-        print(f"[1/8] Failed to free WebSocket port {ws_port}, server may fail to start ✗")
+        print(f"[1/8] Failed to free WebSocket port {ws_port}, server may fail to start [FAIL]")
     else:
-        print(f"[1/8] Port {ws_port} is available ✓")
+        print(f"[1/8] Port {ws_port} is available [OK]")
 
     # Initialize core services
     print("[2/8] Initializing database...")
     db_manager_instance = DatabaseManager(db_path="database/data_center.db")
     app.state.db_manager = db_manager_instance
-    print("[2/8] Database initialized ✓")
+    print("[2/8] Database initialized [OK]")
 
     print("[3/8] Initializing device manager...")
     app.state.device_registry = DeviceRegistry()
     app.state.device_manager = DeviceManager(registry=app.state.device_registry) 
-    print("[3/8] Device manager initialized ✓")
+    print("[3/8] Device manager initialized [OK]")
 
     print("[4/8] Initializing data recorder...")
     data_dir = "data"
     app.state.data_recorder = DataRecorder(data_dir=data_dir)
-    print("[4/8] Data recorder initialized ✓")
+    print("[4/8] Data recorder initialized [OK]")
 
     print("[5/8] Configuring WebSocket server...")
     app.state.ws_server = WebSocketServer(
@@ -216,7 +216,7 @@ async def startup_event():
         device_manager=app.state.device_manager,
         device_registry=app.state.device_registry
     )
-    print("[5/8] WebSocket server configured ✓")
+    print("[5/8] WebSocket server configured [OK]")
 
     print("[6/8] Initializing services...")
     app.state.device_service = DeviceService(device_manager=app.state.device_manager)
@@ -226,20 +226,20 @@ async def startup_event():
         ws_server=app.state.ws_server
     )
     app.state.stream_service = StreamService(ws_server=app.state.ws_server)
-    print("[6/8] Services initialized ✓")
+    print("[6/8] Services initialized [OK]")
 
     print("[7/8] Starting WebSocket server...")
     try:
         await app.state.ws_server.start()
-        print(f"[7/8] WebSocket server started on {ws_host}:{ws_port} ✓")
+        print(f"[7/8] WebSocket server started on {ws_host}:{ws_port} [OK]")
     except Exception as e:
-        print(f"[7/8] Error starting WebSocket server: {e} ✗")
+        print(f"[7/8] Error starting WebSocket server: {e} [FAIL]")
         
     try:
         await app.state.stream_service.init_stream() 
-        print("[7/8] Stream service ready ✓")
+        print("[7/8] Stream service ready [OK]")
     except Exception as e:
-        print(f"[7/8] Error initializing stream service: {e} ✗")
+        print(f"[7/8] Error initializing stream service: {e} [FAIL]")
     
     print("[8/8] Finalizing server initialization...")
     print("=== Link Band SDK Server ready! ===")
@@ -248,7 +248,7 @@ async def startup_event():
     # Mark FastAPI as ready to accept WebSocket connections
     print("[8/8] Setting FastAPI ready flag...")
     app.state.ws_server.set_fastapi_ready()
-    print("[8/8] FastAPI marked as ready for WebSocket connections ✓")
+    print("[8/8] FastAPI marked as ready for WebSocket connections [OK]")
     print("=== Server initialization complete! ===")
     print("Auto-connect loop started")
 
