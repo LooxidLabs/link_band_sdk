@@ -235,22 +235,72 @@ class WebSocketServer:
 
         # Wait for FastAPI to be fully ready before accepting connections
         if not self.fastapi_ready:
-            logger.warning(f"[CONNECTION_DEBUG] FastAPI not ready yet, waiting for {client_address}")
-            # Instead of immediately rejecting, wait a bit for FastAPI to be ready
-            max_wait_time = 10  # seconds
-            wait_interval = 0.1  # seconds
+            logger.warning(f"[CONNECTION_DEBUG] FastAPI not ready yet, sending wait message to {client_address}")
+            
+            # Send a "server initializing" message to client instead of closing connection
+            try:
+                wait_message = {
+                    "type": "server_status",
+                    "status": "initializing",
+                    "message": "Server is still initializing, please wait...",
+                    "retry_after": 5
+                }
+                await websocket.send(json.dumps(wait_message))
+                logger.info(f"[CONNECTION_DEBUG] Sent initialization message to {client_address}")
+            except Exception as e:
+                logger.error(f"[CONNECTION_DEBUG] Failed to send wait message to {client_address}: {e}")
+            
+            # Wait for FastAPI to be ready
+            max_wait_time = 60  # Increased to 60 seconds for Windows
+            wait_interval = 0.5  # seconds
             waited = 0
             
             while not self.fastapi_ready and waited < max_wait_time:
                 await asyncio.sleep(wait_interval)
                 waited += wait_interval
+                # Send periodic updates every 10 seconds
+                if waited % 10.0 < wait_interval:
+                    try:
+                        update_message = {
+                            "type": "server_status",
+                            "status": "initializing",
+                            "message": f"Server initialization in progress... ({waited:.0f}s elapsed)",
+                            "retry_after": 5
+                        }
+                        await websocket.send(json.dumps(update_message))
+                        logger.info(f"[CONNECTION_DEBUG] Sent update message to {client_address} ({waited:.0f}s elapsed)")
+                    except Exception as e:
+                        logger.error(f"[CONNECTION_DEBUG] Failed to send update message: {e}")
+                        break
                 
             if not self.fastapi_ready:
-                logger.warning(f"[CONNECTION_DEBUG] Rejecting connection from {client_address} - FastAPI still not ready after {max_wait_time}s")
-                await websocket.close(1011, "Server not ready")
+                logger.error(f"[CONNECTION_DEBUG] CRITICAL: FastAPI still not ready after {max_wait_time}s for {client_address}")
+                try:
+                    error_message = {
+                        "type": "server_status", 
+                        "status": "error",
+                        "message": "Server initialization timeout",
+                        "retry_after": 30
+                    }
+                    await websocket.send(json.dumps(error_message))
+                    await asyncio.sleep(1)  # Give time for message to be sent
+                except Exception:
+                    pass
+                await websocket.close(1011, "Server initialization timeout")
                 return
             else:
-                logger.info(f"[CONNECTION_DEBUG] FastAPI became ready after {waited:.1f}s for {client_address}")
+                logger.info(f"[CONNECTION_DEBUG] SUCCESS: FastAPI became ready after {waited:.1f}s for {client_address}")
+                # Send ready message
+                try:
+                    ready_message = {
+                        "type": "server_status",
+                        "status": "ready", 
+                        "message": "Server is now ready for connections"
+                    }
+                    await websocket.send(json.dumps(ready_message))
+                    logger.info(f"[CONNECTION_DEBUG] Sent ready message to {client_address}")
+                except Exception as e:
+                    logger.error(f"[CONNECTION_DEBUG] Failed to send ready message: {e}")
 
         # 같은 주소의 이전 연결을 제거
         for client in list(self.clients):
