@@ -1045,6 +1045,17 @@ class DeviceManager:
             "timestamp": processed_data.get("timestamp", time.time())
         }
         
+        # 데이터 저장 로직 추가
+        try:
+            from app.core.ws_singleton import ws_server
+            if ws_server and ws_server.data_recorder and ws_server.data_recorder.is_recording:
+                self.logger.info(f"[DATA_STORAGE_DEBUG] Adding processed {data_type} data to recorder")
+                ws_server.data_recorder.add_data(data_type, message_data)
+            else:
+                self.logger.debug(f"[DATA_STORAGE_DEBUG] Not recording - ws_server: {ws_server is not None}, data_recorder: {ws_server.data_recorder is not None if ws_server else False}, is_recording: {ws_server.data_recorder.is_recording if ws_server and ws_server.data_recorder else False}")
+        except Exception as e:
+            self.logger.error(f"Error saving processed data: {e}")
+        
         for callback in self.processed_data_callbacks:
             try:
                 # 직접 WebSocket으로 브로드캐스트하기 위해 특별한 키 사용
@@ -1062,6 +1073,17 @@ class DeviceManager:
             "timestamp": raw_data["timestamp"],
             "count": raw_data["count"]
         }
+        
+        # 데이터 저장 로직 추가
+        try:
+            from app.core.ws_singleton import ws_server
+            if ws_server and ws_server.data_recorder and ws_server.data_recorder.is_recording:
+                self.logger.info(f"[DATA_STORAGE_DEBUG] Adding raw {data_type} data to recorder")
+                ws_server.data_recorder.add_data(data_type, message_data)
+            else:
+                self.logger.debug(f"[DATA_STORAGE_DEBUG] Not recording raw data - ws_server: {ws_server is not None}, data_recorder: {ws_server.data_recorder is not None if ws_server else False}, is_recording: {ws_server.data_recorder.is_recording if ws_server and ws_server.data_recorder else False}")
+        except Exception as e:
+            self.logger.error(f"Error saving raw data: {e}")
         
         for callback in self.processed_data_callbacks:
             try:

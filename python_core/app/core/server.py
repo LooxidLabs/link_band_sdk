@@ -16,8 +16,15 @@ import uuid
 from app.core.utils import ensure_port_available
 from app.data.data_recorder import DataRecorder
 from app.core.signal_processing import SignalProcessor
+from app.core.error_handler import ErrorHandler, ErrorType, ErrorSeverity, global_error_handler
+from app.core.data_stream_manager import DataStreamManager
 import socket
 import platform
+from .buffer_manager import BufferManager, global_buffer_manager
+from .batch_processor import BatchProcessor, global_batch_processor
+from .performance_monitor import PerformanceMonitor, global_performance_monitor
+from .streaming_optimizer import StreamingOptimizer, global_streaming_optimizer, StreamPriority
+from .monitoring_service import global_monitoring_service
 
 # Configure logging
 logging.basicConfig(
@@ -69,6 +76,10 @@ class WebSocketServer:
         self.device_registry = device_registry
         self.auto_connect_task: Optional[asyncio.Task] = None
         self.periodic_task: Optional[asyncio.Task] = None  # 주기적 상태 업데이트 태스크
+        
+        # 에러 핸들링 및 스트림 관리 시스템 추가
+        self.error_handler = global_error_handler
+        self.stream_manager = DataStreamManager(self.error_handler)
         self.data_stream_stats = {
             'eeg': {'samples_per_sec': 0},
             'ppg': {'samples_per_sec': 0},
@@ -103,10 +114,16 @@ class WebSocketServer:
         self.acc_timestamps: Dict[str, List[float]] = {}
         self.ecg_timestamps: Dict[str, List[float]] = {}
         self.server_initialized = False
+        
+        # 모니터링 서비스 통합
+        self.monitoring_service = global_monitoring_service
+        self.monitoring_service.set_websocket_server(self)
+        
         logger.info(f"WebSocketServer initialized. Host: {host}, Port: {port}. "
                     f"DataRecorder {'IS' if self.data_recorder else 'IS NOT'} configured. "
                     f"DeviceManager {'IS' if self.device_manager else 'IS NOT'} configured. "
-                    f"DeviceRegistry {'IS' if self.device_registry else 'IS NOT'} configured.")
+                    f"DeviceRegistry {'IS' if self.device_registry else 'IS NOT'} configured. "
+                    f"MonitoringService {'IS' if self.monitoring_service else 'IS NOT'} configured.")
         self.fastapi_ready = False  # Add flag to track FastAPI readiness
 
     def setup_routes(self):
@@ -1239,6 +1256,9 @@ class WebSocketServer:
                     if processed_data_len > 0:
                         logger.debug(f"[STREAM_EEG_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
 
+                    # 디버깅을 위한 로그 추가
+                    logger.info(f"[STREAM_EEG_DEBUG] Checking recording condition: data_recorder={self.data_recorder is not None}, is_recording={self.data_recorder.is_recording if self.data_recorder else 'N/A'}")
+                    
                     if self.data_recorder and self.data_recorder.is_recording:
                         logger.info(f"[STREAM_EEG_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
                         if eeg_buffer:
@@ -1364,18 +1384,31 @@ class WebSocketServer:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                raw_data = await self.device_manager.get_and_clear_ppg_buffer()
+                raw_data = self.device_manager.get_and_clear_ppg_buffer()
                 processed_data = await self.device_manager.get_and_clear_processed_ppg_buffer()
                 
                 current_time = time.time()
                 
-                # logger.info(f"[STREAM_PPG_DEBUG] Attempting data recording. DataRecorder object: {self.data_recorder}")
-                # if self.data_recorder:
-                #     logger.info(f"[STREAM_PPG_DEBUG] data_recorder.is_recording: {self.data_recorder.is_recording}")
+                # 강화된 디버깅 로그
+                logger.info(f"[STREAM_PPG_DEBUG] === PPG Recording Check ===")
+                logger.info(f"[STREAM_PPG_DEBUG] DataRecorder object exists: {self.data_recorder is not None}")
+                if self.data_recorder:
+                    logger.info(f"[STREAM_PPG_DEBUG] DataRecorder.is_recording: {self.data_recorder.is_recording}")
+                else:
+                    logger.warning(f"[STREAM_PPG_DEBUG] DataRecorder is None!")
                 
                 raw_data_len = len(raw_data) if raw_data else 0
                 processed_data_len = len(processed_data) if processed_data else 0
-                # logger.info(f"[STREAM_PPG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                logger.info(f"[STREAM_PPG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                
+                # 레코딩 조건 상세 체크
+                recording_condition = self.data_recorder and self.data_recorder.is_recording
+                logger.info(f"[STREAM_PPG_DEBUG] Recording condition met: {recording_condition}")
+                if not recording_condition:
+                    if not self.data_recorder:
+                        logger.warning(f"[STREAM_PPG_DEBUG] Recording failed: DataRecorder is None")
+                    elif not self.data_recorder.is_recording:
+                        logger.warning(f"[STREAM_PPG_DEBUG] Recording failed: is_recording is False")
                 
                 if raw_data_len > 0:
                     logger.debug(f"[STREAM_PPG_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
@@ -1496,14 +1529,31 @@ class WebSocketServer:
                 await asyncio.sleep(SEND_INTERVAL)
                 if not self.is_streaming: break
 
-                raw_data = await self.device_manager.get_and_clear_acc_buffer()
+                raw_data = self.device_manager.get_and_clear_acc_buffer()
                 processed_data = await self.device_manager.get_and_clear_processed_acc_buffer()
                 
                 current_time = time.time()
                 
-                # ACC 레코딩 상태는 EEG에서 이미 출력하므로 생략
+                # 강화된 디버깅 로그 (PPG와 동일)
+                logger.info(f"[STREAM_ACC_DEBUG] === ACC Recording Check ===")
+                logger.info(f"[STREAM_ACC_DEBUG] DataRecorder object exists: {self.data_recorder is not None}")
+                if self.data_recorder:
+                    logger.info(f"[STREAM_ACC_DEBUG] DataRecorder.is_recording: {self.data_recorder.is_recording}")
+                else:
+                    logger.warning(f"[STREAM_ACC_DEBUG] DataRecorder is None!")
+                
                 raw_data_len = len(raw_data) if raw_data else 0
                 processed_data_len = len(processed_data) if processed_data else 0
+                logger.info(f"[STREAM_ACC_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
+                
+                # 레코딩 조건 상세 체크
+                recording_condition = self.data_recorder and self.data_recorder.is_recording
+                logger.info(f"[STREAM_ACC_DEBUG] Recording condition met: {recording_condition}")
+                if not recording_condition:
+                    if not self.data_recorder:
+                        logger.warning(f"[STREAM_ACC_DEBUG] Recording failed: DataRecorder is None")
+                    elif not self.data_recorder.is_recording:
+                        logger.warning(f"[STREAM_ACC_DEBUG] Recording failed: is_recording is False")
 
                 if raw_data_len > 0:
                     logger.debug(f"[STREAM_ACC_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
@@ -1627,10 +1677,27 @@ class WebSocketServer:
                 if not self.is_streaming: break
 
                 current_time = time.time()
-                actual_battery_data_list = await self.device_manager.get_and_clear_battery_buffer() 
+                actual_battery_data_list = self.device_manager.get_and_clear_battery_buffer() 
                 
-                # 배터리 레코딩 상태는 EEG에서 이미 출력하므로 생략
+                # 강화된 디버깅 로그 (PPG/ACC와 동일)
+                logger.info(f"[STREAM_BAT_DEBUG] === Battery Recording Check ===")
+                logger.info(f"[STREAM_BAT_DEBUG] DataRecorder object exists: {self.data_recorder is not None}")
+                if self.data_recorder:
+                    logger.info(f"[STREAM_BAT_DEBUG] DataRecorder.is_recording: {self.data_recorder.is_recording}")
+                else:
+                    logger.warning(f"[STREAM_BAT_DEBUG] DataRecorder is None!")
+                
                 actual_battery_data_len = len(actual_battery_data_list) if actual_battery_data_list else 0
+                logger.info(f"[STREAM_BAT_DEBUG] Actual battery data len: {actual_battery_data_len}")
+                
+                # 레코딩 조건 상세 체크
+                recording_condition = self.data_recorder and self.data_recorder.is_recording
+                logger.info(f"[STREAM_BAT_DEBUG] Recording condition met: {recording_condition}")
+                if not recording_condition:
+                    if not self.data_recorder:
+                        logger.warning(f"[STREAM_BAT_DEBUG] Recording failed: DataRecorder is None")
+                    elif not self.data_recorder.is_recording:
+                        logger.warning(f"[STREAM_BAT_DEBUG] Recording failed: is_recording is False")
                 if actual_battery_data_len > 0 :
                      logger.debug(f"[STREAM_BAT_DEBUG] First battery sample type: {type(actual_battery_data_list[0]) if actual_battery_data_len > 0 else 'N/A'}")
 
@@ -1693,6 +1760,10 @@ class WebSocketServer:
                             samples_since_last_log = 0
                             last_log_time = current_time
                             
+                        # Update battery level in device_sampling_stats immediately when we have data
+                        if current_level_for_log is not None and isinstance(self.device_sampling_stats, dict):
+                            self.device_sampling_stats['bat_level'] = current_level_for_log
+                        
                         if current_time - last_rate_log_time >= RATE_LOG_INTERVAL:
                             if timestamp_buffer:
                                 intervals = [timestamp_buffer[i+1] - timestamp_buffer[i] 
@@ -1704,8 +1775,6 @@ class WebSocketServer:
                                               f"(based on {len(timestamp_buffer)} samples in last {WINDOW_SIZE}s)")
                                     if isinstance(self.device_sampling_stats, dict) and 'bat' in self.device_sampling_stats and isinstance(self.device_sampling_stats['bat'], dict):
                                         self.device_sampling_stats['bat']['samples_per_sec'] = actual_rate
-                                    if isinstance(self.device_sampling_stats, dict) and 'bat_level' in self.device_sampling_stats and current_level_for_log is not None:
-                                        self.device_sampling_stats['bat_level'] = current_level_for_log
                             last_rate_log_time = current_time
                             
                     except Exception as e:
@@ -1938,22 +2007,58 @@ class WebSocketServer:
 
             if info:
                 logger.info("Device info exists, getting stream status")
-                # 스트림 상태에서 샘플링 레이트 가져오기
+                
+                # Check if streaming is active and we have actual sampling data
                 stream_status = self.get_stream_status()
                 logger.info(f"stream_status: {stream_status}")
+                
+                # Determine if we should use actual rates or expected rates
+                has_actual_eeg_rate = (self.is_streaming and 
+                                     self.device_sampling_stats.get('eeg', {}).get('samples_per_sec', 0) > 0)
+                has_actual_ppg_rate = (self.is_streaming and 
+                                     self.device_sampling_stats.get('ppg', {}).get('samples_per_sec', 0) > 0)
+                has_actual_acc_rate = (self.is_streaming and 
+                                     self.device_sampling_stats.get('acc', {}).get('samples_per_sec', 0) > 0)
+                has_actual_bat_rate = (self.is_streaming and 
+                                     self.device_sampling_stats.get('bat', {}).get('samples_per_sec', 0) > 0)
+                
+                # Expected sampling rates for Link Band devices when connected but not streaming
+                expected_rates = {
+                    'eeg': 250.0,  # EEG expected rate
+                    'ppg': 50.0,   # PPG expected rate  
+                    'acc': 30.0,   # ACC expected rate
+                    'bat': 1.0     # Battery expected rate
+                }
+                
+                # Use actual rates if available and streaming, otherwise use expected rates
+                eeg_rate = stream_status.get('eeg_sampling_rate', 0) if has_actual_eeg_rate else expected_rates['eeg']
+                ppg_rate = stream_status.get('ppg_sampling_rate', 0) if has_actual_ppg_rate else expected_rates['ppg']
+                acc_rate = stream_status.get('acc_sampling_rate', 0) if has_actual_acc_rate else expected_rates['acc']
+                bat_rate = stream_status.get('bat_sampling_rate', 0) if has_actual_bat_rate else expected_rates['bat']
+                
+                # For battery level, try to get actual level or use null
+                battery_level = stream_status.get('bat_level', 0)
+                if battery_level == 0 and not has_actual_bat_rate:
+                    # Try to get battery level from device manager if available
+                    if hasattr(self.device_manager, 'battery_level') and self.device_manager.battery_level is not None:
+                        battery_level = self.device_manager.battery_level
+                    else:
+                        battery_level = None  # No battery data available
                 
                 status = {
                     "is_connected": True,
                     "device_address": info.get("address"),
                     "device_name": info.get("name"),
                     "connection_time": info.get("connection_time"),
-                    "battery_level": stream_status.get('bat_level', 0),
-                    "eeg_sampling_rate": stream_status.get('eeg_sampling_rate', 0),
-                    "ppg_sampling_rate": stream_status.get('ppg_sampling_rate', 0),
-                    "acc_sampling_rate": stream_status.get('acc_sampling_rate', 0),
-                    "bat_sampling_rate": stream_status.get('bat_sampling_rate', 0)
+                    "battery_level": battery_level,
+                    "eeg_sampling_rate": eeg_rate,
+                    "ppg_sampling_rate": ppg_rate,
+                    "acc_sampling_rate": acc_rate,
+                    "bat_sampling_rate": bat_rate
                 }
+                
                 logger.info(f"Final status: {status}")
+                logger.info(f"Streaming active: {self.is_streaming}, Using actual rates: EEG={has_actual_eeg_rate}, PPG={has_actual_ppg_rate}, ACC={has_actual_acc_rate}, BAT={has_actual_bat_rate}")
             else:
                 logger.info("No device info, returning disconnected status")
                 status = {
@@ -1961,7 +2066,11 @@ class WebSocketServer:
                     "device_address": None,
                     "device_name": None,
                     "connection_time": None,
-                    "battery_level": None
+                    "battery_level": None,
+                    "eeg_sampling_rate": 0,
+                    "ppg_sampling_rate": 0,
+                    "acc_sampling_rate": 0,
+                    "bat_sampling_rate": 0
                 }
             return status
         except Exception as e:
@@ -1972,7 +2081,11 @@ class WebSocketServer:
                 "device_address": None,
                 "device_name": None,
                 "connection_time": None,
-                "battery_level": None
+                "battery_level": None,
+                "eeg_sampling_rate": 0,
+                "ppg_sampling_rate": 0,
+                "acc_sampling_rate": 0,
+                "bat_sampling_rate": 0
             }
 
     async def handle_websocket_connection(self, websocket: WebSocket):
@@ -2207,3 +2320,264 @@ class WebSocketServer:
             })
         except Exception as e:
             logger.error(f"Error handling processed data: {e}")
+
+    # 에러 핸들링이 강화된 로버스트 스트리밍 함수들
+    async def stream_eeg_data_robust(self):
+        """에러 복구 기능이 있는 EEG 스트리밍"""
+        return await self.error_handler.robust_execute(
+            func=self._stream_eeg_data_core,
+            error_type=ErrorType.STREAMING,
+            sensor_type="eeg",
+            context={"stream_type": "eeg", "interval": 0.04}
+        )
+    
+    async def stream_ppg_data_robust(self):
+        """에러 복구 기능이 있는 PPG 스트리밍"""
+        return await self.error_handler.robust_execute(
+            func=self._stream_ppg_data_core,
+            error_type=ErrorType.STREAMING,
+            sensor_type="ppg",
+            context={"stream_type": "ppg", "interval": 0.02}
+        )
+    
+    async def stream_acc_data_robust(self):
+        """에러 복구 기능이 있는 ACC 스트리밍"""
+        return await self.error_handler.robust_execute(
+            func=self._stream_acc_data_core,
+            error_type=ErrorType.STREAMING,
+            sensor_type="acc",
+            context={"stream_type": "acc", "interval": 0.033}
+        )
+    
+    async def stream_battery_data_robust(self):
+        """에러 복구 기능이 있는 배터리 스트리밍"""
+        return await self.error_handler.robust_execute(
+            func=self._stream_battery_data_core,
+            error_type=ErrorType.STREAMING,
+            sensor_type="battery",
+            context={"stream_type": "battery", "interval": 1.0}
+        )
+
+    async def _stream_eeg_data_core(self):
+        """EEG 스트리밍 핵심 로직"""
+        SEND_INTERVAL = 0.04  # 25Hz (40ms)
+        current_time = time.time()
+        
+        if not self.is_streaming:
+            return
+            
+        if not self.device_manager or not self.device_manager.is_connected():
+            raise Exception("Device not connected")
+        
+        eeg_buffer = self.device_manager.get_and_clear_eeg_buffer()
+        processed_data = await self.device_manager.get_and_clear_processed_eeg_buffer()
+        
+        raw_device_id = "unknown_device"
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict):
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
+        
+        # 데이터 레코딩
+        if self.data_recorder and self.data_recorder.is_recording:
+            if eeg_buffer:
+                for sample in eeg_buffer:
+                    if isinstance(sample, dict):
+                        self.data_recorder.add_data(
+                            data_type=f"{device_id_for_filename}_eeg_raw",
+                            data=sample
+                        )
+            if processed_data:
+                for sample in processed_data:
+                    if isinstance(sample, dict):
+                        self.data_recorder.add_data(
+                            data_type=f"{device_id_for_filename}_eeg_processed",
+                            data=sample
+                        )
+        
+        # WebSocket 브로드캐스트
+        if eeg_buffer:
+            raw_message = {
+                "type": "raw_data",
+                "sensor_type": "eeg",
+                "device_id": raw_device_id,
+                "timestamp": current_time,
+                "data": eeg_buffer
+            }
+            await self.broadcast(json.dumps(raw_message))
+        
+        if processed_data:
+            processed_message = {
+                "type": "processed_data",
+                "sensor_type": "eeg",
+                "device_id": raw_device_id,
+                "timestamp": current_time,
+                "data": processed_data
+            }
+            await self.broadcast(json.dumps(processed_message))
+
+    async def _stream_ppg_data_core(self):
+        """PPG 스트리밍 핵심 로직"""
+        current_time = time.time()
+        
+        if not self.is_streaming:
+            return
+            
+        if not self.device_manager or not self.device_manager.is_connected():
+            raise Exception("Device not connected")
+        
+        raw_data = self.device_manager.get_and_clear_ppg_buffer()
+        processed_data = await self.device_manager.get_and_clear_processed_ppg_buffer()
+        
+        raw_device_id = "unknown_device"
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict):
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
+        
+        # 데이터 레코딩 (Priority 1에서 수정된 부분)
+        if self.data_recorder and self.data_recorder.is_recording:
+            logger.info(f"[STREAM_PPG_DEBUG] Recording PPG data - Raw: {len(raw_data) if raw_data else 0}, Processed: {len(processed_data) if processed_data else 0}")
+            if raw_data:
+                for sample in raw_data:
+                    if isinstance(sample, dict):
+                        self.data_recorder.add_data(
+                            data_type=f"{device_id_for_filename}_ppg_raw",
+                            data=sample
+                        )
+            if processed_data:
+                for sample in processed_data:
+                    if isinstance(sample, dict):
+                        self.data_recorder.add_data(
+                            data_type=f"{device_id_for_filename}_ppg_processed",
+                            data=sample
+                        )
+        
+        # WebSocket 브로드캐스트
+        if raw_data:
+            raw_message = {
+                "type": "raw_data",
+                "sensor_type": "ppg",
+                "device_id": raw_device_id,
+                "timestamp": current_time,
+                "data": raw_data
+            }
+            await self.broadcast(json.dumps(raw_message))
+        
+        if processed_data:
+            processed_message = {
+                "type": "processed_data",
+                "sensor_type": "ppg",
+                "device_id": raw_device_id,
+                "timestamp": current_time,
+                "data": processed_data
+            }
+            await self.broadcast(json.dumps(processed_message))
+
+    async def _stream_acc_data_core(self):
+        """ACC 스트리밍 핵심 로직"""
+        current_time = time.time()
+        
+        if not self.is_streaming:
+            return
+            
+        if not self.device_manager or not self.device_manager.is_connected():
+            raise Exception("Device not connected")
+        
+        raw_data = self.device_manager.get_and_clear_acc_buffer()
+        processed_data = await self.device_manager.get_and_clear_processed_acc_buffer()
+        
+        raw_device_id = "unknown_device"
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict):
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
+        
+        # 데이터 레코딩 (Priority 1에서 수정된 부분)
+        if self.data_recorder and self.data_recorder.is_recording:
+            logger.info(f"[STREAM_ACC_DEBUG] Recording ACC data - Raw: {len(raw_data) if raw_data else 0}, Processed: {len(processed_data) if processed_data else 0}")
+            if raw_data:
+                for sample in raw_data:
+                    if isinstance(sample, dict):
+                        self.data_recorder.add_data(
+                            data_type=f"{device_id_for_filename}_acc_raw",
+                            data=sample
+                        )
+            if processed_data:
+                for sample in processed_data:
+                    if isinstance(sample, dict):
+                        self.data_recorder.add_data(
+                            data_type=f"{device_id_for_filename}_acc_processed",
+                            data=sample
+                        )
+        
+        # WebSocket 브로드캐스트
+        if raw_data:
+            raw_message = {
+                "type": "raw_data",
+                "sensor_type": "acc",
+                "device_id": raw_device_id,
+                "timestamp": current_time,
+                "data": raw_data
+            }
+            await self.broadcast(json.dumps(raw_message))
+        
+        if processed_data:
+            processed_message = {
+                "type": "processed_data",
+                "sensor_type": "acc",
+                "device_id": raw_device_id,
+                "timestamp": current_time,
+                "data": processed_data
+            }
+            await self.broadcast(json.dumps(processed_message))
+
+    async def _stream_battery_data_core(self):
+        """배터리 스트리밍 핵심 로직"""
+        current_time = time.time()
+        
+        if not self.is_streaming:
+            return
+            
+        if not self.device_manager or not self.device_manager.is_connected():
+            raise Exception("Device not connected")
+        
+        battery_buffer = self.device_manager.get_and_clear_battery_buffer()
+        battery_level = self.device_manager.battery_level
+        
+        raw_device_id = "unknown_device"
+        if self.device_manager and self.device_manager.get_device_info():
+            device_info = self.device_manager.get_device_info()
+            if device_info and isinstance(device_info, dict):
+                raw_device_id = device_info.get('address', 'unknown_device')
+        
+        device_id_for_filename = raw_device_id.replace(":", "-").replace(" ", "_")
+        
+        # 데이터 레코딩 (Priority 1에서 수정된 부분)
+        if self.data_recorder and self.data_recorder.is_recording:
+            logger.info(f"[STREAM_BATTERY_DEBUG] Recording battery data - Buffer: {len(battery_buffer) if battery_buffer else 0}, Level: {battery_level}")
+            if battery_buffer:
+                for sample in battery_buffer:
+                    if isinstance(sample, dict):
+                        self.data_recorder.add_data(
+                            data_type=f"{device_id_for_filename}_battery",
+                            data=sample
+                        )
+        
+        # WebSocket 브로드캐스트
+        if battery_buffer or battery_level is not None:
+            battery_message = {
+                "type": "battery_data",
+                "sensor_type": "battery",
+                "device_id": raw_device_id,
+                "timestamp": current_time,
+                "data": battery_buffer if battery_buffer else [],
+                "battery_level": battery_level
+            }
+            await self.broadcast(json.dumps(battery_message))

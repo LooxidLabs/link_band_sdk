@@ -123,7 +123,12 @@ class DataRecorder:
         # self.thread = threading.Thread(target=self._recording_loop, daemon=True) # 스레드 제거
         # self.thread.start() # 스레드 제거
         logger.info(f"Recording started. Session: {self.meta['session_name']}.")
-        return {"status": "started", "session_name": self.meta["session_name"], "start_time": self.meta["start_time"]}
+        return {
+            "status": "started", 
+            "message": "Recording started successfully",
+            "session_name": self.meta["session_name"], 
+            "start_time": self.meta["start_time"]
+        }
 
     def stop_recording(self) -> Dict[str, Any]:
         logger.info(f"Stop recording called for session: {self.meta.get('session_name')}")
@@ -199,22 +204,27 @@ class DataRecorder:
 
         self.data_buffers.clear() # 버퍼 비우기
 
-        return {"status": "stopped", "session_name": self.meta.get("session_name"), "end_time": self.meta.get("end_time")}
+        return {
+            "status": "stopped", 
+            "message": "Recording stopped successfully",
+            "session_name": self.meta.get("session_name"), 
+            "end_time": self.meta.get("end_time")
+        }
 
     def add_data(self, data_type: str, data: Dict[str, Any]):
-        # logger.info(f"[DataRecorder.add_data CALLED] data_type: {data_type}, is_recording: {self.is_recording}")
+        logger.info(f"[DataRecorder.add_data CALLED] data_type: {data_type}, is_recording: {self.is_recording}")
         if not isinstance(data, dict):
             logger.error(f"[DataRecorder.add_data ERROR] Data is not a dict! Type: {type(data)}, For data_type: {data_type}")
             return
 
         if not self.is_recording:
-            # logger.warning(f"Add_data called when not recording. Type: {data_type}. Discarding.")
+            logger.warning(f"Add_data called when not recording. Type: {data_type}. Discarding.")
             return
         
         if data_type not in self.data_buffers:
             self.data_buffers[data_type] = []
         self.data_buffers[data_type].append(data)
-        # logger.debug(f"[DataRecorder.add_data BUFFERED] data_type: {data_type}. Buffer size for type: {len(self.data_buffers[data_type])}")
+        logger.info(f"[DataRecorder.add_data BUFFERED] data_type: {data_type}. Buffer size for type: {len(self.data_buffers[data_type])}")
 
     # _recording_loop 메서드 제거
     # def _recording_loop(self):

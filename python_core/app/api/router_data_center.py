@@ -44,7 +44,7 @@ TEMP_EXPORT_DIR.mkdir(parents=True, exist_ok=True) # Ensure directory exists
 class RecordingResponse(BaseModel):
     """Response model for recording operations"""
     status: str = Field(..., description="Operation status", example="success")
-    message: str = Field(..., description="Operation message")
+    message: Optional[str] = Field(None, description="Operation message")
     session_name: Optional[str] = Field(None, description="Recording session name")
 
 class RecordingStatusResponse(BaseModel):

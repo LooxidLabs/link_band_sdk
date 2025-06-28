@@ -54,6 +54,14 @@ def bandpass_filter(data: np.ndarray, low_freq: float, high_freq: float, fs: flo
 
 def notch_filter(data: np.ndarray, notch_freq: float, fs: float = 250, quality_factor: float = 30.0) -> np.ndarray:
     """Apply notch filter to remove specific frequency"""
+    if not MNE_AVAILABLE:
+        logger.warning("MNE not available. Using scipy notch filter instead.")
+        # Fallback to scipy notch filter
+        nyquist = fs / 2
+        w = notch_freq / nyquist
+        b, a = signal.iirnotch(w, quality_factor)
+        return signal.filtfilt(b, a, data)
+    
     try:
         ch_names = ['ch1']
         ch_types = ['eeg']

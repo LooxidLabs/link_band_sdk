@@ -211,6 +211,20 @@ async def connect_device(req: ConnectRequest, ws_server_instance: WebSocketServe
                 )
             
             raise HTTPException(status_code=400, detail=error_detail)
+        
+        # Automatically start streaming after successful connection
+        # This ensures that sampling rates and battery data are immediately available
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("Device connected successfully, attempting to start streaming...")
+            await ws_server_instance.start_streaming()
+            logger.info("Streaming started successfully after device connection")
+        except Exception as streaming_error:
+            # Log the error but don't fail the connection
+            logger.warning(f"Failed to start streaming after connection: {streaming_error}")
+            # Connection is still successful even if streaming fails to start
+        
         return {"result": "connected"}
     except HTTPException:
         # HTTPException은 그대로 재발생
@@ -259,6 +273,18 @@ async def disconnect_device(ws_server_instance: WebSocketServer = Depends(get_ws
     """
     if not hasattr(ws_server_instance, 'device_manager') or ws_server_instance.device_manager is None:
         raise HTTPException(status_code=500, detail="DeviceManager not available via WebSocketServer")
+    
+    # Stop streaming before disconnecting to clean up resources
+    try:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Stopping streaming before device disconnection...")
+        await ws_server_instance.stop_streaming()
+        logger.info("Streaming stopped successfully before disconnection")
+    except Exception as streaming_error:
+        # Log the error but continue with disconnection
+        logger.warning(f"Failed to stop streaming before disconnection: {streaming_error}")
+    
     result = await ws_server_instance.device_manager.disconnect()
     if not result:
         raise HTTPException(status_code=400, detail="Disconnect failed")

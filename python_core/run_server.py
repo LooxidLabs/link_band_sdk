@@ -1,114 +1,78 @@
 #!/usr/bin/env python3
+"""
+Link Band SDK 서버 메인 진입점
+- 모듈 경로 문제 해결 (start_server_fixed.py 기반)
+- 개발 및 프로덕션 환경 지원
+"""
+
 import os
 import sys
 import subprocess
 from pathlib import Path
-import logging
-import asyncio
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Windows에서 ProactorEventLoop 대신 SelectorEventLoop를 사용하도록 강제
-# WebSocket 연결 안정성 문제를 해결하기 위함
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-def get_python_executable():
-    """Get the appropriate Python executable (prefer venv if available)."""
-    script_dir = Path(__file__).parent
+def setup_python_path():
+    """Python 모듈 경로 설정"""
+    # 현재 스크립트의 디렉토리 (python_core)
+    current_dir = Path(__file__).parent.absolute()
     
-    # Check for virtual environment
-    if sys.platform == 'win32':
-        venv_python = script_dir / "venv" / "Scripts" / "python.exe"
-    else:
-        venv_python = script_dir / "venv" / "bin" / "python3"
+    # python_core 디렉토리를 PYTHONPATH에 추가
+    if str(current_dir) not in sys.path:
+        sys.path.insert(0, str(current_dir))
     
-    if venv_python.exists():
-        logger.info(f"Using virtual environment Python: {venv_python}")
-        return str(venv_python)
-    else:
-        logger.warning("Virtual environment not found, using system Python")
-        return sys.executable
-
-def run_server(host: str = "localhost", port: int = 8121) -> None:
-    """Run the LinkBand server using the tested and working fixed version."""
-    try:
-        # Get the directory containing this script
-        script_dir = Path(__file__).parent
-        
-        # Use only the tested and working fixed version
-        if sys.platform == "win32":
-            # Primary: Use the tested linkband-server-windows-fixed.exe
-            server_binary = script_dir / "dist" / "linkband-server-windows-fixed.exe"
-            
-            if not server_binary.exists():
-                logger.error(f"Required server binary not found at {server_binary}")
-                logger.info("Please build the server first using: python build_windows_server_mne.py")
-                sys.exit(1)
+    # 환경변수로도 설정
+    current_pythonpath = os.environ.get('PYTHONPATH', '')
+    if str(current_dir) not in current_pythonpath:
+        if current_pythonpath:
+            os.environ['PYTHONPATH'] = f"{current_dir}{os.pathsep}{current_pythonpath}"
         else:
-            # macOS/Linux - use the appropriate binary
-            if sys.platform == "darwin":
-                if "arm64" in os.uname().machine.lower():
-                    server_binary = script_dir / "dist" / "linkband-server-macos-arm64-final"
-                else:
-                    server_binary = script_dir / "dist" / "linkband-server-macos-intel-final"
-            else:
-                server_binary = script_dir / "dist" / "linkband-server-linux"
-            
-            if not server_binary.exists():
-                logger.error(f"Server binary not found at {server_binary}")
-                logger.info("Falling back to standalone_server.py")
-                
-                # Fallback to standalone_server.py
-                standalone_server = script_dir / "standalone_server.py"
-                if standalone_server.exists():
-                    logger.info(f"Running standalone_server.py from {standalone_server}")
-                    
-                    # Get the appropriate Python executable
-                    python_exe = get_python_executable()
-                    
-                    # Run standalone_server.py as subprocess
-                    try:
-                        result = subprocess.run([
-                            python_exe, 
-                            str(standalone_server)
-                        ], cwd=str(script_dir), check=True)
-                    except subprocess.CalledProcessError as e:
-                        logger.error(f"standalone_server.py failed with exit code {e.returncode}")
-                        sys.exit(1)
-                else:
-                    logger.error("standalone_server.py not found either")
-                    sys.exit(1)
-                return
+            os.environ['PYTHONPATH'] = str(current_dir)
+    
+    print(f"✅ PYTHONPATH 설정: {current_dir}")
+
+def check_dependencies():
+    """필수 의존성 확인"""
+    try:
+        import fastapi
+        import uvicorn
+        print("✅ FastAPI, Uvicorn 설치 확인됨")
+        return True
+    except ImportError as e:
+        print(f"❌ 의존성 누락: {e}")
+        print("pip install fastapi uvicorn 실행 필요")
+        return False
+
+def start_server():
+    """서버 시작"""
+    setup_python_path()
+    
+    if not check_dependencies():
+        return False
+    
+    print("🚀 Link Band SDK 서버 시작 중...")
+    print("📡 서버 주소: http://0.0.0.0:8121")
+    print("🔌 WebSocket: ws://localhost:18765")
+    print("📊 API 문서: http://localhost:8121/docs")
+    print("-" * 50)
+    
+    try:
+        # uvicorn으로 서버 실행
+        cmd = [
+            sys.executable, "-m", "uvicorn",
+            "app.main:app",
+            "--host", "0.0.0.0",
+            "--port", "8121",
+            "--reload"
+        ]
         
-        logger.info(f"Starting LinkBand server from {server_binary}")
-        logger.info(f"Server will run on {host}:{port}")
-        logger.info("=" * 50)
-        logger.info("LinkBand SDK Server Starting...")
-        logger.info("WebSocket server will be available at ws://localhost:18765")
-        logger.info("REST API will be available at http://localhost:8121")
-        logger.info("=" * 50)
-        
-        # Make the binary executable (for macOS/Linux)
-        if sys.platform != "win32":
-            os.chmod(server_binary, 0o755)
-        
-        # Run the binary
-        result = subprocess.run([str(server_binary)], check=True)
+        subprocess.run(cmd, cwd=Path(__file__).parent)
         
     except KeyboardInterrupt:
-        logger.info("Server stopped by user")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Server process failed with exit code {e.returncode}")
-        sys.exit(1)
+        print("\n🛑 서버 종료됨")
     except Exception as e:
-        logger.error(f"Error starting server: {e}", exc_info=True)
-        sys.exit(1)
+        print(f"❌ 서버 시작 실패: {e}")
+        return False
+    
+    return True
 
 if __name__ == "__main__":
-    run_server(host="localhost", port=8121)
+    start_server() 

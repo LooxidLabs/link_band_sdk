@@ -1,9 +1,10 @@
 import logging
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse
-from app.api import router_device, router_engine, router_metrics, router_data_center
+from app.api import router_device, router_engine, router_metrics, router_data_center, router_monitoring, router_history
 from app.services.stream_service import StreamService
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.integrated_optimizer import IntegratedOptimizer
 from app.core.server import WebSocketServer
 from app.data.data_recorder import DataRecorder
 from app.services.recording_service import RecordingService
@@ -176,6 +177,8 @@ app.include_router(router_device.router, prefix="/device", tags=["device"])
 app.include_router(router_engine.router, prefix="/stream", tags=["engine"])
 app.include_router(router_metrics.router, prefix="/metrics", tags=["metrics"])
 app.include_router(router_data_center.router, prefix="/data", tags=["data_center"])
+app.include_router(router_monitoring.router, prefix="/monitoring", tags=["monitoring"])
+app.include_router(router_history.router, prefix="/history", tags=["history"])
 
 @app.on_event("startup")
 async def startup_event():
@@ -208,7 +211,12 @@ async def startup_event():
     app.state.data_recorder = DataRecorder(data_dir=data_dir)
     print("[4/8] Data recorder initialized [OK]")
 
-    print("[5/8] Configuring WebSocket server...")
+    print("[5/8] Initializing integrated optimizer...")
+    app.state.integrated_optimizer = IntegratedOptimizer()
+    await app.state.integrated_optimizer.start_optimization()
+    print("[5/8] Integrated optimizer started [OK]")
+
+    print("[6/8] Configuring WebSocket server...")
     app.state.ws_server = WebSocketServer(
         host=ws_host, 
         port=ws_port,  # 별도 WebSocket 서버 18765 포트에서 실행
@@ -216,9 +224,9 @@ async def startup_event():
         device_manager=app.state.device_manager,
         device_registry=app.state.device_registry
     )
-    print("[5/8] WebSocket server configured [OK]")
+    print("[6/8] WebSocket server configured [OK]")
 
-    print("[6/8] Initializing services...")
+    print("[7/8] Initializing services...")
     app.state.device_service = DeviceService(device_manager=app.state.device_manager)
     app.state.recording_service = RecordingService(
         data_recorder=app.state.data_recorder,
@@ -226,14 +234,14 @@ async def startup_event():
         ws_server=app.state.ws_server
     )
     app.state.stream_service = StreamService(ws_server=app.state.ws_server)
-    print("[6/8] Services initialized [OK]")
+    print("[7/8] Services initialized [OK]")
 
-    print("[7/8] Starting WebSocket server...")
+    print("[8/8] Starting WebSocket server...")
     try:
         await app.state.ws_server.initialize()
-        print(f"[7/8] WebSocket server started on {ws_host}:{ws_port} [OK]")
+        print(f"[8/8] WebSocket server started on {ws_host}:{ws_port} [OK]")
     except Exception as e:
-        print(f"[7/8] Failed to start WebSocket server: {e} [FAIL]")
+        print(f"[8/8] Failed to start WebSocket server: {e} [FAIL]")
         import traceback
         print(f"[7/8] Traceback: {traceback.format_exc()}")
         
@@ -247,6 +255,30 @@ async def startup_event():
         print(f"[7/8] Traceback: {traceback.format_exc()}")
     
     print("[8/8] Finalizing server initialization...")
+    
+    # Start monitoring service
+    print("[8/8] Starting monitoring service...")
+    try:
+        from app.core.monitoring_service import global_monitoring_service
+        await global_monitoring_service.start_monitoring()
+        print("[8/8] Monitoring service started [OK]")
+    except Exception as e:
+        print(f"[8/8] Failed to start monitoring service: {e} [FAIL]")
+        import traceback
+        print(f"[8/8] Traceback: {traceback.format_exc()}")
+    
+    # Start history service
+    print("[8/8] Starting history service...")
+    try:
+        from app.services.history_service import get_history_service
+        app.state.history_service = get_history_service()
+        await app.state.history_service.start()
+        print("[8/8] History service started [OK]")
+    except Exception as e:
+        print(f"[8/8] Failed to start history service: {e} [FAIL]")
+        import traceback
+        print(f"[8/8] Traceback: {traceback.format_exc()}")
+    
     print("=== Link Band SDK Server ready! ===")
     print("WebSocket server initialized")  # Signal for Electron main process
     
@@ -260,6 +292,30 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     print("Shutting down Link Band SDK Server...")
+    
+    # Stop integrated optimizer first
+    if hasattr(app.state, 'integrated_optimizer') and app.state.integrated_optimizer:
+        try:
+            await app.state.integrated_optimizer.stop_optimization()
+            print("Integrated optimizer stopped")
+        except Exception as e:
+            print(f"Error stopping integrated optimizer: {e}")
+    
+    # Stop monitoring service
+    try:
+        from app.core.monitoring_service import global_monitoring_service
+        await global_monitoring_service.stop_monitoring()
+        print("Monitoring service stopped")
+    except Exception as e:
+        print(f"Error stopping monitoring service: {e}")
+    
+    # Stop history service
+    if hasattr(app.state, 'history_service') and app.state.history_service:
+        try:
+            await app.state.history_service.stop()
+            print("History service stopped")
+        except Exception as e:
+            print(f"Error stopping history service: {e}")
     
     # Complete shutdown sequence
     if hasattr(app.state, 'stream_service') and app.state.stream_service:
