@@ -49,24 +49,15 @@ logs/
 tmp/
 temp/
 
-# Large installer files
-*.dmg
-*.exe
-*.AppImage
+# Large installer files (now managed by Git LFS)
 installers/downloads/
 electron-app/.env
 
-# Large binary files and releases
+# Large binary files and releases (now managed by Git LFS)
 installers/releases/
 installers/releases/*.zip
-installers/distribution/*/linkband-server-*
 python_core/dist/
 python_core/build/
-*.dmg
-*.exe
-*.app
-*.deb
-*.rpm
 python_core.zip
 
 # Large data files
@@ -79,9 +70,7 @@ data/session_*/
 *.bak
 *.backup
 
-# Large binary executables
-linkband-server-*
-**/linkband-server-*
+# Large binary executables (now managed by Git LFS)
 docker-output/
 python_core/dist/linkband-server
 test_clone/
