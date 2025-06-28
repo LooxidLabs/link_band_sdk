@@ -18,12 +18,10 @@ class Device:
         self.status = DeviceStatus.DISCONNECTED
         self.client: Optional[BleakClient] = None
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Link Band SDK 통합 로깅 사용
+from .logging_config import get_device_logger, LogTags, log_device_connection, log_error
+
+logger = get_device_logger(__name__)
 
 class DeviceStatus(Enum):
     DISCONNECTED = "disconnected"

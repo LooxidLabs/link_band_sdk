@@ -23,24 +23,30 @@ from pathlib import Path
 # 이는 Windows에서 발생하는 WebSocket "ghost connection" 문제를 해결합니다
 # 참조: https://bugs.python.org/issue39010
 if platform.system() == 'Windows':
-    print("Windows detected: Using SelectorEventLoop to prevent WebSocket connection issues")
+    # Windows 감지 로그를 나중에 logger가 초기화된 후 출력하도록 임시 저장
+    _windows_detected = True
+else:
+    _windows_detected = False
+    
+if platform.system() == 'Windows':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-# 간략한 로깅 설정
-logging.basicConfig(
-    level=logging.INFO,  # INFO 레벨로 변경
-    format='%(message)s',  # 간단한 메시지만 출력
-    handlers=[
-        logging.StreamHandler(),  # 콘솔로 로그 출력
-    ]
+# Link Band SDK 통합 로그 시스템 초기화
+from app.core.logging_config import linkband_logger, get_system_logger, LogTags
+
+# 환경 감지 및 로그 설정
+environment = os.getenv('LINKBAND_ENV', 'development')
+linkband_logger.configure(
+    environment=environment,
+    enable_history=True,
+    console_level='INFO'
 )
 
-# 특정 모듈의 로그 레벨 조정
-logging.getLogger('uvicorn').setLevel(logging.WARNING)
-logging.getLogger('fastapi').setLevel(logging.WARNING)
-logging.getLogger('bleak').setLevel(logging.WARNING)
+logger = get_system_logger(__name__)
 
-logger = logging.getLogger(__name__)  # Initialize logger for this module
+# Windows 감지 로그 출력
+if _windows_detected:
+    logger.info(f"[{LogTags.SYSTEM}:{LogTags.START}] Windows detected: Using SelectorEventLoop to prevent WebSocket connection issues")
 
 app = FastAPI(
     title="Link Band SDK API",
@@ -184,164 +190,115 @@ app.include_router(router_history.router, prefix="/history", tags=["history"])
 async def startup_event():
     from app.core.utils import ensure_port_available
     
-    print("=== Starting Link Band SDK Server ===")
+    logger.info(f"[{LogTags.SERVER}:{LogTags.START}] Starting Link Band SDK Server")
 
     # Ensure required ports are available
     ws_host = "127.0.0.1"  # IPv4 명시적 사용 (Windows 호환성)
     ws_port = 18765
-    print("[1/8] Checking port availability...")
+    logger.info(f"[{LogTags.SERVER}] [1/8] Checking port availability...")
     if not ensure_port_available(ws_port):
-        print(f"[1/8] Failed to free WebSocket port {ws_port}, server may fail to start [FAIL]")
+        logger.error(f"[{LogTags.SERVER}:{LogTags.FAILED}] [1/8] Failed to free WebSocket port {ws_port}, server may fail to start")
     else:
-        print(f"[1/8] Port {ws_port} is available [OK]")
+        logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [1/8] Port {ws_port} is available")
 
     # Initialize core services
-    print("[2/8] Initializing database...")
+    logger.info(f"[{LogTags.SERVER}] [2/8] Initializing database...")
     db_manager_instance = DatabaseManager(db_path="database/data_center.db")
     app.state.db_manager = db_manager_instance
-    print("[2/8] Database initialized [OK]")
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [2/8] Database initialized")
 
-    print("[3/8] Initializing device manager...")
-    app.state.device_registry = DeviceRegistry()
-    app.state.device_manager = DeviceManager(registry=app.state.device_registry) 
-    print("[3/8] Device manager initialized [OK]")
+    logger.info(f"[{LogTags.SERVER}] [3/8] Initializing device registry...")
+    device_registry_instance = DeviceRegistry()
+    app.state.device_registry = device_registry_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [3/8] Device registry initialized")
 
-    print("[4/8] Initializing data recorder...")
-    data_dir = "data"
-    app.state.data_recorder = DataRecorder(data_dir=data_dir)
-    print("[4/8] Data recorder initialized [OK]")
+    logger.info(f"[{LogTags.SERVER}] [4/8] Initializing device manager...")
+    device_manager_instance = DeviceManager(device_registry_instance)
+    app.state.device_manager = device_manager_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [4/8] Device manager initialized")
 
-    print("[5/8] Initializing integrated optimizer...")
-    app.state.integrated_optimizer = IntegratedOptimizer()
-    await app.state.integrated_optimizer.start_optimization()
-    print("[5/8] Integrated optimizer started [OK]")
+    logger.info(f"[{LogTags.SERVER}] [5/8] Initializing data recorder...")
+    data_recorder_instance = DataRecorder()
+    app.state.data_recorder = data_recorder_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [5/8] Data recorder initialized")
 
-    print("[6/8] Configuring WebSocket server...")
-    app.state.ws_server = WebSocketServer(
-        host=ws_host, 
-        port=ws_port,  # 별도 WebSocket 서버 18765 포트에서 실행
-        data_recorder=app.state.data_recorder,
-        device_manager=app.state.device_manager,
-        device_registry=app.state.device_registry
+    logger.info(f"[{LogTags.SERVER}] [6/8] Initializing recording service...")
+    recording_service_instance = RecordingService(data_recorder_instance, db_manager_instance)
+    app.state.recording_service = recording_service_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [6/8] Recording service initialized")
+
+    logger.info(f"[{LogTags.SERVER}] [7/8] Initializing WebSocket server...")
+    ws_server_instance = WebSocketServer(
+        host=ws_host,
+        port=ws_port,
+        data_recorder=data_recorder_instance,
+        device_manager=device_manager_instance,
+        device_registry=device_registry_instance
     )
-    print("[6/8] WebSocket server configured [OK]")
+    app.state.ws_server = ws_server_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [7/8] WebSocket server initialized")
 
-    print("[7/8] Initializing services...")
-    app.state.device_service = DeviceService(device_manager=app.state.device_manager)
-    app.state.recording_service = RecordingService(
-        data_recorder=app.state.data_recorder,
-        db_manager=app.state.db_manager,
-        ws_server=app.state.ws_server
-    )
-    app.state.stream_service = StreamService(ws_server=app.state.ws_server)
-    print("[7/8] Services initialized [OK]")
+    logger.info(f"[{LogTags.SERVER}] [8/8] Starting WebSocket server...")
+    await ws_server_instance.start()
+    
+    # WebSocket 서버가 준비되면 FastAPI ready 상태로 설정
+    ws_server_instance.set_fastapi_ready()
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [8/8] WebSocket server started on {ws_host}:{ws_port}")
 
-    print("[8/8] Starting WebSocket server...")
-    try:
-        await app.state.ws_server.initialize()
-        print(f"[8/8] WebSocket server started on {ws_host}:{ws_port} [OK]")
-    except Exception as e:
-        print(f"[8/8] Failed to start WebSocket server: {e} [FAIL]")
-        import traceback
-        print(f"[7/8] Traceback: {traceback.format_exc()}")
-        
-    print(f"[7/8] About to init stream service...")
-    try:
-        await app.state.stream_service.init_stream() 
-        print("[7/8] Stream service ready [OK]")
-    except Exception as e:
-        print(f"[7/8] Error initializing stream service: {e} [FAIL]")
-        import traceback
-        print(f"[7/8] Traceback: {traceback.format_exc()}")
-    
-    print("[8/8] Finalizing server initialization...")
-    
-    # Start monitoring service
-    print("[8/8] Starting monitoring service...")
-    try:
-        from app.core.monitoring_service import global_monitoring_service
-        await global_monitoring_service.start_monitoring()
-        print("[8/8] Monitoring service started [OK]")
-    except Exception as e:
-        print(f"[8/8] Failed to start monitoring service: {e} [FAIL]")
-        import traceback
-        print(f"[8/8] Traceback: {traceback.format_exc()}")
-    
-    # Start history service
-    print("[8/8] Starting history service...")
-    try:
-        from app.services.history_service import get_history_service
-        app.state.history_service = get_history_service()
-        await app.state.history_service.start()
-        print("[8/8] History service started [OK]")
-    except Exception as e:
-        print(f"[8/8] Failed to start history service: {e} [FAIL]")
-        import traceback
-        print(f"[8/8] Traceback: {traceback.format_exc()}")
-    
-    print("=== Link Band SDK Server ready! ===")
-    print("WebSocket server initialized")  # Signal for Electron main process
-    
-    # Mark FastAPI as ready to accept WebSocket connections
-    print("[8/8] Setting FastAPI ready flag...")
-    app.state.ws_server.set_fastapi_ready()
-    print("[8/8] FastAPI marked as ready for WebSocket connections [OK]")
-    print("=== Server initialization complete! ===")
-    print("Auto-connect loop started")
+    # Initialize integrated optimizer after all components are ready
+    logger.info(f"[{LogTags.SERVER}] Initializing integrated optimizer...")
+    integrated_optimizer = IntegratedOptimizer()
+    app.state.integrated_optimizer = integrated_optimizer
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Integrated optimizer initialized")
+
+    # Initialize services that depend on other components
+    logger.info(f"[{LogTags.SERVER}] Initializing stream service...")
+    stream_service_instance = StreamService(ws_server_instance)
+    app.state.stream_service = stream_service_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Stream service initialized")
+
+    logger.info(f"[{LogTags.SERVER}] Initializing device service...")
+    device_service_instance = DeviceService(device_manager_instance)
+    app.state.device_service = device_service_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Device service initialized")
+
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Link Band SDK Server startup completed successfully")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    print("Shutting down Link Band SDK Server...")
+    logger.info(f"[{LogTags.SERVER}:{LogTags.STOP}] Shutting down Link Band SDK Server...")
     
-    # Stop integrated optimizer first
-    if hasattr(app.state, 'integrated_optimizer') and app.state.integrated_optimizer:
-        try:
-            await app.state.integrated_optimizer.stop_optimization()
-            print("Integrated optimizer stopped")
-        except Exception as e:
-            print(f"Error stopping integrated optimizer: {e}")
-    
-    # Stop monitoring service
     try:
-        from app.core.monitoring_service import global_monitoring_service
-        await global_monitoring_service.stop_monitoring()
-        print("Monitoring service stopped")
-    except Exception as e:
-        print(f"Error stopping monitoring service: {e}")
-    
-    # Stop history service
-    if hasattr(app.state, 'history_service') and app.state.history_service:
-        try:
-            await app.state.history_service.stop()
-            print("History service stopped")
-        except Exception as e:
-            print(f"Error stopping history service: {e}")
-    
-    # Complete shutdown sequence
-    if hasattr(app.state, 'stream_service') and app.state.stream_service:
-        try:
-            await app.state.stream_service.stop_stream()
-            print("Stream service stopped")
-        except Exception as e:
-            print(f"Error stopping stream service: {e}")
-    
-    if hasattr(app.state, 'ws_server') and app.state.ws_server:
-        try:
-            await app.state.ws_server.shutdown()  # Use complete shutdown instead of stop
-            print("WebSocket server stopped")
-        except Exception as e:
-            print(f"Error stopping WebSocket server: {e}")
-    
-    # Disconnect device if connected
-    if hasattr(app.state, 'device_manager') and app.state.device_manager:
-        try:
+        # Stop WebSocket server first
+        if hasattr(app.state, 'ws_server'):
+            logger.info(f"[{LogTags.SERVER}] Stopping WebSocket server...")
+            await app.state.ws_server.shutdown()
+            logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] WebSocket server stopped")
+        
+        # Stop device manager
+        if hasattr(app.state, 'device_manager'):
+            logger.info(f"[{LogTags.SERVER}] Stopping device manager...")
             if app.state.device_manager.is_connected():
                 await app.state.device_manager.disconnect()
-                print("Device disconnected")
-        except Exception as e:
-            print(f"Error disconnecting device: {e}")
-    
-    print("Link Band SDK Server stopped")
+            logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Device manager stopped")
+        
+        # Stop data recorder
+        if hasattr(app.state, 'data_recorder'):
+            logger.info(f"[{LogTags.SERVER}] Stopping data recorder...")
+            if app.state.data_recorder.is_recording:
+                app.state.data_recorder.stop_recording()
+            logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Data recorder stopped")
+        
+        # Close database connections
+        if hasattr(app.state, 'db_manager'):
+            logger.info(f"[{LogTags.SERVER}] Closing database connections...")
+            app.state.db_manager.close()
+            logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Database connections closed")
+        
+        logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Link Band SDK Server shutdown completed successfully")
+        
+    except Exception as e:
+        logger.error(f"[{LogTags.SERVER}:{LogTags.ERROR}] Error during shutdown: {e}", exc_info=True)
 
 @app.get("/")
 async def read_root():

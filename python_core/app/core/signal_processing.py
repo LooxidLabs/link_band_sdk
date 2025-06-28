@@ -10,21 +10,10 @@ from collections import deque
 import time
 import asyncio
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,  # Change to DEBUG level
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # Set logger level to DEBUG
+# Link Band SDK 통합 로깅 사용
+from .logging_config import get_system_logger, LogTags
 
-# Add console handler if not already present
-if not logger.handlers:
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
+logger = get_system_logger(__name__)
 
 # Buffer sizes for each data type
 BUFFER_SIZES = {

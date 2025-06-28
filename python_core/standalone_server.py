@@ -11,12 +11,26 @@ import asyncio
 import signal
 from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Link Band SDK 통합 로깅 사용 (standalone 모드)
+try:
+    from app.core.logging_config import linkband_logger, get_system_logger, LogTags
+    
+    # 환경 감지 및 로그 설정
+    environment = os.getenv('LINKBAND_ENV', 'production')  # standalone은 기본적으로 production
+    linkband_logger.configure(
+        environment=environment,
+        enable_history=True,
+        console_level='INFO'
+    )
+    
+    logger = get_system_logger(__name__)
+except ImportError:
+    # Fallback: 통합 로그 시스템을 사용할 수 없는 경우
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
 
 # Windows에서 ProactorEventLoop 대신 SelectorEventLoop를 사용하도록 강제
 # WebSocket 연결 안정성 문제를 해결하기 위함

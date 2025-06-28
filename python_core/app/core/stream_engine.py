@@ -9,9 +9,10 @@ from app.core.server import WebSocketServer
 from app.core.signal_processing import SignalProcessor
 from app.core.event_types import EventType
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Link Band SDK 통합 로깅 사용
+from .logging_config import get_stream_logger, LogTags
+
+logger = get_stream_logger(__name__)
 
 class StreamStatus(Enum):
     STOPPED = "stopped"

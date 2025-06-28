@@ -26,18 +26,16 @@ def setup_python_path():
             os.environ['PYTHONPATH'] = f"{current_dir}{os.pathsep}{current_pythonpath}"
         else:
             os.environ['PYTHONPATH'] = str(current_dir)
-    
-    print(f"✅ PYTHONPATH 설정: {current_dir}")
 
 def check_dependencies():
     """필수 의존성 확인"""
     try:
         import fastapi
         import uvicorn
-        print("✅ FastAPI, Uvicorn 설치 확인됨")
         return True
     except ImportError as e:
-        print(f"❌ 의존성 누락: {e}")
+        # 의존성 체크 실패는 일단 print로 출력 (로거 초기화 전이므로)
+        print(f"의존성 누락: {e}")
         print("pip install fastapi uvicorn 실행 필요")
         return False
 
@@ -48,31 +46,77 @@ def start_server():
     if not check_dependencies():
         return False
     
-    print("🚀 Link Band SDK 서버 시작 중...")
-    print("📡 서버 주소: http://0.0.0.0:8121")
-    print("🔌 WebSocket: ws://localhost:18765")
-    print("📊 API 문서: http://localhost:8121/docs")
-    print("-" * 50)
-    
+    # 통합 로그 시스템 초기화 (의존성 확인 후)
     try:
-        # uvicorn으로 서버 실행
-        cmd = [
-            sys.executable, "-m", "uvicorn",
-            "app.main:app",
-            "--host", "0.0.0.0",
-            "--port", "8121",
-            "--reload"
-        ]
+        from app.core.logging_config import linkband_logger, get_system_logger, LogTags
         
-        subprocess.run(cmd, cwd=Path(__file__).parent)
+        # 환경 감지 및 로그 설정
+        environment = os.getenv('LINKBAND_ENV', 'development')
+        linkband_logger.configure(
+            environment=environment,
+            enable_history=True,
+            console_level='INFO'
+        )
         
-    except KeyboardInterrupt:
-        print("\n🛑 서버 종료됨")
-    except Exception as e:
-        print(f"❌ 서버 시작 실패: {e}")
-        return False
-    
-    return True
+        logger = get_system_logger(__name__)
+        
+        logger.info(f"[{LogTags.SERVER}:{LogTags.START}] Link Band SDK 서버 시작 중...")
+        logger.info(f"[{LogTags.SERVER}] PYTHONPATH 설정: {Path(__file__).parent.absolute()}")
+        logger.info(f"[{LogTags.SERVER}] FastAPI, Uvicorn 설치 확인됨")
+        logger.info(f"[{LogTags.SERVER}] 서버 주소: http://0.0.0.0:8121")
+        logger.info(f"[{LogTags.SERVER}] WebSocket: ws://localhost:18765")
+        logger.info(f"[{LogTags.SERVER}] API 문서: http://localhost:8121/docs")
+        logger.info(f"[{LogTags.SERVER}] " + "-" * 50)
+        
+        try:
+            # uvicorn으로 서버 실행
+            cmd = [
+                sys.executable, "-m", "uvicorn",
+                "app.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8121",
+                "--reload"
+            ]
+            
+            subprocess.run(cmd, cwd=Path(__file__).parent)
+            
+        except KeyboardInterrupt:
+            logger.info(f"[{LogTags.SERVER}:{LogTags.STOP}] 서버 종료됨")
+        except Exception as e:
+            logger.error(f"[{LogTags.SERVER}:{LogTags.ERROR}] 서버 시작 실패: {e}", exc_info=True)
+            return False
+        
+        return True
+        
+    except ImportError as e:
+        # 로그 시스템 초기화 실패 시 fallback
+        print(f"로그 시스템 초기화 실패: {e}")
+        print("기본 print 모드로 실행")
+        
+        print("Link Band SDK 서버 시작 중...")
+        print("서버 주소: http://0.0.0.0:8121")
+        print("WebSocket: ws://localhost:18765")
+        print("API 문서: http://localhost:8121/docs")
+        print("-" * 50)
+        
+        try:
+            cmd = [
+                sys.executable, "-m", "uvicorn",
+                "app.main:app",
+                "--host", "0.0.0.0",
+                "--port", "8121",
+                "--reload"
+            ]
+            
+            subprocess.run(cmd, cwd=Path(__file__).parent)
+            
+        except KeyboardInterrupt:
+            print("\n서버 종료됨")
+        except Exception as e:
+            print(f"서버 시작 실패: {e}")
+            return False
+        
+        return True
 
 if __name__ == "__main__":
     start_server() 

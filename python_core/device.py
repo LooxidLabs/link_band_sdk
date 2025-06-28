@@ -9,12 +9,17 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from enum import Enum, auto
 import time
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Link Band SDK 통합 로깅 사용 (legacy device.py)
+try:
+    from app.core.logging_config import get_device_logger, LogTags, log_device_connection
+    logger = get_device_logger(__name__)
+except ImportError:
+    # Fallback: 통합 로그 시스템을 사용할 수 없는 경우
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
 
 class DeviceStatus(Enum):
     DISCONNECTED = "disconnected"

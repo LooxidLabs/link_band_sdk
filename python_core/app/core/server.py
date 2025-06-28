@@ -26,12 +26,13 @@ from .performance_monitor import PerformanceMonitor, global_performance_monitor
 from .streaming_optimizer import StreamingOptimizer, global_streaming_optimizer, StreamPriority
 from .monitoring_service import global_monitoring_service
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Link Band SDK 통합 로깅 사용
+from .logging_config import (
+    get_websocket_logger, get_device_logger, get_stream_logger,
+    LogTags, log_device_connection, log_stream_event, log_error
 )
-logger = logging.getLogger(__name__)
+
+logger = get_websocket_logger(__name__)
 
 # 전역 변수 (좋은 방법은 아니지만 테스트 목적)
 _current_server_instance = None
@@ -520,7 +521,7 @@ class WebSocketServer:
         if hasattr(self, 'stream_engine'):
             await self.stream_engine.stop()
         
-        print("WebSocket server stopped")
+        logger.info(f"[{LogTags.SERVER}:{LogTags.STOP}] WebSocket server stopped")
 
     async def shutdown(self):
         """Complete shutdown of WebSocket server and cleanup all resources"""
@@ -650,7 +651,8 @@ class WebSocketServer:
 
     async def _auto_connect_loop(self):
         """Periodically check and connect to registered devices"""
-        print("Auto-connect loop started")
+        device_logger = get_device_logger("auto_connect")
+        device_logger.info(f"[{LogTags.AUTO_CONNECT}:{LogTags.START}] Auto-connect loop started")
         connection_attempts = {}  # 각 디바이스별 연결 시도 횟수 추적
         last_scan_time = 0
         scan_interval = 30  # 30초마다 스캔
@@ -665,13 +667,13 @@ class WebSocketServer:
                     if registered_devices:
                         # 주기적으로 스캔 실행 (디바이스 캐시 업데이트)
                         if current_time - last_scan_time > scan_interval:
-                            print("Updating device cache via scan...")
+                            device_logger.info(f"[{LogTags.AUTO_CONNECT}:{LogTags.SCAN}] Updating device cache via scan")
                             try:
                                 await self.device_manager.scan_devices()
                                 last_scan_time = current_time
-                                print("Device cache updated")
+                                device_logger.info(f"[{LogTags.AUTO_CONNECT}:{LogTags.SCAN}] Device cache updated")
                             except Exception as scan_error:
-                                print(f"Scan failed during auto-connect: {scan_error}")
+                                log_error(device_logger, LogTags.AUTO_CONNECT, f"Scan failed during auto-connect", scan_error)
                         
                         # 스캔된 디바이스들 가져오기
                         scanned_devices = getattr(self.device_manager, '_cached_devices', [])
@@ -712,9 +714,8 @@ class WebSocketServer:
                                     if (scanned_name == device_name or 
                                         (device_name.startswith('LXB-') and scanned_name.startswith('LXB-'))):
                                         if scanned_addr != address:
-                                            print(f"Cross-platform address update: {device_name}")
-                                            print(f"  Registered: {address}")
-                                            print(f"  Current platform: {scanned_addr}")
+                                            device_logger.info(f"[{LogTags.AUTO_CONNECT}] Cross-platform address update: {device_name}", 
+                                                              extra={"registered_addr": address, "current_addr": scanned_addr})
                                             # 레지스트리의 주소 업데이트
                                             self.device_registry.update_device_address(address, scanned_addr, device_name)
                                             target_address = scanned_addr
@@ -722,9 +723,12 @@ class WebSocketServer:
                                             target_address = scanned_addr
                                         break
                             
-                            print(f"Auto-connecting to {target_address} (attempt {attempt_info['count'] + 1}/3)")
-                            if target_address != address:
-                                print(f"  Device name: {device_name}")
+                            device_logger.info(f"[{LogTags.AUTO_CONNECT}:{LogTags.CONNECT}] Attempting connection", 
+                                              extra={
+                                                  "address": target_address,
+                                                  "attempt": f"{attempt_info['count'] + 1}/3",
+                                                  "device_name": device_name if target_address != address else None
+                                              })
                             
                             attempt_info['last_attempt'] = current_time
                             attempt_info['count'] += 1
@@ -732,7 +736,12 @@ class WebSocketServer:
                             # 캐시된 디바이스 사용해서 연결 시도 (스캔 중복 방지)
                             success = await self.device_manager.connect(target_address, use_cached_device=True)
                             if success:
-                                print(f"Successfully auto-connected to {target_address}")
+                                device_logger.info(f"[{LogTags.AUTO_CONNECT}:{LogTags.SUCCESS}] Auto-connection successful", 
+                                                  extra={
+                                                      "address": target_address,
+                                                      "device_name": device_name,
+                                                      "connection_type": "auto"
+                                                  })
                                 connection_attempts[address]['count'] = 0  # 성공 시 카운터 리셋
                                 # 연결 성공 이벤트 브로드캐스트
                                 await self.broadcast_event(EventType.DEVICE_CONNECTED, {
@@ -742,16 +751,20 @@ class WebSocketServer:
                                 })
                                 break
                             else:
-                                print(f"Auto-connect failed to {target_address}")
+                                device_logger.warning(f"[{LogTags.AUTO_CONNECT}:{LogTags.FAILED}] Auto-connection failed", 
+                                                     extra={
+                                                         "address": target_address,
+                                                         "attempt": f"{attempt_info['count']}/3"
+                                                     })
                 
                 # 15초마다 체크 (더 긴 간격으로 시스템 부하 감소)
                 await asyncio.sleep(15)
                 
             except asyncio.CancelledError:
-                print("Auto-connect loop cancelled")
+                device_logger.info(f"[{LogTags.AUTO_CONNECT}:{LogTags.STOP}] Auto-connect loop cancelled")
                 break
             except Exception as e:
-                print(f"Auto-connect error: {e}")
+                device_logger.error(f"[{LogTags.AUTO_CONNECT}:{LogTags.ERROR}] Auto-connect error: {e}", exc_info=True)
                 await asyncio.sleep(15)
 
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
@@ -957,7 +970,7 @@ class WebSocketServer:
     async def _run_connect_and_notify(self, device_address: str):
         """Connect to device and start notifications."""
         try:
-            print(f"Attempting connection to {device_address}")
+            log_device_connection(device_logger, device_address, "attempting")
             
             # 크로스 플랫폼 주소 매칭: 등록된 디바이스 이름으로 현재 플랫폼의 주소 찾기
             target_address = device_address
@@ -983,10 +996,12 @@ class WebSocketServer:
                         if (scanned_name == device_name or 
                             (device_name.startswith('LXB-') and scanned_name.startswith('LXB-'))):
                             if scanned_addr and scanned_addr != device_address:
-                                print(f"Cross-platform address mapping found:")
-                                print(f"  Requested: {device_address}")
-                                print(f"  Device name: {device_name}")
-                                print(f"  Current platform address: {scanned_addr}")
+                                device_logger.info(f"[{LogTags.DEVICE_MANAGER}:{LogTags.CONNECT}] Cross-platform address mapping found", 
+                                                  extra={
+                                                      "requested_address": device_address,
+                                                      "device_name": device_name,
+                                                      "current_platform_address": scanned_addr
+                                                  })
                                 # 레지스트리의 주소 업데이트
                                 self.device_registry.update_device_address(device_address, scanned_addr, device_name)
                                 target_address = scanned_addr
@@ -996,7 +1011,7 @@ class WebSocketServer:
             
             # DeviceManager의 connect 메서드가 이미 스캔을 포함하므로 직접 연결 시도
             if not await self.device_manager.connect(target_address):
-                print(f"Failed to connect to device {target_address}")
+                log_device_connection(device_logger, target_address, "failed")
                 await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
                     "address": device_address,
                     "target_address": target_address,
@@ -2094,7 +2109,9 @@ class WebSocketServer:
         try:
             await websocket.accept()
             self.connected_clients[client_id] = websocket
-            print(f"WebSocket client connected")
+            ws_logger = get_websocket_logger(__name__)
+            ws_logger.info(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.CONNECT}] WebSocket client connected", 
+                          extra={"client_id": client_id})
 
             # Send initial status
             await self.send_status(websocket)
@@ -2122,7 +2139,9 @@ class WebSocketServer:
         try:
             await websocket.accept()
             self.connected_clients[client_id] = websocket
-            print(f"Processed data client connected")
+            ws_logger = get_websocket_logger(__name__)
+            ws_logger.info(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.CONNECT}] Processed data client connected", 
+                          extra={"client_id": client_id})
 
             # Add data callback for this client
             async def data_callback(data: Dict[str, Any]):
@@ -2159,19 +2178,27 @@ class WebSocketServer:
                     import json
                     data = json.loads(data)
                 except json.JSONDecodeError:
-                    print(f"Invalid JSON string: {data}")
+                    ws_logger = get_websocket_logger(__name__)
+                    ws_logger.error(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.ERROR}] Invalid JSON string", 
+                                   extra={"client_id": client_id, "data_preview": str(data)[:100]})
                     return
             
             # 딕셔너리가 아닌 경우 처리 중단
             if not isinstance(data, dict):
-                print(f"Invalid data type: {type(data)}")
+                ws_logger = get_websocket_logger(__name__)
+                ws_logger.error(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.ERROR}] Invalid data type", 
+                               extra={"client_id": client_id, "data_type": type(data).__name__})
                 return
             
             # health_check는 로그하지 않음 (너무 빈번함)
             if data.get('command') != 'health_check':
-                print(f"Client message: {data.get('command', 'unknown')}")
+                ws_logger = get_websocket_logger(__name__)
+                ws_logger.debug(f"[{LogTags.WEBSOCKET_SERVER}] Client message", 
+                               extra={"client_id": client_id, "command": data.get('command', 'unknown')})
         except Exception as e:
-            print(f"Client message error: {e}")
+            ws_logger = get_websocket_logger(__name__)
+            ws_logger.error(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.ERROR}] Client message error", 
+                           extra={"client_id": client_id, "error": str(e)}, exc_info=True)
             # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
 
     async def handle_command(self, client_id: str, data: Dict[str, Any]):
@@ -2182,38 +2209,12 @@ class WebSocketServer:
         #     return
 
         try:
-            # if command == 'scan':
-            #     devices = await self.device_manager.scan_devices()
-            #     await self.send_to_client(client_id, {
-            #         'type': 'scan_result',
-            #         'devices': devices
-            #     })
-            # elif command == 'connect':
-            #     address = data.get('address')
-            #     if not address:
-            #         raise ValueError("Connect command missing address")
-            #     success = await self.device_manager.connect(address)
-            #     await self.broadcast_event(EventType.STATUS, {
-            #         'type': 'connection',
-            #         'address': address,
-            #         'success': success
-            #     })
-            # elif command == 'disconnect':
-            #     address = data.get('address')
-            #     if not address:
-            #         raise ValueError("Disconnect command missing address")
-            #     success = await self.device_manager.disconnect()
-            #     await self.broadcast_event(EventType.STATUS, {
-            #         'type': 'disconnection',
-            #         'address': address,
-            #         'success': success
-            #     })
-            # else:
-            #     logger.warning(f"Unknown command from client {client_id}: {command}")
             # 명령어 메시지는 이미 handle_client_message에서 처리됨
             pass
         except Exception as e:
-            print(f"Command error: {e}")
+            ws_logger = get_websocket_logger(__name__)
+            ws_logger.error(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.ERROR}] Command error", 
+                           extra={"client_id": client_id, "error": str(e)}, exc_info=True)
             # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
 
     async def handle_data(self, client_id: str, data: Dict[str, Any]):
@@ -2242,7 +2243,9 @@ class WebSocketServer:
         """Handle client disconnection."""
         if client_id in self.connected_clients:
             del self.connected_clients[client_id]
-            print(f"WebSocket client disconnected")
+            ws_logger = get_websocket_logger(__name__)
+            ws_logger.info(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.DISCONNECT}] WebSocket client disconnected", 
+                          extra={"client_id": client_id})
 
     async def send_to_client(self, client_id: str, data: Dict[str, Any]):
         """Send data to a specific client."""
@@ -2295,7 +2298,7 @@ class WebSocketServer:
         if hasattr(self, 'stream_engine'):
             await self.stream_engine.stop()
         
-        print("FastAPI WebSocket server stopped")
+        logger.info(f"[{LogTags.SERVER}:{LogTags.STOP}] FastAPI WebSocket server stopped")
 
     async def _handle_processed_data(self, data_type: str, processed_data: dict):
         """Handle processed data from device manager"""
