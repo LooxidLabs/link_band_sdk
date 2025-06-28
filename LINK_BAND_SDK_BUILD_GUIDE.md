@@ -41,6 +41,12 @@ Link Band SDK는 Looxid Labs의 차세대 초경량 뇌파 밴드(Link Band 2.0)
 - **macOS Intel**: `linkband-server-macos-intel-v1.0.2`
 - **Linux**: `linkband-server-linux-v1.0.2`
 
+### 📤 Git LFS 대용량 파일 관리
+빌드된 실행파일(50MB+)은 Git LFS로 자동 관리됩니다:
+- **자동 추가**: 10MB 이상 파일 자동 LFS 처리
+- **효율적 저장**: GitHub 권장 크기 제한 준수
+- **빠른 클론**: 대용량 파일 별도 관리로 저장소 경량화
+
 ---
 
 ## 아키텍처 구조

@@ -96,6 +96,28 @@ distribution/v1.0.2/{platform}/linkband-server-{platform}-v1.0.2
 - `distribution/v1.0.2/macos-arm64/linkband-server-macos-arm64-v1.0.2`
 - `distribution/v1.0.2/windows/linkband-server-windows-v1.0.2.exe`
 
+### 📤 Git LFS 자동 관리
+
+빌드 스크립트는 10MB 이상의 대용량 실행파일을 자동으로 Git LFS에 추가합니다:
+
+- **자동 감지**: 실행파일 크기가 10MB 초과시 자동으로 LFS 처리
+- **Git 저장소 확인**: Git 저장소 내에서만 LFS 추가 실행
+- **상대 경로 계산**: 저장소 루트 기준 상대 경로로 자동 추가
+- **에러 처리**: LFS 추가 실패시 경고 메시지 출력
+
+**수동 LFS 관리:**
+```bash
+# 특정 파일을 LFS에 추가
+git lfs track "python_core/distribution/**/*"
+git add .gitattributes
+git add python_core/distribution/v1.0.2/macos-arm64/linkband-server-macos-arm64-v1.0.2
+git commit -m "Add executable to LFS"
+
+# LFS 상태 확인
+git lfs ls-files
+git lfs status
+```
+
 ## ⚙️ 빌드 요구사항
 
 ### 사전 준비

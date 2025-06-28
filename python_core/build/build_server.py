@@ -351,6 +351,27 @@ def main():
         print(f"📏 Size: {file_size_mb:.1f} MB")
         print(f"🏷️  Version: {config['version']}")
         print(f"🗓️  Built: {subprocess.run(['date'], capture_output=True, text=True).stdout.strip()}")
+        
+        # Git LFS에 자동 추가 (대용량 파일인 경우)
+        if file_size_mb > 10:  # 10MB 이상인 경우
+            try:
+                # Git 저장소인지 확인
+                git_check = subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], 
+                                         capture_output=True, text=True, cwd=python_core_dir.parent)
+                if git_check.returncode == 0:
+                    # Git LFS 추가
+                    relative_path = executable_path.relative_to(python_core_dir.parent)
+                    lfs_add = subprocess.run(['git', 'add', str(relative_path)], 
+                                           capture_output=True, text=True, cwd=python_core_dir.parent)
+                    if lfs_add.returncode == 0:
+                        print(f"📤 Added to Git LFS: {relative_path}")
+                    else:
+                        print(f"⚠️  Could not add to Git LFS: {lfs_add.stderr}")
+                else:
+                    print("ℹ️  Not in a Git repository - skipping LFS add")
+            except Exception as e:
+                print(f"⚠️  Git LFS add failed: {e}")
+        
         print("")
         print("To test the server:")
         print(f"  {executable_path}")

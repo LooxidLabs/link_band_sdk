@@ -194,12 +194,38 @@ pyinstaller --distpath="$DIST_DIR" "$SPEC_FILE"
 # 빌드 결과 확인
 if [ -f "$DIST_DIR/$EXECUTABLE_NAME" ]; then
     FILE_SIZE=$(du -h "$DIST_DIR/$EXECUTABLE_NAME" | cut -f1)
+    FILE_SIZE_BYTES=$(du -b "$DIST_DIR/$EXECUTABLE_NAME" | cut -f1)
+    FILE_SIZE_MB=$((FILE_SIZE_BYTES / 1024 / 1024))
+    
     echo ""
     echo "✅ Build completed successfully!"
     echo "📦 Executable: $DIST_DIR/$EXECUTABLE_NAME"
     echo "📏 Size: $FILE_SIZE"
     echo "🏷️  Version: $BUILD_VERSION"
     echo "🗓️  Built: $BUILD_DATE"
+    
+    # Git LFS에 자동 추가 (대용량 파일인 경우)
+    if [ $FILE_SIZE_MB -gt 10 ]; then
+        echo "📤 Adding large file to Git LFS..."
+        if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            # Git 저장소 루트로 이동
+            GIT_ROOT=$(git rev-parse --show-toplevel)
+            cd "$GIT_ROOT"
+            
+            # 상대 경로 계산
+            RELATIVE_PATH=$(realpath --relative-to="$GIT_ROOT" "$DIST_DIR/$EXECUTABLE_NAME")
+            
+            # Git LFS 추가
+            if git add "$RELATIVE_PATH" 2>/dev/null; then
+                echo "📤 Added to Git LFS: $RELATIVE_PATH"
+            else
+                echo "⚠️  Could not add to Git LFS"
+            fi
+        else
+            echo "ℹ️  Not in a Git repository - skipping LFS add"
+        fi
+    fi
+    
     echo ""
     echo "To test the server:"
     echo "  $DIST_DIR/$EXECUTABLE_NAME"
