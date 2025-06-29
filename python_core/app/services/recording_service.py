@@ -158,24 +158,26 @@ class RecordingService:
                 end_time = recorder_result.get("end_time")
                 session_dir_path = self.data_recorder.session_dir # DataRecorder에서 세션 경로 가져옴
                 status = "completed" # 또는 recorder_result에서 상태를 가져올 수 있음
+                data_format = self.data_recorder.meta.get("data_format", "JSON") # DataRecorder의 meta에서 data_format 가져옴
 
                 if session_name and start_time and end_time and session_dir_path:
                     try:
-                        logger.info(f"Attempting to save session to DB: Name: {session_name}, Start: {start_time}, End: {end_time}, Path: {session_dir_path}")
+                        logger.info(f"Attempting to save session to DB: Name: {session_name}, Start: {start_time}, End: {end_time}, Path: {session_dir_path}, Format: {data_format}")
                         session_id = self.db.add_session(
                             session_name=session_name,
                             start_time=start_time,
                             end_time=end_time,
                             data_path=session_dir_path,
-                            status=status
+                            status=status,
+                            data_format=data_format
                         )
-                        logger.info(f"Session {session_name} (ID: {session_id}) saved to database.")
+                        logger.info(f"Session {session_name} (ID: {session_id}) saved to database with format: {data_format}")
                     except Exception as db_exc:
                         logger.error(f"Error saving session {session_name} to database: {db_exc}", exc_info=True)
                         # DB 저장 실패가 전체 중지 흐름을 막을 필요는 없을 수 있으나, 로그는 남김
                         # recorder_result에 DB 저장 실패 정보를 추가할 수도 있음
                 else:
-                    logger.warning(f"Could not save session to DB due to missing info: Name={session_name}, Start={start_time}, End={end_time}, Path={session_dir_path}")
+                    logger.warning(f"Could not save session to DB due to missing info: Name={session_name}, Start={start_time}, End={end_time}, Path={session_dir_path}, Format={data_format}")
 
                 if self.ws_server:
                     await self.ws_server.broadcast_event(EventType.STATUS, {"status": "recording_stopped", "session_name": session_name})

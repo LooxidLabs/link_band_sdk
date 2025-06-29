@@ -277,6 +277,7 @@ export const getSessions = async (): Promise<Session[]> => {
       end_time: item.end_time,
       status: item.status,
       data_path: item.data_path,
+      data_format: item.data_format || 'JSON', // data_format 추가, 기본값 JSON
       created_at: item.created_at,
       };
     }) : [];

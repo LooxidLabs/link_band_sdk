@@ -170,11 +170,9 @@ export const SessionList: React.FC = () => {
     return `...${path.slice(-12)}`;
   };
 
-  // 파일 포맷 추출 함수 (현재는 기본값 JSON, 추후 API에서 제공될 예정)
-  const getFileFormat = (): string => {
-    // 추후 session 객체에 format 필드가 추가되면 사용
-    // return session.format || 'JSON';
-    return 'JSON'; // 현재는 기본값
+  // 파일 포맷 추출 함수
+  const getFileFormat = (session: Session): string => {
+    return session.data_format?.toUpperCase() || 'JSON';
   };
 
   if (sessionsLoading && (!sessions || sessions.length === 0)) {
@@ -333,7 +331,7 @@ export const SessionList: React.FC = () => {
                     {shortenPath(session.data_path)}
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-300">
-                    {getFileFormat()}
+                    {getFileFormat(session)}
                   </td>
                   <td className="px-3 py-2">
                     <Badge 

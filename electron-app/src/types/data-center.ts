@@ -38,6 +38,7 @@ export interface Session {
   end_time: string | null; // API can return null if not ended
   status: string;
   data_path: string; // From API
+  data_format: string; // Data format (JSON/CSV)
   created_at: string; // From API
   // files, file_count, total_size_mb removed as they are not in the current API response for the list
 }

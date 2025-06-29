@@ -1,5 +1,6 @@
 import os
 import json
+import csv
 import threading
 # import queue # queue는 더 이상 사용되지 않음
 from datetime import datetime
@@ -163,18 +164,19 @@ class DataRecorder:
                     logger.info(f"No data for type {data_type}, skipping file save.")
                     continue
                 
-                # 파일명에서 타임스탬프 제거, 데이터 타입만 사용
-                # 예: 015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json
-                # device_id_part = data_type.split('_')[0] # UUID 부분만 추출 시도 (선택 사항)
-                # type_part = "_".join(data_type.split('_')[1:]) # 'eeg_raw' 같은 부분
-                # filename = f"{device_id_part}_{type_part}.json" 
-                # 또는 더 간단하게 data_type 자체를 파일명으로 사용 (확장자만 추가)
-                filename = f"{data_type.replace(':', '_').replace('/', '_')}.json" # 콜론, 슬래시 등 파일명에 부적합한 문자 처리
+                # 파일 확장자를 데이터 형식에 따라 동적으로 결정
+                file_extension = self._get_file_extension()
+                filename = f"{data_type.replace(':', '_').replace('/', '_')}.{file_extension}" # 콜론, 슬래시 등 파일명에 부적합한 문자 처리
 
                 file_path = os.path.join(self.session_dir, filename)
                 
-                with open(file_path, "w") as f:
-                    json.dump(samples, f, ensure_ascii=False, indent=2) # 샘플 리스트를 통째로 저장
+                # 설정된 형식에 따라 데이터 저장
+                saved_file_path = self._save_data_by_format(file_path, samples)
+                
+                # 실제 저장된 파일 경로로 업데이트 (CSV 저장 실패 시 JSON으로 대체될 수 있음)
+                if saved_file_path != file_path:
+                    filename = os.path.basename(saved_file_path)
+                    file_path = saved_file_path
                 
                 logger.info(f"Saved {len(samples)} samples of type '{data_type}' to {file_path}")
                 
@@ -192,10 +194,14 @@ class DataRecorder:
             self.meta["files"] = files_metadata
             self._analyze_and_save_meta() # meta["files"]가 채워진 후 호출
 
-            meta_file_path = os.path.join(self.session_dir, "meta.json")
-            with open(meta_file_path, "w") as f:
-                json.dump(self.meta, f, ensure_ascii=False, indent=2)
-            logger.info(f"Final meta.json saved. Total file types: {len(files_metadata)}. Total records: {total_records_saved}")
+            # 메타데이터도 선택된 형식에 따라 저장
+            data_format = self.meta.get("data_format", "JSON").upper()
+            if data_format == "CSV":
+                self._save_meta_as_csv()
+            else:
+                self._save_meta_as_json()
+            
+            logger.info(f"Final metadata saved in {data_format} format. Total file types: {len(files_metadata)}. Total records: {total_records_saved}")
 
         except Exception as e:
             logger.error(f"Error saving buffered data or final meta.json: {e}", exc_info=True)
@@ -225,6 +231,124 @@ class DataRecorder:
         if data_type not in self.data_buffers:
             self.data_buffers[data_type] = []
         self.data_buffers[data_type].append(data)
+
+    def _get_file_extension(self) -> str:
+        """설정된 데이터 형식에 따른 파일 확장자 반환"""
+        data_format = self.meta.get("data_format", "JSON").upper()
+        return "csv" if data_format == "CSV" else "json"
+
+    def _save_data_as_json(self, file_path: str, samples: List[Dict[str, Any]]) -> str:
+        """JSON 형식으로 데이터 저장"""
+        try:
+            with open(file_path, "w", encoding='utf-8') as f:
+                json.dump(samples, f, ensure_ascii=False, indent=2)
+            logger.info(f"Successfully saved {len(samples)} samples as JSON to {file_path}")
+            return file_path
+        except Exception as e:
+            logger.error(f"Error saving JSON file {file_path}: {e}", exc_info=True)
+            raise
+
+    def _save_data_as_csv(self, file_path: str, samples: List[Dict[str, Any]]) -> str:
+        """CSV 형식으로 데이터 저장"""
+        try:
+            if not samples:
+                logger.warning(f"No samples to save for CSV file {file_path}")
+                return file_path
+            
+            # CSV 헤더 생성 - 모든 샘플의 키를 수집
+            fieldnames = set()
+            for sample in samples:
+                if isinstance(sample, dict):
+                    fieldnames.update(sample.keys())
+            
+            if not fieldnames:
+                logger.warning(f"No valid fields found in samples for CSV file {file_path}")
+                return file_path
+            
+            # 필드명을 정렬하여 일관성 확보 (timestamp가 있으면 첫 번째로)
+            fieldnames = sorted(list(fieldnames))
+            if 'timestamp' in fieldnames:
+                fieldnames.remove('timestamp')
+                fieldnames.insert(0, 'timestamp')
+            
+            with open(file_path, "w", newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                
+                # 각 샘플을 CSV 행으로 작성
+                for sample in samples:
+                    if isinstance(sample, dict):
+                        # 누락된 필드는 빈 문자열로 채움
+                        row = {field: sample.get(field, '') for field in fieldnames}
+                        writer.writerow(row)
+            
+            logger.info(f"Successfully saved {len(samples)} samples as CSV to {file_path}")
+            return file_path
+            
+        except Exception as e:
+            logger.error(f"Error saving CSV file {file_path}: {e}", exc_info=True)
+            # CSV 저장 실패 시 JSON으로 대체 저장
+            logger.info(f"Falling back to JSON format for {file_path}")
+            json_path = file_path.replace('.csv', '.json')
+            return self._save_data_as_json(json_path, samples)
+
+    def _save_data_by_format(self, file_path: str, samples: List[Dict[str, Any]]) -> str:
+        """설정된 형식에 따라 데이터 저장"""
+        data_format = self.meta.get("data_format", "JSON").upper()
+        
+        if data_format == "CSV":
+            return self._save_data_as_csv(file_path, samples)
+        else:
+            return self._save_data_as_json(file_path, samples)
+
+    def _save_meta_as_json(self):
+        """메타데이터를 JSON 형식으로 저장"""
+        try:
+            meta_file_path = os.path.join(self.session_dir, "meta.json")
+            with open(meta_file_path, "w", encoding='utf-8') as f:
+                json.dump(self.meta, f, ensure_ascii=False, indent=2)
+            logger.info(f"Metadata saved as JSON to {meta_file_path}")
+        except Exception as e:
+            logger.error(f"Error saving metadata as JSON: {e}", exc_info=True)
+
+    def _save_meta_as_csv(self):
+        """메타데이터를 CSV 형식으로 저장"""
+        try:
+            meta_file_path = os.path.join(self.session_dir, "meta.csv")
+            
+            # 메타데이터를 플랫 구조로 변환
+            flat_meta = self._flatten_metadata(self.meta)
+            
+            with open(meta_file_path, "w", newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['key', 'value'])  # 헤더
+                
+                for key, value in flat_meta.items():
+                    writer.writerow([key, str(value)])
+            
+            logger.info(f"Metadata saved as CSV to {meta_file_path}")
+        except Exception as e:
+            logger.error(f"Error saving metadata as CSV: {e}", exc_info=True)
+            # CSV 저장 실패 시 JSON으로 대체
+            logger.info("Falling back to JSON format for metadata")
+            self._save_meta_as_json()
+
+    def _flatten_metadata(self, data: Dict[str, Any], parent_key: str = '', separator: str = '_') -> Dict[str, Any]:
+        """중첩된 딕셔너리를 평면화"""
+        items = []
+        
+        for key, value in data.items():
+            new_key = f"{parent_key}{separator}{key}" if parent_key else key
+            
+            if isinstance(value, dict):
+                items.extend(self._flatten_metadata(value, new_key, separator).items())
+            elif isinstance(value, list):
+                # 리스트는 JSON 문자열로 변환
+                items.append((new_key, json.dumps(value, ensure_ascii=False)))
+            else:
+                items.append((new_key, value))
+        
+        return dict(items)
 
     # _recording_loop 메서드 제거
     # def _recording_loop(self):

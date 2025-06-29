@@ -1,8 +1,11 @@
 import sqlite3
 import os
 import sys
+import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self, db_path: str = "database/data_center.db"):
@@ -59,8 +62,19 @@ class DatabaseManager:
             end_time TEXT,
             data_path TEXT,
             status TEXT,
+            data_format TEXT,
             created_at TEXT
         )''')
+        
+        # 기존 테이블에 data_format 컬럼이 없는 경우 추가
+        try:
+            c.execute('ALTER TABLE sessions ADD COLUMN data_format TEXT DEFAULT "JSON"')
+            logger.info("Added data_format column to sessions table")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" in str(e).lower():
+                logger.info("data_format column already exists in sessions table")
+            else:
+                logger.warning(f"Error adding data_format column: {e}")
         conn.commit()
         conn.close()
 
@@ -123,13 +137,13 @@ class DatabaseManager:
         conn.close()
         return self._row_to_file_dict(row) if row else None
 
-    def add_session(self, session_name: str, start_time: str, end_time: str, data_path: str, status: str) -> int:
+    def add_session(self, session_name: str, start_time: str, end_time: str, data_path: str, status: str, data_format: str = "JSON") -> int:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         now = datetime.now().isoformat()
-        c.execute('''INSERT INTO sessions (session_name, start_time, end_time, data_path, status, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?)''',
-                  (session_name, start_time, end_time, data_path, status, now))
+        c.execute('''INSERT INTO sessions (session_name, start_time, end_time, data_path, status, data_format, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                  (session_name, start_time, end_time, data_path, status, data_format, now))
         session_id = c.lastrowid
         conn.commit()
         conn.close()
@@ -208,7 +222,8 @@ class DatabaseManager:
             "end_time": row[3],
             "data_path": row[4],
             "status": row[5],
-            "created_at": row[6],
+            "created_at": row[6],  # created_at는 인덱스 6
+            "data_format": row[7] if len(row) > 7 else "JSON",  # data_format는 인덱스 7
         }
         
         # 세션 폴더의 파일 크기와 개수 계산
