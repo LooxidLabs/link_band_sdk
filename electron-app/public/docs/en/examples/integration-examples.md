@@ -1097,7 +1097,7 @@ const LinkBandApp = () => {
     }
   };
   
-  const connectDevice = async () => {
+  const scanDevices = async () => {
     try {
       // Device scan
       await apiRequest('POST', '/device/scan', { duration: 10 });
@@ -1110,26 +1110,59 @@ const LinkBandApp = () => {
           const devices = await apiRequest('GET', '/device/list');
           
           if (devices.data.length > 0) {
-            const device = devices.data[0];
-            await apiRequest('POST', '/device/connect', { address: device.address });
-            
-            setIsConnected(true);
-            Alert.alert('Connection Successful', `${device.name} connected`);
-            
-            // Check battery status
-            const battery = await apiRequest('GET', '/device/battery');
-            setSensorData(prev => ({ ...prev, battery: battery.data.level }));
-            
+            setAvailableDevices(devices.data);
+            Alert.alert('Scan Complete', `Found ${devices.data.length} devices. Please select one to connect.`);
           } else {
-            Alert.alert('No Devices', 'No devices scanned');
+            Alert.alert('No Devices', 'No devices found');
           }
         } catch (error) {
-          Alert.alert('Connection Failed', error.message);
+          Alert.alert('Scan Failed', error.message);
         }
       }, 12000);
       
     } catch (error) {
       Alert.alert('Scan Failed', error.message);
+    }
+  };
+
+  const connectDevice = async (deviceAddress) => {
+    if (!deviceAddress) {
+      Alert.alert('Selection Required', 'Please select a device first');
+      return;
+    }
+
+    try {
+      const selectedDevice = availableDevices.find(d => d.address === deviceAddress);
+      
+      // Confirm connection
+      Alert.alert(
+        'Confirm Connection',
+        `Connect to ${selectedDevice.name} (${selectedDevice.address})?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Connect', 
+            onPress: async () => {
+              try {
+                await apiRequest('POST', '/device/connect', { address: deviceAddress });
+                
+                setIsConnected(true);
+                Alert.alert('Connection Successful', `${selectedDevice.name} connected`);
+                
+                // Check battery status
+                const battery = await apiRequest('GET', '/device/battery');
+                setSensorData(prev => ({ ...prev, battery: battery.data.level }));
+                
+              } catch (error) {
+                Alert.alert('Connection Failed', error.message);
+              }
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      Alert.alert('Connection Error', error.message);
     }
   };
   

@@ -201,9 +201,11 @@ async function deviceManagementExample() {
         
         if (devices.length > 0) {
             // Connect to first device
-            await deviceManager.connectDevice(devices[0].address);
+            // Show device selection UI instead of auto-connecting
+            displayDeviceSelection(devices);
             
-            // Wait for 30 seconds
+            // Wait for user selection and connection
+            await waitForUserConnection();
             await new Promise(resolve => setTimeout(resolve, 30000));
             
             // Disconnect device
@@ -215,6 +217,44 @@ async function deviceManagementExample() {
     } catch (error) {
         console.error('Device management error:', error);
     }
+}
+
+// Add these helper functions for safe device selection
+
+function displayDeviceSelection(devices) {
+    console.log('Available devices:');
+    devices.forEach((device, index) => {
+        console.log(`${index + 1}. ${device.name} (${device.address}) - Signal: ${device.rssi} dBm`);
+    });
+    console.log('Please use connectToDevice(deviceAddress) to connect to a specific device');
+}
+
+async function connectToDevice(deviceAddress) {
+    if (!deviceAddress) {
+        console.error('Device address is required');
+        return false;
+    }
+    
+    try {
+        console.log(`Connecting to device: ${deviceAddress}`);
+        await deviceManager.connectDevice(deviceAddress);
+        console.log('Device connected successfully');
+        return true;
+    } catch (error) {
+        console.error('Connection failed:', error);
+        return false;
+    }
+}
+
+async function waitForUserConnection() {
+    console.log('Waiting for user to select and connect a device...');
+    // In a real application, this would wait for user interaction
+    return new Promise(resolve => {
+        setTimeout(() => {
+            console.log('Timeout: No device connected by user');
+            resolve(false);
+        }, 30000);
+    });
 }
 ```
 
@@ -1040,30 +1080,64 @@ class LinkBandApp {
         this.updateUI();
     }
     
-    async connectDevice() {
+    async scanDevices() {
         try {
             this.updateStatus('Scanning for devices...');
             
             const devices = await this.deviceManager.scanDevices();
             
             if (devices.length > 0) {
-                this.updateStatus('Connecting to device...');
-                await this.deviceManager.connectDevice(devices[0].address);
-                
-                this.state.isConnected = true;
-                this.state.connectedDevice = devices[0];
-                
-                this.updateStatus('Device connected successfully');
-                this.updateUI();
-                
+                this.availableDevices = devices;
+                this.updateStatus(`Found ${devices.length} devices. Please select one to connect.`);
+                this.displayDeviceList(devices);
             } else {
                 this.updateStatus('No devices found');
             }
             
         } catch (error) {
+            this.updateStatus(`Scan error: ${error.message}`);
+            console.error('Scan device error:', error);
+        }
+    }
+
+    async connectDevice(deviceAddress) {
+        if (!deviceAddress) {
+            this.updateStatus('Please select a device first');
+            return;
+        }
+        
+        try {
+            this.updateStatus(`Connecting to device ${deviceAddress}...`);
+            await this.deviceManager.connectDevice(deviceAddress);
+            
+            this.state.isConnected = true;
+            this.state.connectedDevice = this.availableDevices.find(d => d.address === deviceAddress);
+            
+            this.updateStatus('Device connected successfully');
+            this.updateUI();
+            
+        } catch (error) {
             this.updateStatus(`Connection error: ${error.message}`);
             console.error('Connect device error:', error);
         }
+    }
+
+    displayDeviceList(devices) {
+        const deviceListElement = document.getElementById('device-list');
+        if (!deviceListElement) return;
+        
+        deviceListElement.innerHTML = '<h3>Available Devices</h3>';
+        devices.forEach((device, index) => {
+            const deviceElement = document.createElement('div');
+            deviceElement.className = 'device-item';
+            deviceElement.innerHTML = `
+                <button onclick="app.connectDevice('${device.address}')" class="device-button">
+                    <strong>${device.name}</strong><br>
+                    <small>${device.address} (${device.rssi} dBm)</small>
+                </button>
+            `;
+            deviceListElement.appendChild(deviceElement);
+        });
     }
     
     async disconnectDevice() {

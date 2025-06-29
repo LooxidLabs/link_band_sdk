@@ -902,7 +902,8 @@ export class LinkBandApplication {
       }
 
       // 2. Connect to first available device
-      await this.linkBandService.connectDevice(devices[0].address);
+              // Show device selection instead of auto-connecting
+        this.showDeviceSelection(devices);
       
       // 3. Initialize and start streaming
       await this.linkBandService.initializeStream();

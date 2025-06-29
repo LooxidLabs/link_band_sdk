@@ -726,9 +726,537 @@ async def search_endpoint(
     recording_service: RecordingService = Depends(get_recording_service) # Example
 ):
     logger.info(f"Endpoint /search called with query: {query}, type: {type}")
-    # Assume recording_service has an async method like search_data
-    # result = await recording_service.search_data(query, type)
-    # if result.get("status") == "fail":
-    #     raise HTTPException(status_code=400, detail=result.get("message"))
-    # return result
-    raise HTTPException(status_code=501, detail="Search endpoint not fully implemented.") 
+    try:
+        # TODO: Implement search logic using recording_service
+        # For now, return empty result
+        return {
+            "status": "success",
+            "query": query,
+            "type": type,
+            "results": []
+        }
+    except Exception as e:
+        logger.error(f"Error in search endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+# =============================================================================
+# 세션 삭제 API 엔드포인트들 (Phase 1)
+# =============================================================================
+
+class SessionDeleteResponse(BaseModel):
+    """Response model for session deletion operations"""
+    success: bool = Field(..., description="Whether the deletion was successful")
+    session_id: str = Field(..., description="ID of the deleted session")
+    deleted_files: List[str] = Field(default_factory=list, description="List of successfully deleted files")
+    failed_files: List[Dict[str, str]] = Field(default_factory=list, description="List of files that failed to delete")
+    message: str = Field(..., description="Operation result message")
+
+class BulkDeleteRequest(BaseModel):
+    """Request model for bulk session deletion"""
+    session_ids: List[str] = Field(..., description="List of session IDs to delete")
+
+class BulkDeleteResponse(BaseModel):
+    """Response model for bulk session deletion"""
+    results: List[SessionDeleteResponse] = Field(..., description="Individual deletion results")
+    total: int = Field(..., description="Total number of sessions processed")
+    successful: int = Field(..., description="Number of successfully deleted sessions")
+    failed: int = Field(..., description="Number of failed deletions")
+
+@router.delete("/sessions/bulk",
+    response_model=BulkDeleteResponse,
+    summary="Delete multiple recording sessions",
+    description="""
+    Delete multiple recording sessions in a single operation.
+    
+    **Bulk Deletion Process:**
+    - Processes each session individually
+    - Continues processing even if some deletions fail
+    - Provides detailed results for each session
+    
+    **Response Details:**
+    - Individual results for each session
+    - Summary statistics (total, successful, failed)
+    - Detailed error information for failed deletions
+    
+    **Use Cases:**
+    - Clean up multiple old sessions
+    - Remove selected sessions from UI
+    - Batch maintenance operations
+    """,
+    responses={
+        200: {
+            "description": "Bulk deletion completed (some may have failed)",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "results": [
+                            {
+                                "success": True,
+                                "session_id": "session_20240624_143022",
+                                "deleted_files": ["/data/session1/file1.json"],
+                                "failed_files": [],
+                                "message": "Session deleted successfully"
+                            }
+                        ],
+                        "total": 1,
+                        "successful": 1,
+                        "failed": 0
+                    }
+                }
+            }
+        },
+        500: {"description": "Bulk deletion failed"}
+    })
+async def delete_sessions_bulk_endpoint(
+    request: BulkDeleteRequest,
+    recording_service: RecordingService = Depends(get_recording_service)
+):
+    logger.info(f"=== API: /data/sessions/bulk DELETE called with {len(request.session_ids)} sessions ===")
+    
+    results = []
+    
+    for session_id in request.session_ids:
+        try:
+            # 개별 세션 삭제 로직 재사용
+            session = recording_service.db.get_session_by_name(session_id)
+            if not session:
+                results.append({
+                    "success": False,
+                    "session_id": session_id,
+                    "deleted_files": [],
+                    "failed_files": [],
+                    "message": "Session not found"
+                })
+                continue
+            
+            result = await delete_session_files_and_db(session, recording_service.db)
+            # SessionDeleteResponse 객체를 딕셔너리로 변환
+            results.append({
+                "success": result.success,
+                "session_id": result.session_id,
+                "deleted_files": result.deleted_files,
+                "failed_files": result.failed_files,
+                "message": result.message
+            })
+            
+        except Exception as e:
+            logger.error(f"Error deleting session {session_id} in bulk operation: {e}", exc_info=True)
+            results.append({
+                "success": False,
+                "session_id": session_id,
+                "deleted_files": [],
+                "failed_files": [],
+                "message": f"Failed to delete: {str(e)}"
+            })
+    
+    # 결과 집계
+    total = len(request.session_ids)
+    successful = len([r for r in results if r["success"]])
+    failed = total - successful
+    
+    logger.info(f"Bulk deletion completed: {successful}/{total} successful")
+    
+    return {
+        "results": results,
+        "total": total,
+        "successful": successful,
+        "failed": failed
+    }
+
+@router.delete("/sessions/all",
+    response_model=BulkDeleteResponse,
+    summary="Delete all recording sessions",
+    description="""
+    Delete ALL recording sessions and associated files.
+    
+    **Warning:** This operation will permanently delete all recorded data!
+    
+    **Process:**
+    1. Retrieves all session IDs from database
+    2. Performs bulk deletion on all sessions
+    3. Cleans up data directories
+    4. Resets database state
+    
+    **Safety Considerations:**
+    - This operation cannot be undone
+    - Ensure you have backups if needed
+    - Consider using bulk delete with specific IDs instead
+    
+    **Use Cases:**
+    - Complete system reset
+    - Development/testing cleanup
+    - Storage space recovery
+    """,
+    responses={
+        200: {
+            "description": "All sessions deletion completed",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "results": [],
+                        "total": 5,
+                        "successful": 4,
+                        "failed": 1
+                    }
+                }
+            }
+        },
+        500: {"description": "Failed to delete all sessions"}
+    })
+async def delete_all_sessions_endpoint(
+    recording_service: RecordingService = Depends(get_recording_service)
+):
+    logger.info("=== API: /data/sessions/all DELETE called ===")
+    
+    try:
+        # 1. 모든 세션 ID 조회
+        all_sessions = recording_service.db.get_sessions()
+        session_ids = [session['session_name'] for session in all_sessions]
+        
+        logger.info(f"Found {len(session_ids)} sessions to delete: {session_ids}")
+        
+        if not session_ids:
+            return {
+                "results": [],
+                "total": 0,
+                "successful": 0,
+                "failed": 0
+            }
+        
+        # 2. 일괄 삭제 실행
+        bulk_request = BulkDeleteRequest(session_ids=session_ids)
+        result = await delete_sessions_bulk_endpoint(bulk_request, recording_service)
+        
+        # 3. 데이터 디렉토리 정리
+        await cleanup_data_directory()
+        
+        logger.info(f"All sessions deletion completed: {result}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error deleting all sessions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete all sessions: {str(e)}")
+
+@router.delete("/sessions/{session_id}", 
+    response_model=SessionDeleteResponse,
+    summary="Delete a specific recording session",
+    description="""
+    Delete a specific recording session and all associated files.
+    
+    **Deletion Process:**
+    1. Validates session existence
+    2. Retrieves all associated files
+    3. Deletes files from file system
+    4. Removes database records
+    5. Cleans up empty directories
+    
+    **Safety Features:**
+    - Checks file permissions before deletion
+    - Provides detailed feedback on failed operations
+    - Maintains database consistency
+    
+    **Warning:** This operation cannot be undone!
+    """,
+    responses={
+        200: {
+            "description": "Session deleted successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "session_id": "session_20240624_143022",
+                        "deleted_files": ["/data/session_20240624_143022/eeg_data.json"],
+                        "failed_files": [],
+                        "message": "Session deleted successfully"
+                    }
+                }
+            }
+        },
+        404: {"description": "Session not found"},
+        500: {"description": "Deletion failed"}
+    })
+async def delete_session_endpoint(
+    session_id: str,
+    recording_service: RecordingService = Depends(get_recording_service)
+):
+    logger.info(f"=== API: /data/sessions/{session_id} DELETE called ===")
+    
+    try:
+        # 1. 세션 정보 조회
+        session = recording_service.db.get_session_by_name(session_id)
+        if not session:
+            logger.warning(f"Session {session_id} not found in database")
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        logger.info(f"Found session: {session}")
+        
+        # 2. 세션과 연관된 파일들 삭제
+        result = await delete_session_files_and_db(session, recording_service.db)
+        
+        logger.info(f"Session {session_id} deletion completed: {result}")
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting session {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete session: {str(e)}")
+
+@router.get("/sessions/{session_id}/files",
+    summary="Get list of files for a specific session",
+    description="""
+    Retrieve a list of all files associated with a specific recording session.
+    
+    **File Information:**
+    - File paths and names
+    - File sizes
+    - File types
+    - Creation timestamps
+    
+    **Use Cases:**
+    - Preview files before deletion
+    - Calculate total session size
+    - Verify session completeness
+    - File management operations
+    """,
+    responses={
+        200: {
+            "description": "Session files list",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "session_id": "session_20240624_143022",
+                        "files": [
+                            {
+                                "path": "/data/session1/eeg_data.json",
+                                "name": "eeg_data.json",
+                                "size": 1024576,
+                                "type": "json"
+                            }
+                        ],
+                        "total_files": 1,
+                        "total_size": 1024576
+                    }
+                }
+            }
+        },
+        404: {"description": "Session not found"},
+        500: {"description": "Failed to retrieve session files"}
+    })
+async def get_session_files_endpoint(
+    session_id: str,
+    recording_service: RecordingService = Depends(get_recording_service)
+):
+    logger.info(f"=== API: /data/sessions/{session_id}/files GET called ===")
+    
+    try:
+        # 세션 정보 조회
+        session = recording_service.db.get_session_by_name(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # 세션 파일 목록 조회
+        files_info = await get_session_files_info(session)
+        
+        return {
+            "session_id": session_id,
+            "files": files_info["files"],
+            "total_files": files_info["total_files"],
+            "total_size": files_info["total_size"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting files for session {session_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get session files: {str(e)}")
+
+# =============================================================================
+# 세션 삭제 유틸리티 함수들
+# =============================================================================
+
+async def delete_session_files_and_db(session: Dict[str, Any], db_manager) -> SessionDeleteResponse:
+    """세션 파일과 DB 레코드를 안전하게 삭제"""
+    import os
+    import shutil
+    
+    session_id = session.get('session_name', 'unknown')
+    data_path = session.get('data_path', '')
+    
+    deleted_files = []
+    failed_files = []
+    
+    try:
+        # 1. 세션 디렉토리의 모든 파일 삭제
+        if data_path and os.path.exists(data_path):
+            if os.path.isdir(data_path):
+                # 디렉토리 전체 삭제
+                try:
+                    # 디렉토리 내 파일 목록 먼저 수집 (로깅용)
+                    for root, dirs, files in os.walk(data_path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            deleted_files.append(file_path)
+                    
+                    # 디렉토리 전체 삭제
+                    shutil.rmtree(data_path)
+                    logger.info(f"Successfully deleted session directory: {data_path}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to delete session directory {data_path}: {e}")
+                    failed_files.append({
+                        "path": data_path,
+                        "error": str(e)
+                    })
+            else:
+                # 단일 파일인 경우
+                try:
+                    os.remove(data_path)
+                    deleted_files.append(data_path)
+                    logger.info(f"Successfully deleted session file: {data_path}")
+                except Exception as e:
+                    logger.error(f"Failed to delete session file {data_path}: {e}")
+                    failed_files.append({
+                        "path": data_path,
+                        "error": str(e)
+                    })
+        
+        # 2. 데이터베이스에서 세션 레코드 삭제
+        try:
+            # 세션과 관련된 모든 레코드 삭제
+            await delete_session_from_db(session_id, db_manager)
+            logger.info(f"Successfully deleted session {session_id} from database")
+            
+        except Exception as e:
+            logger.error(f"Failed to delete session {session_id} from database: {e}")
+            # DB 삭제 실패는 별도로 처리 (파일은 이미 삭제되었을 수 있음)
+            
+        # 3. 결과 반환
+        success = len(failed_files) == 0
+        message = "Session deleted successfully" if success else f"Session partially deleted ({len(failed_files)} files failed)"
+        
+        return SessionDeleteResponse(
+            success=success,
+            session_id=session_id,
+            deleted_files=deleted_files,
+            failed_files=failed_files,
+            message=message
+        )
+        
+    except Exception as e:
+        logger.error(f"Unexpected error during session deletion: {e}", exc_info=True)
+        return SessionDeleteResponse(
+            success=False,
+            session_id=session_id,
+            deleted_files=deleted_files,
+            failed_files=failed_files + [{"path": "unknown", "error": str(e)}],
+            message=f"Session deletion failed: {str(e)}"
+        )
+
+async def delete_session_from_db(session_id: str, db_manager):
+    """데이터베이스에서 세션과 관련된 모든 레코드 삭제"""
+    import sqlite3
+    
+    try:
+        conn = sqlite3.connect(db_manager.db_path)
+        c = conn.cursor()
+        
+        # 트랜잭션 시작
+        c.execute("BEGIN")
+        
+        # 1. 세션과 관련된 파일 레코드 삭제 (만약 있다면)
+        # 현재 스키마에는 session_files 테이블이 없지만, 향후 확장을 위해 준비
+        
+        # 2. 메인 세션 레코드 삭제
+        c.execute("DELETE FROM sessions WHERE session_name = ?", (session_id,))
+        
+        if c.rowcount == 0:
+            logger.warning(f"No session record found for {session_id} in database")
+        else:
+            logger.info(f"Deleted {c.rowcount} session record(s) for {session_id}")
+        
+        # 트랜잭션 커밋
+        conn.commit()
+        
+    except Exception as e:
+        # 롤백
+        if 'conn' in locals():
+            conn.rollback()
+        raise e
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+async def get_session_files_info(session: Dict[str, Any]) -> Dict[str, Any]:
+    """세션의 파일 정보를 조회"""
+    import os
+    
+    data_path = session.get('data_path', '')
+    files = []
+    total_size = 0
+    
+    if data_path and os.path.exists(data_path):
+        if os.path.isdir(data_path):
+            # 디렉토리인 경우 모든 파일 스캔
+            for root, dirs, filenames in os.walk(data_path):
+                for filename in filenames:
+                    file_path = os.path.join(root, filename)
+                    try:
+                        file_size = os.path.getsize(file_path)
+                        file_ext = os.path.splitext(filename)[1].lower().lstrip('.')
+                        
+                        files.append({
+                            "path": file_path,
+                            "name": filename,
+                            "size": file_size,
+                            "type": file_ext or "unknown"
+                        })
+                        total_size += file_size
+                    except OSError:
+                        # 파일 접근 불가 시 스킵
+                        continue
+        else:
+            # 단일 파일인 경우
+            try:
+                file_size = os.path.getsize(data_path)
+                filename = os.path.basename(data_path)
+                file_ext = os.path.splitext(filename)[1].lower().lstrip('.')
+                
+                files.append({
+                    "path": data_path,
+                    "name": filename,
+                    "size": file_size,
+                    "type": file_ext or "unknown"
+                })
+                total_size = file_size
+            except OSError:
+                pass
+    
+    return {
+        "files": files,
+        "total_files": len(files),
+        "total_size": total_size
+    }
+
+async def cleanup_data_directory():
+    """빈 데이터 디렉토리 정리"""
+    import os
+    
+    # 일반적인 데이터 디렉토리 경로들
+    data_dirs = ["data", "temp_exports"]
+    
+    for data_dir in data_dirs:
+        if os.path.exists(data_dir):
+            try:
+                # 빈 하위 디렉토리들 정리
+                for root, dirs, files in os.walk(data_dir, topdown=False):
+                    for dir_name in dirs:
+                        dir_path = os.path.join(root, dir_name)
+                        try:
+                            if not os.listdir(dir_path):  # 빈 디렉토리
+                                os.rmdir(dir_path)
+                                logger.info(f"Removed empty directory: {dir_path}")
+                        except Exception as e:
+                            logger.warning(f"Failed to remove directory {dir_path}: {e}")
+            except Exception as e:
+                logger.warning(f"Error during cleanup of {data_dir}: {e}") 

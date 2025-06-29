@@ -321,6 +321,10 @@ export class CommunicationManager {
       await this.apiService.initializeStream();
       console.log('[CommunicationManager] Stream initialized');
 
+      // 2.1. 스트리밍 시작 (Phase 2: 자동 스트리밍)
+      await this.apiService.startStreaming();
+      console.log('[CommunicationManager] Streaming started');
+
       // 3. 서버 WebSocket 준비 대기 (3초)
       console.log('[CommunicationManager] Waiting for server WebSocket to be ready...');
       await new Promise(resolve => setTimeout(resolve, 3000));

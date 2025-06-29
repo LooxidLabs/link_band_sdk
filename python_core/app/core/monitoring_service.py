@@ -191,9 +191,15 @@ class MonitoringService:
         try:
             logger.debug("Collecting system metrics...")
             # 시스템 메트릭
+            memory = psutil.virtual_memory()
+            process = psutil.Process()
+            process_memory_mb = process.memory_info().rss / 1024 / 1024  # MB 단위
+            
             system_metrics = {
                 'cpu_percent': psutil.cpu_percent(interval=0.1),
-                'memory_percent': psutil.virtual_memory().percent,
+                'memory_percent': memory.percent,
+                'memory_used_mb': memory.used / 1024 / 1024,  # MB 단위 추가
+                'process_memory_mb': process_memory_mb,  # 프로세스 메모리 MB 단위 추가
                 'disk_io': {
                     'read': psutil.disk_io_counters().read_bytes if psutil.disk_io_counters() else 0,
                     'write': psutil.disk_io_counters().write_bytes if psutil.disk_io_counters() else 0
@@ -468,7 +474,10 @@ class MonitoringService:
     
     async def _broadcast_monitoring_message(self, message_type: str, data: Dict[str, Any]):
         """모니터링 메시지 브로드캐스트"""
+        logger.info(f"[MONITORING_BROADCAST] Attempting to broadcast {message_type}")
+        
         if not self.ws_server:
+            logger.error(f"[MONITORING_BROADCAST] No WebSocket server available for {message_type}")
             return
         
         try:
@@ -478,14 +487,22 @@ class MonitoringService:
                 "data": data
             }
             
+            logger.info(f"[MONITORING_BROADCAST] Message prepared: {len(str(message))} chars")
+            
             # 채널별 브로드캐스트 사용 (구독한 클라이언트에게만 전송)
             if hasattr(self.ws_server, 'broadcast_to_channel'):
+                logger.info(f"[MONITORING_BROADCAST] Using broadcast_to_channel for {message_type}")
                 await self.ws_server.broadcast_to_channel(message_type, json.dumps(message))
+                logger.info(f"[MONITORING_BROADCAST] Successfully broadcasted {message_type}")
             elif hasattr(self.ws_server, 'broadcast'):
+                logger.info(f"[MONITORING_BROADCAST] Using broadcast for {message_type}")
                 await self.ws_server.broadcast(json.dumps(message))
+                logger.info(f"[MONITORING_BROADCAST] Successfully broadcasted {message_type}")
+            else:
+                logger.error(f"[MONITORING_BROADCAST] No broadcast method available on WebSocket server")
             
         except Exception as e:
-            logger.error(f"Error broadcasting monitoring message: {e}")
+            logger.error(f"[MONITORING_BROADCAST] Error broadcasting monitoring message {message_type}: {e}", exc_info=True)
     
     async def _broadcast_alert(self, alert: Alert):
         """알림 브로드캐스트"""

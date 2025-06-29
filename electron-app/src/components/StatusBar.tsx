@@ -70,8 +70,7 @@ export function StatusBar({
     accel: { value: deviceStatus?.acc_sampling_rate || 0, unit: 'Hz' },
     battery: batteryLevel,
     cpu: monitoringData.performance.cpuUsage?.toFixed(1) || 'N/A',
-    ram: monitoringData.performance.memoryUsage?.toFixed(1) || 'N/A',
-    disk: 'N/A' // 디스크 사용량은 현재 모니터링 데이터에 없음
+    ram: monitoringData.performance.memoryUsage?.toFixed(1) || 'N/A'
   };
 
   return (
@@ -137,8 +136,7 @@ export function StatusBar({
         {/* Right side - System resources */}
         <div className="flex items-center space-x-4 text-muted-foreground">
           <span className="text-foreground">CPU: {systemStats.cpu}%</span>
-          <span className="text-foreground">RAM: {systemStats.ram} MB</span>
-          <span className="text-foreground">Disk: {systemStats.disk} MB</span>
+          <span className="text-foreground">RAM: {systemStats.ram}MB</span>
           
           {/* {!isConnected && (
             <div className="text-destructive">

@@ -314,7 +314,8 @@ class LinkBandManager {
                     if (devices.length > 0) {
                         console.log('발견된 디바이스:', devices);
                         // 첫 번째 디바이스에 자동 연결
-                        this.connectToDevice(devices[0].address);
+                        // 안전을 위해 사용자가 직접 디바이스 선택
+        this.showDeviceSelection(devices);
                     }
                 }
                 break;

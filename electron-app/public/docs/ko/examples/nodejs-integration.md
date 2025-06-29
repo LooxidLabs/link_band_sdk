@@ -716,7 +716,8 @@ async function main() {
     // 디바이스 스캔 및 연결
     const devices = await app.linkBandService.scanDevices();
     if (devices.length > 0) {
-      await app.linkBandService.connectDevice(devices[0].address);
+              // 안전을 위해 사용자가 디바이스를 직접 선택하도록 변경
+        await app.showDeviceSelection(devices);
       
       // 세션 시작
       await app.startSession('test-session-' + Date.now());

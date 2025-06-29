@@ -1,78 +1,62 @@
 const WebSocket = require('ws');
 
-console.log('🔍 모니터링 시스템 디버깅 테스트 시작...');
+console.log('🔍 Detailed Monitoring Data Test');
 
-const ws = new WebSocket('ws://127.0.0.1:18765');
-
-let messageCount = 0;
-const messageTypes = new Set();
+const ws = new WebSocket('ws://localhost:18765');
 
 ws.on('open', function() {
-    console.log('✅ WebSocket 연결 성공');
-    
-    // 모니터링 관련 채널들 구독
-    const monitoringChannels = [
-        'monitoring_metrics',
-        'health_updates', 
-        'buffer_status',
-        'system_alerts',
-        'batch_status',
-        'device_events',
-        'stream_events'
-    ];
-    
-    console.log('📡 모니터링 채널 구독 시작...');
-    monitoringChannels.forEach(channel => {
-        const subscribeMessage = {
-            type: 'subscribe',
-            channel: channel
-        };
-        console.log(`   - 구독: ${channel}`);
-        ws.send(JSON.stringify(subscribeMessage));
-    });
-    
-    // 10초 후에 결과 출력
-    setTimeout(() => {
-        console.log('\\n📊 테스트 결과:');
-        console.log(`- 총 수신 메시지: ${messageCount}개`);
-        console.log(`- 수신된 메시지 타입:`, Array.from(messageTypes));
-        
-        if (messageTypes.has('monitoring_metrics')) {
-            console.log('✅ monitoring_metrics 수신됨');
-        } else {
-            console.log('❌ monitoring_metrics 수신되지 않음');
-        }
-        
-        if (messageTypes.has('device_events')) {
-            console.log('✅ device_events 수신됨');
-        } else {
-            console.log('❌ device_events 수신되지 않음');
-        }
-        
-        process.exit(0);
-    }, 10000);
+  console.log('✅ Connected to WebSocket server');
+  
+  // monitoring_metrics 채널 구독
+  ws.send(JSON.stringify({
+    type: 'subscribe',
+    channel: 'monitoring_metrics'
+  }));
+  
+  console.log('📤 Subscribed to monitoring_metrics');
 });
 
 ws.on('message', function(data) {
-    try {
-        const message = JSON.parse(data.toString());
-        messageCount++;
-        messageTypes.add(message.type);
-        
-        // 모니터링 관련 메시지만 출력
-        if (['monitoring_metrics', 'health_updates', 'buffer_status', 'system_alerts', 'batch_status', 'device_events', 'stream_events', 'subscription_confirmed'].includes(message.type)) {
-            console.log(`📨 [${message.type}] 수신:`, JSON.stringify(message, null, 2).substring(0, 200) + '...');
-        }
-        
-    } catch (error) {
-        console.log('❌ JSON 파싱 에러:', error.message);
+  try {
+    const message = JSON.parse(data);
+    
+    if (message.type === 'subscription_confirmed') {
+      console.log('✅ Subscription confirmed for channel:', message.channel);
+    } else if (message.type === 'monitoring_metrics') {
+      console.log('\n📨 Monitoring data received:');
+      console.log('Message structure:', JSON.stringify(message, null, 2));
+      
+      // 시스템 데이터 상세 분석
+      if (message.data && message.data.system) {
+        console.log('\n🖥️ System data details:');
+        console.log('- CPU:', message.data.system.cpu_percent, '%');
+        console.log('- Memory Percent:', message.data.system.memory_percent, '%');
+        console.log('- Memory Used MB:', message.data.system.memory_used_mb, 'MB');
+        console.log('- Process Memory MB:', message.data.system.process_memory_mb, 'MB');
+      }
+      
+      // 헬스 스코어 분석
+      if (message.data && message.data.health_score) {
+        console.log('\n💚 Health score details:');
+        console.log('Health score:', JSON.stringify(message.data.health_score, null, 2));
+      }
+    } else {
+      console.log('📨 Other message type:', message.type);
     }
+  } catch (e) {
+    console.log('📨 Raw message:', data.toString());
+  }
 });
 
 ws.on('error', function(error) {
-    console.log('❌ WebSocket 에러:', error.message);
+  console.log('❌ WebSocket error:', error.message);
 });
 
 ws.on('close', function() {
-    console.log('🔌 WebSocket 연결 종료');
-}); 
+  console.log('🔌 Connection closed');
+});
+
+// 10초 후 종료
+setTimeout(() => {
+  ws.close();
+}, 10000); 

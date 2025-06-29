@@ -1,61 +1,27 @@
-import React, { useEffect } from 'react';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
-import Stack from '@mui/material/Stack';
-import Button from '@mui/material/Button';
-import Box from '@mui/material/Box';
-import CircularProgress from '@mui/material/CircularProgress';
+import React, { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Separator } from './ui/separator';
+import { Progress } from './ui/progress';
 import { 
-  Power as PowerIcon,
-  Refresh as RefreshIcon,
-  PowerOff as PowerOffIcon,
-  CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
-  Computer as ServerIcon,
-  Wifi as WifiIcon,
-  Storage as DatabaseIcon,
-  Monitor as MonitorIcon,
-  Computer as CpuIcon,
-  Memory as MemoryIcon
-} from '@mui/icons-material';
+  Power, 
+  RefreshCw, 
+  PowerOff, 
+  CheckCircle, 
+  XCircle, 
+  Server, 
+  Wifi, 
+  Database, 
+  Cpu, 
+  MemoryStick,
+  Activity,
+  Loader2,
+  Settings
+} from 'lucide-react';
 import { useSystemStatus, useSystemActions } from '../hooks/useSystemManager';
 import { useSystemStore } from '../stores/core/SystemStore';
-
-// DeviceManagerModule과 동일한 공통 스타일 정의
-const commonStyles = {
-  typography: {
-    fontSize: 12,
-    fontWeight: 'normal',
-  },
-  chip: {
-    height: 24,
-    fontSize: 12,
-  },
-  divider: {
-    margin: '8px 0',
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    marginBottom: '4px',
-  },
-  button: {
-    fontSize: 12,
-    padding: '6px 12px',
-    minWidth: 'unset',
-    height: 32,
-    textTransform: 'none' as const,
-  },
-  statusContainer: {
-    padding: '12px',
-    borderRadius: '8px',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    border: '1px solid rgba(255, 255, 255, 0.1)',
-  },
-};
+import { engineApi } from '../api/engine';
 
 const EngineModule: React.FC = () => {
   const {
@@ -72,20 +38,40 @@ const EngineModule: React.FC = () => {
   const monitoringData = useSystemStore(state => state.monitoring);
   const connectionState = useSystemStore(state => state.connection);
 
+  // 스트리밍 상태 자동 감지 (Phase 2)
+  const [autoStreamingStatus, setAutoStreamingStatus] = useState<any>(null);
+
   // 모니터링 데이터 변경 감지
   useEffect(() => {
     console.log('[EngineModule] Monitoring data updated:', monitoringData);
   }, [monitoringData]);
 
-  // SystemStore의 모니터링 데이터만 사용
-  const effectiveMonitoringData = monitoringData;
+  // 자동 스트리밍 상태 주기적 업데이트
+  useEffect(() => {
+    if (!isInitialized || !connectionState.api) return;
+
+    const fetchAutoStreamingStatus = async () => {
+      try {
+        const status = await engineApi.getAutoStreamingStatus();
+        setAutoStreamingStatus(status);
+      } catch (error) {
+        console.error('[EngineModule] Failed to fetch auto streaming status:', error);
+      }
+    };
+
+    // 초기 로드
+    fetchAutoStreamingStatus();
+
+    // 5초마다 업데이트
+    const interval = setInterval(fetchAutoStreamingStatus, 5000);
+    return () => clearInterval(interval);
+  }, [isInitialized, connectionState.api]);
 
   const getSystemStatusInfo = () => {
     if (isInitializing) {
       return {
-        title: 'System Initializing...',
-        color: 'warning' as const,
-        icon: <CircularProgress size={20} />,
+        title: 'System Initializing',
+        status: 'loading',
         description: 'Connecting to Python server and setting up communication channels'
       };
     }
@@ -93,8 +79,7 @@ const EngineModule: React.FC = () => {
     if (isInitialized && connectionState.api && connectionState.websocket) {
       return {
         title: 'System Running',
-        color: 'success' as const,
-        icon: <CheckCircleIcon />,
+        status: 'connected',
         description: 'All systems operational - monitoring active'
       };
     }
@@ -102,321 +87,447 @@ const EngineModule: React.FC = () => {
     if (initializationError) {
       return {
         title: 'System Error',
-        color: 'error' as const,
-        icon: <ErrorIcon />,
+        status: 'error',
         description: `Error: ${initializationError}`
       };
     }
     
     return {
       title: 'System Offline',
-      color: 'default' as const,
-      icon: <PowerOffIcon />,
+      status: 'disconnected',
       description: 'Python server not detected - click Initialize to start'
     };
   };
 
+  // Overall Status 계산 (WebSocket + API + Streaming 상태 고려)
+  const getOverallConnectionStatus = () => {
+    const hasWebSocket = connectionState.websocket;
+    const hasApi = connectionState.api;
+    const hasStreaming = autoStreamingStatus?.is_streaming || streamingStatus.isStreaming;
+    
+    if (hasWebSocket && hasApi && hasStreaming) {
+      return {
+        status: 'healthy',
+        label: 'All Systems Operational',
+        color: 'green'
+      };
+    } else if (hasWebSocket && hasApi) {
+      return {
+        status: 'ready',
+        label: 'Ready - Awaiting Stream',
+        color: 'blue'
+      };
+    } else if (hasWebSocket || hasApi) {
+      return {
+        status: 'degraded',
+        label: 'Degraded',
+        color: 'yellow'
+      };
+    } else {
+      return {
+        status: 'offline',
+        label: 'Offline',
+        color: 'red'
+      };
+    }
+  };
+
   const systemStatus = getSystemStatusInfo();
+  const overallStatus = getOverallConnectionStatus();
 
   return (
-    <Card sx={{ background: 'rgba(40,44,52,0.95)', borderRadius: 4, boxShadow: 6 }}>
-      <CardContent sx={{ '&:last-child': { paddingBottom: 2 } }}>
-        {/* 시스템 상태 헤더 */}
-        <Typography sx={commonStyles.sectionTitle}>System Status</Typography>
-        <Box sx={commonStyles.statusContainer} mb={2}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Box sx={{ 
-                color: systemStatus.color === 'success' ? '#10b981' : 
-                       systemStatus.color === 'warning' ? '#f59e0b' : 
-                       systemStatus.color === 'error' ? '#ef4444' : '#6b7280' 
-              }}>
-                {systemStatus.icon}
-              </Box>
-              <Box>
-                <Typography variant="h6" sx={{ 
-                  fontSize: 16, 
-                  fontWeight: 'bold', 
-                  mb: 0.5,
-                  color: systemStatus.color === 'success' ? '#10b981' : 
-                         systemStatus.color === 'warning' ? '#f59e0b' : 
-                         systemStatus.color === 'error' ? '#ef4444' : '#6b7280'
-                }}>
-                  {systemStatus.title}
-                </Typography>
-                <Typography variant="body2" sx={{ 
-                  fontSize: 12, 
-                  color: '#888',
-                  maxWidth: '400px'
-                }}>
-                  {systemStatus.description}
-                </Typography>
-              </Box>
-            </Stack>
-            
-            {/* 시스템 제어 버튼들 */}
-            <Stack direction="row" spacing={1}>
-              {!isInitialized && !isInitializing && (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  size="small"
-                  onClick={initialize}
-                  startIcon={<PowerIcon />}
-                  sx={commonStyles.button}
-                >
-                  Initialize
-                </Button>
-              )}
-              
-              {isInitialized && (
-                <>
+    <div className="h-full overflow-auto">
+      <Card className="bg-card flex flex-col m-6">
+        <CardHeader className="flex-shrink-0">
+          <CardTitle className="flex items-center gap-2 text-foreground">
+            <Settings className="w-5 h-5" />
+            Engine Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* System Status */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-semibold text-foreground">System Status</h3>
+              <div className="flex gap-2">
+                {!isInitialized && !isInitializing && (
                   <Button
-                    variant="contained"
-                    color="warning"
-                    size="small"
-                    onClick={restart}
-                    startIcon={<RefreshIcon />}
-                    sx={commonStyles.button}
+                    variant="default"
+                    size="sm"
+                    onClick={initialize}
+                    className="bg-green-600 hover:bg-green-700"
                   >
-                    Restart
+                    <Power className="w-4 h-4 mr-1" />
+                    Initialize
                   </Button>
-                  
+                )}
+                
+                {isInitialized && (
+                  <>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={restart}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Restart
+                    </Button>
+                    
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={shutdown}
+                      className="bg-red-800 hover:bg-red-900 border-red-700"
+                    >
+                      <PowerOff className="w-4 h-4 mr-1" />
+                      Shutdown
+                    </Button>
+                  </>
+                )}
+                
+                {initializationError && (
                   <Button
-                    variant="contained"
-                    color="error"
-                    size="small"
-                    onClick={shutdown}
-                    startIcon={<PowerOffIcon />}
-                    sx={commonStyles.button}
+                    variant="outline"
+                    size="sm"
+                    onClick={clearError}
                   >
-                    Shutdown
+                    Clear Error
                   </Button>
-                </>
-              )}
-              
-              {initializationError && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  onClick={clearError}
-                  sx={commonStyles.button}
-                >
-                  Clear Error
-                </Button>
-              )}
-            </Stack>
-          </Stack>
-        </Box>
-
-        {/* 시스템이 초기화된 경우에만 모니터링 정보 표시 */}
-        {isInitialized && (
-          <>
-            <Divider sx={commonStyles.divider} />
+                )}
+              </div>
+            </div>
             
-            {/* 연결 상태 */}
-            <Typography sx={commonStyles.sectionTitle}>Connection Status</Typography>
-            <Stack direction="row" spacing={1} mb={2} flexWrap="wrap" useFlexGap>
-              <Chip
-                icon={<WifiIcon />}
-                label={`WebSocket: ${connectionState.websocket ? 'Connected' : 'Disconnected'}`}
-                color={connectionState.websocket ? 'success' : 'error'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                icon={<ServerIcon />}
-                label={`API: ${connectionState.api ? 'Connected' : 'Disconnected'}`}
-                color={connectionState.api ? 'success' : 'error'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`Status: ${connectionState.overall}`}
-                color={connectionState.overall === 'healthy' ? 'success' : 
-                       connectionState.overall === 'degraded' ? 'warning' : 'error'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-            </Stack>
+            <div className="bg-muted rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <div className="flex items-center gap-2">
+                  {systemStatus.status === 'loading' && (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                      <Badge variant="secondary">Initializing</Badge>
+                    </>
+                  )}
+                  {systemStatus.status === 'connected' && (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                        Running
+                      </Badge>
+                    </>
+                  )}
+                  {systemStatus.status === 'error' && (
+                    <>
+                      <XCircle className="w-4 h-4 text-red-500" />
+                      <Badge variant="destructive">Error</Badge>
+                    </>
+                  )}
+                  {systemStatus.status === 'disconnected' && (
+                    <>
+                      <PowerOff className="w-4 h-4 text-gray-500" />
+                      <Badge variant="secondary">Offline</Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-start">
+                <span className="text-sm text-muted-foreground">Description</span>
+                <span className="text-sm font-medium text-right max-w-xs">{systemStatus.description}</span>
+              </div>
+            </div>
+          </div>
 
-            <Divider sx={commonStyles.divider} />
+          <Separator />
 
-            {/* 디바이스 상태 */}
-            <Typography sx={commonStyles.sectionTitle}>Device Status</Typography>
-            <Stack direction="row" spacing={1} mb={2} flexWrap="wrap" useFlexGap>
-              <Chip
-                label={`Connected: ${deviceState.current?.isConnected ? 'Yes' : 'No'}`}
-                color={deviceState.current?.isConnected ? 'success' : 'error'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`Device: ${deviceState.current?.name || 'None'}`}
-                color="info"
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`Scanning: ${deviceState.isScanning ? 'Active' : 'Inactive'}`}
-                color={deviceState.isScanning ? 'warning' : 'default'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`Discovered: ${deviceState.discovered.length} devices`}
-                color="info"
-                size="small"
-                sx={commonStyles.chip}
-              />
-            </Stack>
+          {/* Connection Status */}
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold text-foreground">Connection Status</h3>
+            <div className="bg-muted rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">WebSocket</span>
+                <div className="flex items-center gap-2">
+                  {connectionState.websocket ? (
+                    <>
+                      <Wifi className="w-4 h-4 text-green-500" />
+                      <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                        Connected
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="w-4 h-4 text-red-500" />
+                      <Badge variant="destructive">Disconnected</Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">API Server</span>
+                <div className="flex items-center gap-2">
+                  {connectionState.api ? (
+                    <>
+                      <Server className="w-4 h-4 text-green-500" />
+                      <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                        Connected
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <Server className="w-4 h-4 text-red-500" />
+                      <Badge variant="destructive">Disconnected</Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Streaming Status</span>
+                <div className="flex items-center gap-2">
+                  {(autoStreamingStatus?.is_streaming || streamingStatus.isStreaming) ? (
+                    <>
+                      <Activity className="w-4 h-4 text-green-500" />
+                      <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                        Active
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="w-4 h-4 text-gray-500" />
+                      <Badge variant="secondary">Inactive</Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Overall Status</span>
+                <div className="flex items-center gap-2">
+                  {overallStatus.status === 'healthy' ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                        {overallStatus.label}
+                      </Badge>
+                    </>
+                  ) : overallStatus.status === 'ready' ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-blue-500" />
+                      <Badge variant="default" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+                        {overallStatus.label}
+                      </Badge>
+                    </>
+                  ) : overallStatus.status === 'degraded' ? (
+                    <>
+                      <Activity className="w-4 h-4 text-yellow-500" />
+                      <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
+                        {overallStatus.label}
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 text-red-500" />
+                      <Badge variant="destructive">{overallStatus.label}</Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
 
-            <Divider sx={commonStyles.divider} />
+          <Separator />
 
-            {/* 스트리밍 상태 */}
-            <Typography sx={commonStyles.sectionTitle}>Streaming Status</Typography>
-            <Stack direction="row" spacing={1} mb={2} flexWrap="wrap" useFlexGap>
-              <Chip
-                label={`Streaming: ${streamingStatus.isStreaming ? 'Active' : 'Inactive'}`}
-                color={streamingStatus.isStreaming ? 'success' : 'default'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`EEG Data: ${streamingStatus.dataCount.eeg} packets`}
-                color="info"
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`PPG Data: ${streamingStatus.dataCount.ppg} packets`}
-                color="info"
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`ACC Data: ${streamingStatus.dataCount.acc} packets`}
-                color="info"
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                label={`Battery Data: ${streamingStatus.dataCount.battery} packets`}
-                color="info"
-                size="small"
-                sx={commonStyles.chip}
-              />
-            </Stack>
+          {/* Device Status */}
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold text-foreground">Device Status</h3>
+            <div className="bg-muted rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Connected</span>
+                <span className="text-sm font-medium">{deviceState.current?.isConnected ? 'Yes' : 'No'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Device Name</span>
+                <span className="text-sm font-medium">{deviceState.current?.name || 'None'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Scanning</span>
+                <span className="text-sm font-medium">{deviceState.isScanning ? 'Active' : 'Inactive'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Discovered Devices</span>
+                <span className="text-sm font-medium">{deviceState.discovered.length}</span>
+              </div>
+            </div>
+          </div>
 
-            <Divider sx={commonStyles.divider} />
+          <Separator />
 
-            {/* 레코딩 상태 */}
-            <Typography sx={commonStyles.sectionTitle}>Recording Status</Typography>
-            <Stack direction="row" spacing={1} mb={2} flexWrap="wrap" useFlexGap>
-              <Chip
-                icon={<DatabaseIcon />}
-                label={`Recording: ${recordingStatus.isRecording ? 'Active' : 'Inactive'}`}
-                color={recordingStatus.isRecording ? 'success' : 'default'}
-                size="small"
-                sx={commonStyles.chip}
-              />
+          {/* Streaming Status */}
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold text-foreground">Streaming Status</h3>
+            <div className="bg-muted rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Streaming Active</span>
+                <div className="flex items-center gap-2">
+                  {streamingStatus.isStreaming ? (
+                    <>
+                      <Activity className="w-4 h-4 text-green-500" />
+                      <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                        Active
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="w-4 h-4 text-gray-500" />
+                      <Badge variant="secondary">Inactive</Badge>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">EEG Packets</span>
+                <span className="text-sm font-medium">{streamingStatus.dataCount.eeg}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">PPG Packets</span>
+                <span className="text-sm font-medium">{streamingStatus.dataCount.ppg}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">ACC Packets</span>
+                <span className="text-sm font-medium">{streamingStatus.dataCount.acc}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Battery Packets</span>
+                <span className="text-sm font-medium">{streamingStatus.dataCount.battery}</span>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Recording Status */}
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold text-foreground">Recording Status</h3>
+            <div className="bg-muted rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Recording Active</span>
+                <div className="flex items-center gap-2">
+                  {recordingStatus.isRecording ? (
+                    <>
+                      <Database className="w-4 h-4 text-red-500" />
+                      <Badge variant="destructive">Recording</Badge>
+                    </>
+                  ) : (
+                    <>
+                      <Database className="w-4 h-4 text-gray-500" />
+                      <Badge variant="secondary">Inactive</Badge>
+                    </>
+                  )}
+                </div>
+              </div>
               {recordingStatus.sessionId && (
-                <Chip
-                  label={`Session: ${recordingStatus.sessionId}`}
-                  color="info"
-                  size="small"
-                  sx={commonStyles.chip}
-                />
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Session ID</span>
+                  <span className="text-sm font-mono">{recordingStatus.sessionId}</span>
+                </div>
               )}
               {recordingStatus.duration > 0 && (
-                <Chip
-                  label={`Duration: ${Math.floor(recordingStatus.duration / 1000)}s`}
-                  color="info"
-                  size="small"
-                  sx={commonStyles.chip}
-                />
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Duration</span>
+                  <span className="text-sm font-medium">{Math.floor(recordingStatus.duration / 1000)}s</span>
+                </div>
               )}
-            </Stack>
+            </div>
+          </div>
 
-            <Divider sx={commonStyles.divider} />
+          <Separator />
 
-            {/* 모니터링 데이터 */}
-            <Typography sx={commonStyles.sectionTitle}>System Monitoring</Typography>
-            <Stack direction="row" spacing={1} mb={1} flexWrap="wrap" useFlexGap>
-              <Chip
-                icon={<MonitorIcon />}
-                label={`Health Score: ${effectiveMonitoringData.systemHealth}/100`}
-                color={effectiveMonitoringData.systemHealth >= 90 ? 'success' :   // excellent (90+)
-                       effectiveMonitoringData.systemHealth >= 75 ? 'success' :   // good (75-89)
-                       effectiveMonitoringData.systemHealth >= 60 ? 'warning' :   // fair (60-74)
-                       effectiveMonitoringData.systemHealth >= 40 ? 'error' :     // poor (40-59)
-                       'error'}                                                   // critical (<40)
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                icon={<CpuIcon />}
-                label={`CPU: ${effectiveMonitoringData.performance.cpuUsage.toFixed(1)}%`}
-                color={effectiveMonitoringData.performance.cpuUsage < 70 ? 'success' : 
-                       effectiveMonitoringData.performance.cpuUsage < 85 ? 'warning' : 'error'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-              <Chip
-                icon={<MemoryIcon />}
-                label={`Memory: ${effectiveMonitoringData.performance.memoryUsage.toFixed(1)}%`}
-                color={effectiveMonitoringData.performance.memoryUsage < 70 ? 'success' : 
-                       effectiveMonitoringData.performance.memoryUsage < 85 ? 'warning' : 'error'}
-                size="small"
-                sx={commonStyles.chip}
-              />
-            </Stack>
+          {/* System Monitoring */}
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold text-foreground">System Monitoring</h3>
+            <div className="bg-muted rounded-lg p-4 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Health Score</span>
+                <div className="flex items-center gap-2">
+                  <Progress value={monitoringData.systemHealth} className="w-16" />
+                  <span className="text-sm font-medium">{Math.round(monitoringData.systemHealth)}/100</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">CPU Usage</span>
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-blue-500" />
+                  <span className="text-sm font-medium">{monitoringData.performance.cpuUsage.toFixed(1)}%</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Memory Usage</span>
+                <div className="flex items-center gap-2">
+                  <MemoryStick className={`w-4 h-4 ${monitoringData.performance.memoryUsage <= 300 ? 'text-green-500' : 'text-red-500'}`} />
+                  <span className="text-sm font-medium">{monitoringData.performance.memoryUsage.toFixed(1)}MB</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-            {/* 알림 표시 */}
-            {monitoringData.alerts.length > 0 && (
-              <Box mt={1}>
-                <Typography sx={{ ...commonStyles.sectionTitle, color: '#f59e0b' }}>
+          {/* 알림 표시 */}
+          {monitoringData.alerts.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-foreground text-yellow-600">
                   Active Alerts ({monitoringData.alerts.length})
-                </Typography>
-                <Stack spacing={0.5}>
+                </h3>
+                <div className="space-y-2">
                   {monitoringData.alerts.slice(0, 3).map((alert) => (
-                    <Chip
-                      key={alert.id}
-                      label={`${alert.level.toUpperCase()}: ${alert.message}`}
-                      color={alert.level === 'critical' ? 'error' : 
-                             alert.level === 'error' ? 'error' :
-                             alert.level === 'warning' ? 'warning' : 'info'}
-                      size="small"
-                      sx={{ ...commonStyles.chip, width: 'fit-content' }}
-                    />
+                    <div key={alert.id} className="bg-muted rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={alert.level === 'critical' || alert.level === 'error' ? 'destructive' : 
+                                   alert.level === 'warning' ? 'secondary' : 'default'}
+                        >
+                          {alert.level.toUpperCase()}
+                        </Badge>
+                        <span className="text-sm">{alert.message}</span>
+                      </div>
+                    </div>
                   ))}
                   {monitoringData.alerts.length > 3 && (
-                    <Typography sx={{ fontSize: 11, color: '#888', mt: 0.5 }}>
-                      +{monitoringData.alerts.length - 3} more alerts
-                    </Typography>
+                    <div className="text-center">
+                      <span className="text-xs text-muted-foreground">
+                        +{monitoringData.alerts.length - 3} more alerts
+                      </span>
+                    </div>
                   )}
-                </Stack>
-              </Box>
-            )}
-          </>
-        )}
+                </div>
+              </div>
+            </>
+          )}
 
-        {/* 시스템이 오프라인일 때 도움말 */}
-        {!isInitialized && !isInitializing && (
-          <Box mt={2}>
-            <Typography sx={{ ...commonStyles.sectionTitle, color: '#888' }}>
-              Getting Started
-            </Typography>
-            <Typography sx={{ fontSize: 11, color: '#666', lineHeight: 1.4 }}>
-              1. Make sure Python server is running: <code>cd python_core && python run_server.py</code><br/>
-              2. Click "Initialize" to connect to the server<br/>
-              3. Use Link Band module to connect your device<br/>
-              4. Start streaming data and monitoring
-            </Typography>
-          </Box>
-        )}
-      </CardContent>
-    </Card>
+          {/* 시스템이 오프라인일 때 도움말 */}
+          {!isInitialized && !isInitializing && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-foreground text-gray-500">Getting Started</h3>
+                <div className="bg-muted rounded-lg p-4">
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <div>1. Make sure Python server is running: <code className="bg-background px-1 rounded">cd python_core && python run_server.py</code></div>
+                    <div>2. Click "Initialize" to connect to the server</div>
+                    <div>3. Use Link Band module to connect your device</div>
+                    <div>4. Start streaming data and monitoring</div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* 에러 표시 */}
+          {initializationError && (
+            <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive">{initializationError}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

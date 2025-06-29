@@ -634,7 +634,8 @@ async function startDataCollection() {
 
   if (devices.length > 0) {
     // 첫 번째 디바이스 연결
-    await apiClient.connectDevice(devices[0].address);
+    // User should select device manually for safety
+    await showDeviceSelectionUI(devices);
     
     // 스트리밍 시작
     await apiClient.startStreaming();

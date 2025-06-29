@@ -144,22 +144,30 @@ const DataCenter: React.FC = () => {
   const fetchAutoStreamingStatus = async () => {
     try {
       const status = await engineApi.getAutoStreamingStatus();
-      console.log('🔄 [DataCenter] Auto streaming status:', status);
+      console.log('🔄 [DataCenter] Auto streaming status received:', status);
+      console.log('🔄 [DataCenter] Raw backend response:', JSON.stringify(status, null, 2));
       setAutoStreamingStatus(status);
       
       // 스트리밍 활성화 조건: is_active가 true이고 active_sensors가 있을 때
       const isActive = status?.is_active === true && 
                       status?.active_sensors && 
                       status.active_sensors.length > 0;
-      setIsStreamingActive(isActive);
       
-      console.log('🔄 [DataCenter] Streaming active:', isActive, 'Active sensors:', status?.active_sensors);
-      console.log('🔄 [DataCenter] is_active field:', status?.is_active);
+      console.log('🔄 [DataCenter] Streaming activation check:');
+      console.log('  - is_active:', status?.is_active);
+      console.log('  - active_sensors:', status?.active_sensors);
+      console.log('  - active_sensors.length:', status?.active_sensors?.length);
+      console.log('  - Final isActive result:', isActive);
+      
+      setIsStreamingActive(isActive);
+      console.log('🔄 [DataCenter] State updated - isStreamingActive set to:', isActive);
+      
     } catch (error) {
       console.error('🔄 [DataCenter] Error fetching auto streaming status:', error);
       // API 오류 시 기본값으로 설정
       setAutoStreamingStatus(null);
       setIsStreamingActive(false);
+      console.log('🔄 [DataCenter] Error occurred - setting streaming to inactive');
     }
   };
 

@@ -65,9 +65,16 @@ const LinkBandModule: React.FC = () => {
     if (selectedDevice) {
       const device = scannedDevices.find(d => d.address === selectedDevice);
       if (device) {
-        await registerDevice(device.name, device.address);
-        setSelectedDevice(null);
-        clearScannedDevices();
+        // 사용자 확인 요청
+        const confirmed = window.confirm(
+          `Register this device?\n\nName: ${device.name}\nAddress: ${device.address}\n\nThis device will be saved for quick access.`
+        );
+        
+        if (confirmed) {
+          await registerDevice(device.name, device.address);
+          setSelectedDevice(null);
+          clearScannedDevices();
+        }
       }
     }
   };
