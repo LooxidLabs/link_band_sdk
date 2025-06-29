@@ -125,7 +125,7 @@ const store = new Store({
 
 // Define the backend API base URL (replace with your actual URL if different)
 // It's good practice to get this from an environment variable or config
-const API_BASE_URL = process.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121';
+const API_BASE_URL = process.env.VITE_LINK_ENGINE_SERVER_URL || 'http://localhost:8121';
 
 // Define a type for the backend's prepare-export response
 interface PrepareExportResponse {
@@ -210,6 +210,8 @@ function showWindow() {
 }
 
 function createWindow() {
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+  
   win = new BrowserWindow({
     width: 1280,
     height: 900,
@@ -220,8 +222,31 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
-      webSecurity: false // 외부 CSS 로드를 위해 웹 보안 비활성화
+      webSecurity: true, // Always enable web security
+      allowRunningInsecureContent: false, // Always disable insecure content
+      experimentalFeatures: false,
+      nodeIntegration: false
     },
+  });
+
+  // Configure session to allow local connections
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+          "connect-src 'self' http://localhost:* https://localhost:* ws://localhost:* wss://localhost:* " +
+          "http://127.0.0.1:* https://127.0.0.1:* ws://127.0.0.1:* wss://127.0.0.1:* " +
+          "https://*.googleapis.com https://*.firebaseapp.com https://*.firebase.google.com; " +
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+          "font-src 'self' https://fonts.gstatic.com; " +
+          "img-src 'self' data: https:; " +
+          "media-src 'self' data:;"
+        ]
+      }
+    });
   });
 
   const indexPath = path.join(__dirname, '../dist/index.html');
@@ -331,15 +356,15 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       let pythonExecutable: string;
     
       if (isDev) {
-        // Development mode - use relative paths and virtual environment python
+        // Development mode - use Python script directly to avoid PyInstaller multiprocessing issues
         pythonPath = path.join(__dirname, '../../python_core/run_server.py');
         
         // Try to use virtual environment python first - different paths for different OS
         let venvPython: string;
         if (process.platform === 'win32') {
-          venvPython = path.join(__dirname, '../../python_core/venv/Scripts/python.exe');
+          venvPython = path.join(__dirname, '../../venv/Scripts/python.exe');
         } else {
-          venvPython = path.join(__dirname, '../../python_core/venv/bin/python3');
+          venvPython = path.join(__dirname, '../../venv/bin/python3');
         }
         
         if (fs.existsSync(venvPython)) {
@@ -369,6 +394,9 @@ async function startPythonServer(): Promise<ServerControlResponse> {
             pythonExecutable = 'python3';
           }
         }
+        
+        console.log('Development mode: Using Python script:', pythonPath);
+        console.log('Python executable:', pythonExecutable);
       } else {
         // Production mode - use standalone Python server
         const resourcesPath = process.resourcesPath;
@@ -450,7 +478,7 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       return;
     }
     
-    // Make sure the standalone executable has execute permissions (macOS/Linux)
+    // Make sure the standalone executable has execute permissions (macOS/Linux) - only for production
     if (!isDev && (process.platform === 'darwin' || process.platform === 'linux')) {
       try {
         fs.chmodSync(pythonExecutable, 0o755);
@@ -770,17 +798,65 @@ app.whenReady().then(() => {
     app.dock.setIcon(dockIconPath);
   }
 
+  // 추가 보안 설정
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+  
+  // 외부 탐색 차단
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const url = new URL(details.url);
+    
+    // 허용된 도메인 목록
+    const allowedHosts = [
+              'localhost',
+      '[::1]',
+      'fonts.googleapis.com',
+      'fonts.gstatic.com'
+    ];
+    
+    if (isDev || allowedHosts.includes(url.hostname) || url.protocol === 'file:' || url.protocol === 'data:') {
+      callback({ cancel: false });
+    } else {
+      console.log(`Blocked external request to: ${details.url}`);
+      callback({ cancel: true });
+    }
+  });
+
+  // 새 창 생성 제한
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    // 개발 환경에서만 모든 권한 허용
+    if (isDev) {
+      callback(true);
+    } else {
+      // 프로덕션에서는 필요한 권한만 허용
+      const allowedPermissions = ['notifications'];
+      callback(allowedPermissions.includes(permission));
+    }
+  });
+
+  // CSP 설정 - 보안과 기능성의 균형
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+    
+    const cspPolicy = isDev 
+      ? // 개발 환경: 더 관대한 정책
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "connect-src 'self' ws://localhost:* http://localhost:* https://*; " +
+        "font-src 'self' https://fonts.gstatic.com data:; " +
+        "img-src 'self' data: blob: https:;"
+      : // 프로덕션 환경: 더 엄격한 정책
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "connect-src 'self' ws://127.0.0.1:18765 http://127.0.0.1:8121 ws://localhost:18765 http://localhost:8121; " +
+        "font-src 'self' https://fonts.gstatic.com data:; " +
+        "img-src 'self' data: blob:;";
+
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; " +
-          "script-src 'self'; " +
-          "style-src 'self' 'unsafe-inline'; " +
-          "connect-src 'self' http://127.0.0.1:8121 http://localhost:8121 ws://127.0.0.1:18765 ws://localhost:18765 ws://[::1]:18765; " +
-          "img-src 'self' data:;"
-        ]
+        'Content-Security-Policy': [cspPolicy]
       }
     });
   });

@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { useDeviceStore } from "./stores/device";
 import { useEngineStore } from "./stores/engine";
 import { useUIStore } from "./stores/uiStore";
-import { setupPythonServerEventListeners } from "./stores/pythonServerStore";
+import { useSystemManager } from "./hooks/useSystemManager";
 import { Sidebar } from './components/Sidebar';
 import { TopNavigation } from './components/TopNavigation';
 
@@ -13,6 +13,8 @@ import { ProcessedDataVisualizer } from './components/ProcessedDataVisualizer';
 import DataCenter from './components/DataCenter';
 import EngineModule from './components/EngineModule';
 import Documents from './components/Documents';
+import { SystemStatus } from './components/SystemStatus';
+import ConnectionTest from './components/ConnectionTest';
 
 function App() {
   const { 
@@ -33,19 +35,23 @@ function App() {
   } = useEngineStore();
 
   const { activeMenu } = useUIStore();
-  // const { status: pythonServerStatus } = usePythonServerStore(); // Temporarily disabled
+  
+  // 새로운 시스템 매니저 사용 (자동 초기화 활성화)
+  useSystemManager({
+    autoInitialize: true,
+    autoReconnect: true,
+    enableLogging: true
+  });
 
   const isConnected = deviceStatus?.is_connected || false;
   const batteryLevel = deviceStatus?.battery_level || 0;
 
   useEffect(() => {
     // Initialize engine and start polling on component mount
+    // WebSocket 연결은 useSystemManager에서 관리하므로 여기서는 폴링만 시작
     initEngine();
     startDevicePolling();
     startEnginePolling();
-    
-    // Setup Python server event listeners
-    setupPythonServerEventListeners();
      
     return () => {
       stopDevicePolling();
@@ -77,12 +83,28 @@ function App() {
         return <Documents />;
       default:
         return (
-          <div className="h-full flex items-center justify-center">
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold text-foreground mb-2">
+          <div className="h-full p-6">
+            <div className="max-w-4xl mx-auto">
+              <h2 className="text-2xl font-semibold text-foreground mb-6">
                 {activeMenu.charAt(0).toUpperCase() + activeMenu.slice(1)}
               </h2>
-              <p className="text-muted-foreground">This module is coming soon.</p>
+              
+              {/* 새로운 시스템 상태 컴포넌트 테스트 */}
+              <div className="mb-6">
+                <SystemStatus showDebugInfo={true} showControls={true} />
+              </div>
+              
+              {/* CommunicationManager 연결 테스트 */}
+              <div className="mb-6">
+                <ConnectionTest />
+              </div>
+              
+              <div className="text-center">
+                <p className="text-muted-foreground">This module is coming soon.</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  위의 System Status와 Connection Test는 새로운 아키텍처 테스트용입니다.
+                </p>
+              </div>
             </div>
           </div>
         );

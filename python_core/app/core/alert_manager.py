@@ -131,17 +131,29 @@ class AlertManager:
             
             # 시스템 건강 점수 체크
             if 'health_score' in metrics:
-                alert = self._check_metric_threshold(
-                    'health_score',
-                    metrics['health_score'],
-                    AlertCategory.SYSTEM,
-                    "시스템 건강 점수",
-                    "점",
-                    current_time,
-                    reverse_threshold=True  # 낮을수록 나쁨
-                )
-                if alert:
-                    alerts.append(alert)
+                health_score_data = metrics['health_score']
+                # health_score가 dict인 경우 overall_score 값 사용
+                if isinstance(health_score_data, dict) and 'overall_score' in health_score_data:
+                    health_score_value = health_score_data['overall_score']
+                elif isinstance(health_score_data, (int, float)):
+                    health_score_value = health_score_data
+                else:
+                    # 예상치 못한 형태의 데이터인 경우 건너뛰기
+                    logger.warning(f"Unexpected health_score format: {type(health_score_data)}")
+                    health_score_value = None
+                
+                if health_score_value is not None:
+                    alert = self._check_metric_threshold(
+                        'health_score',
+                        health_score_value,
+                        AlertCategory.SYSTEM,
+                        "시스템 건강 점수",
+                        "점",
+                        current_time,
+                        reverse_threshold=True  # 낮을수록 나쁨
+                    )
+                    if alert:
+                        alerts.append(alert)
             
             # 스트리밍 메트릭 체크
             if 'streaming' in metrics:

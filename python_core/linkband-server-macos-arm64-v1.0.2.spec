@@ -3,12 +3,14 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('app', 'app'), ('data', 'data'), ('database', 'database')]
 binaries = []
-hiddenimports = ['app', 'app.main', 'app.api', 'app.core', 'app.services', 'app.models', 'app.database', 'app.data', 'fastapi', 'uvicorn', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'websockets', 'websockets.server', 'websockets.protocol', 'bleak', 'numpy', 'scipy', 'scipy.signal', 'scipy.stats', 'scipy.linalg', 'scipy.sparse', 'scipy.optimize', 'scipy.integrate', 'scipy.interpolate', 'scipy.fft', 'heartpy', 'matplotlib', 'matplotlib.pyplot', 'psutil', 'sqlite3', 'json', 'datetime', 'asyncio', 'threading', 'multiprocessing', 'pathlib', 'typing', 'logging']
+hiddenimports = ['app', 'app.main', 'app.api', 'app.core', 'app.services', 'app.models', 'app.database', 'app.data', 'fastapi', 'uvicorn', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'websockets', 'websockets.server', 'websockets.protocol', 'bleak', 'numpy', 'scipy', 'scipy.signal', 'scipy.stats', 'scipy.linalg', 'scipy.sparse', 'scipy.optimize', 'scipy.integrate', 'scipy.interpolate', 'scipy.fft', 'heartpy', 'matplotlib', 'matplotlib.pyplot', 'psutil', 'sqlite3', 'json', 'datetime', 'asyncio', 'threading', 'multiprocessing', 'pathlib', 'typing', 'logging', 'mne', 'mne.io', 'mne.preprocessing', 'mne.filter']
 tmp_ret = collect_all('scipy')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('numpy')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('heartpy')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('mne')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 

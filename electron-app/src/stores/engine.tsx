@@ -183,7 +183,7 @@ class WebSocketManager {
     // Windows 특별 처리: 여러 URL 시도 (IPv6 포함)
     const urlsToTry = [
       this.url,  // 기본값: ws://127.0.0.1:18765
-      'ws://localhost:18765',
+              'ws://127.0.0.1:18765',
       'ws://[::1]:18765',  // IPv6 localhost
       'ws://0.0.0.0:18765'
     ];
@@ -658,7 +658,7 @@ export const useEngineStore = create<EngineState>((set, get) => {
     }
   };
 
-  // WebSocket 매니저 초기화
+  // WebSocket 매니저 초기화 (비활성화 - useSystemManager에서 관리)
   const wsManager = new WebSocketManager(WS_URL, handleWebSocketMessage);
 
   // WebSocket 연결 상태 변경 핸들러
@@ -841,11 +841,10 @@ export const useEngineStore = create<EngineState>((set, get) => {
             error: { ...state.error, connection: null }
           }));
 
-          // 자동 WebSocket 연결 비활성화 - 수동 연결만 허용
+          // WebSocket 자동 연결 비활성화 (useSystemManager에서 관리)
           // if (!wsManager.isConnectedPublic()) {
           //   wsManager.connect();
           // }
-          console.log('WebSocket 자동 연결 비활성화됨 - 수동 연결 필요');
         } catch (error) {
           set(state => ({
             isLoading: { ...state.isLoading, connection: false },

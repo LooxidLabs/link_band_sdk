@@ -4,11 +4,17 @@ from scipy import signal
 from scipy.signal import butter, filtfilt, welch
 import logging
 import heartpy as hp
-import mne
-from mne.time_frequency import tfr_morlet
 from collections import deque
 import time
 import asyncio
+
+# MNE 라이브러리 사용 가능 여부 확인
+try:
+    import mne
+    from mne.time_frequency import tfr_morlet
+    MNE_AVAILABLE = True
+except ImportError:
+    MNE_AVAILABLE = False
 
 # Link Band SDK 통합 로깅 사용
 from .logging_config import get_system_logger, LogTags
@@ -314,23 +320,30 @@ class SignalProcessor:
             ch1_band_powers = await loop.run_in_executor(None, lambda: self.compute_band_powers(ch1_power, frequencies))
             ch2_band_powers = await loop.run_in_executor(None, lambda: self.compute_band_powers(ch2_power, frequencies))
 
-            # Calculate EEG indices
+            # Calculate EEG indices with NaN safety
+            def safe_float(value, default=0.0):
+                try:
+                    val = float(value)
+                    return val if not (np.isnan(val) or np.isinf(val)) else default
+                except (ValueError, TypeError):
+                    return default
+            
             total_power = sum(ch1_band_powers.values())
             beta = ch1_band_powers['beta']
             alpha = ch1_band_powers['alpha']
             theta = ch1_band_powers['theta']
             gamma = ch1_band_powers['gamma']
             
-            focus_index = beta / (alpha + theta) if (alpha + theta) > 0 else 0
-            relaxation_index = alpha / (alpha + beta) if (alpha + beta) > 0 else 0
-            stress_index = (beta + gamma) / (alpha + theta) if (alpha + theta) > 0 else 0
+            focus_index = safe_float(beta / (alpha + theta) if (alpha + theta) > 0 else 0)
+            relaxation_index = safe_float(alpha / (alpha + beta) if (alpha + beta) > 0 else 0)
+            stress_index = safe_float((beta + gamma) / (alpha + theta) if (alpha + theta) > 0 else 0)
             
             left_power = ch1_band_powers['alpha']
             right_power = ch2_band_powers['alpha']
-            hemispheric_balance = (left_power - right_power) / (left_power + right_power) if (left_power + right_power) > 0 else 0
+            hemispheric_balance = safe_float((left_power - right_power) / (left_power + right_power) if (left_power + right_power) > 0 else 0)
             
-            cognitive_load = theta / alpha if alpha > 0 else 0
-            emotional_stability = (alpha + theta) / gamma if gamma > 0 else 0
+            cognitive_load = safe_float(theta / alpha if alpha > 0 else 0)
+            emotional_stability = safe_float((alpha + theta) / gamma if gamma > 0 else 0)
 
             # Prepare result
             result = {
@@ -347,14 +360,14 @@ class SignalProcessor:
                 'ch1_band_powers': ch1_band_powers,
                 'ch2_band_powers': ch2_band_powers,
                 'signal_quality': 'good' if good_quality_samples >= 1000 else 'poor',
-                'good_samples_ratio': good_quality_samples/len(ch1_data),
-                'total_power': float(total_power),
-                'focus_index': float(focus_index),
-                'relaxation_index': float(relaxation_index),
-                'stress_index': float(stress_index),
-                'hemispheric_balance': float(hemispheric_balance),
-                'cognitive_load': float(cognitive_load),
-                'emotional_stability': float(emotional_stability)
+                'good_samples_ratio': safe_float(good_quality_samples/len(ch1_data)),
+                'total_power': safe_float(total_power),
+                'focus_index': focus_index,
+                'relaxation_index': relaxation_index,
+                'stress_index': stress_index,
+                'hemispheric_balance': hemispheric_balance,
+                'cognitive_load': cognitive_load,
+                'emotional_stability': emotional_stability
             }
             
             # logger.info("EEG processing completed successfully")
@@ -419,26 +432,26 @@ class SignalProcessor:
                 filtered_ppg_downsampled = filtered_ppg_recent[::downsample_factor]
                 ppg_sqi_downsampled = ppg_sqi_recent[::downsample_factor]
 
-                # Initialize result
+                # Initialize result with safe default values
                 result = {
                     'timestamp': time.time(),
                     'filtered_ppg': filtered_ppg_downsampled.tolist(),
                     'ppg_sqi': ppg_sqi_downsampled.tolist(),
-                    'bpm': None,
-                    'sdnn': None,
-                    'rmssd': None,
+                    'bpm': 0.0,
+                    'sdnn': 0.0,
+                    'rmssd': 0.0,
                     'signal_quality': 'poor',
                     'red_mean': float(np.mean(red_data)),
                     'ir_mean': float(np.mean(ir_data)),
                     'rr_intervals': [],
-                    'pnn50': None,
-                    'sdsd': None,
-                    'hr_mad': None,
-                    'sd1': None,
-                    'sd2': None,
-                    'lf': None,
-                    'hf': None,
-                    'lf_hf': None
+                    'pnn50': 0.0,
+                    'sdsd': 0.0,
+                    'hr_mad': 0.0,
+                    'sd1': 0.0,
+                    'sd2': 0.0,
+                    'lf': 0.0,
+                    'hf': 0.0,
+                    'lf_hf': 0.0
                 }
                 
                 if good_sample_ratio >= 0.5:
@@ -446,30 +459,40 @@ class SignalProcessor:
                         filtered_ppg_good = filtered_ppg[good_mask]
                         wd, m = await loop.run_in_executor(None, lambda: hp.process(filtered_ppg_good, sample_rate=sampling_rate))
                         
-                        # Extract metrics
-                        bpm = float(m['bpm'])
-                        sdnn = float(m['sdnn'])
-                        rmssd = float(m['rmssd'])
-                        pnn50 = float(m.get('pnn50', 0)) * 100
-                        sdsd = float(m.get('sdsd', 0))
-                        hr_mad = float(m.get('hr_mad', 0))
-                        rr_intervals = wd['RR_list'].tolist() if 'RR_list' in wd else []
-                        sd1 = float(m.get('sd1', 0))
-                        sd2 = float(m.get('sd2', 0))
+                        # Extract metrics with NaN safety
+                        def safe_float(value, default=0.0):
+                            try:
+                                val = float(value)
+                                return val if not (np.isnan(val) or np.isinf(val)) else default
+                            except (ValueError, TypeError):
+                                return default
                         
-                        # Calculate LF/HF
+                        bpm = safe_float(m['bpm'])
+                        sdnn = safe_float(m['sdnn'])
+                        rmssd = safe_float(m['rmssd'])
+                        pnn50 = safe_float(m.get('pnn50', 0)) * 100
+                        sdsd = safe_float(m.get('sdsd', 0))
+                        hr_mad = safe_float(m.get('hr_mad', 0))
+                        rr_intervals = wd['RR_list'].tolist() if 'RR_list' in wd else []
+                        sd1 = safe_float(m.get('sd1', 0))
+                        sd2 = safe_float(m.get('sd2', 0))
+                        
+                        # Calculate LF/HF with safety
                         rr_cleaned = [r for r in rr_intervals if 300 <= r <= 1200]
                         if len(rr_cleaned) >= 30:
                             lf, hf, lf_hf = await loop.run_in_executor(None, lambda: self.compute_lf_hf(rr_cleaned))
+                            lf = safe_float(lf)
+                            hf = safe_float(hf)
+                            lf_hf = safe_float(lf_hf)
                         else:
                             lf, hf, lf_hf = 0.0, 0.0, 0.0
                         
-                        # Update result
+                        # Update result with validated values
                         result.update({
                             'bpm': bpm,
                             'sdnn': sdnn,
                             'rmssd': rmssd,
-                            'signal_quality': 'good',
+                            'signal_quality': 'good' if bpm > 0 else 'poor',
                             'rr_intervals': rr_intervals,
                             'pnn50': pnn50,
                             'sdsd': sdsd,
@@ -485,15 +508,17 @@ class SignalProcessor:
                         
                     except Exception as e:
                         logger.error(f"[ERROR] HeartPy processing failed: {str(e)}")
+                        # Use last good result if available, otherwise keep defaults
                         if self.last_good_ppg_result:
-                            for k in result:
-                                if k not in ['filtered_ppg', 'ppg_sqi']:
-                                    result[k] = self.last_good_ppg_result.get(k, result[k])
+                            for k in ['bpm', 'sdnn', 'rmssd', 'rr_intervals', 'pnn50', 'sdsd', 'hr_mad', 'sd1', 'sd2', 'lf', 'hf', 'lf_hf']:
+                                if k in self.last_good_ppg_result:
+                                    result[k] = self.last_good_ppg_result[k]
                 else:
+                    # Use last good result if available, otherwise keep defaults
                     if self.last_good_ppg_result:
-                        for k in result:
-                            if k not in ['filtered_ppg', 'ppg_sqi']:
-                                result[k] = self.last_good_ppg_result.get(k, result[k])
+                        for k in ['bpm', 'sdnn', 'rmssd', 'rr_intervals', 'pnn50', 'sdsd', 'hr_mad', 'sd1', 'sd2', 'lf', 'hf', 'lf_hf']:
+                            if k in self.last_good_ppg_result:
+                                result[k] = self.last_good_ppg_result[k]
                 
                 # logger.info("PPG processing completed successfully")
                 return result

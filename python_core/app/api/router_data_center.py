@@ -143,19 +143,42 @@ async def start_recording_endpoint(
     session_create: Optional[DataSessionCreate] = Body(None), # 요청 본문에서 세션 이름과 설정을 받을 수 있도록 변경
     recording_service: RecordingService = Depends(get_recording_service)
 ):
+    logger.info("=== API: /data/start-recording called ===")
+    logger.info(f"Request body: {session_create}")
+    
+    # DataRecorder 인스턴스 ID 확인
+    logger.info(f"RecordingService DataRecorder ID: {id(recording_service.data_recorder)}")
+    logger.info(f"RecordingService DataRecorder is_recording: {recording_service.data_recorder.is_recording}")
+    
+    # WebSocketServer의 DataRecorder ID도 확인
+    if recording_service.ws_server and hasattr(recording_service.ws_server, 'data_recorder'):
+        logger.info(f"WebSocketServer DataRecorder ID: {id(recording_service.ws_server.data_recorder)}")
+        logger.info(f"WebSocketServer DataRecorder is_recording: {recording_service.ws_server.data_recorder.is_recording}")
+        logger.info(f"DataRecorder instances match: {id(recording_service.data_recorder) == id(recording_service.ws_server.data_recorder)}")
+    
     session_name = session_create.session_name if session_create and session_create.session_name else None
     settings = session_create.settings if session_create and session_create.settings else None
+    
+    logger.info(f"Parsed - session_name: {session_name}")
+    logger.info(f"Parsed - settings: {settings}")
     print(f"Start recording request: session_name={session_name}")
+    
     try:
+        logger.info("Calling recording_service.start_recording...")
         result = await recording_service.start_recording(session_name=session_name, settings=settings)
-        if result.get("status") == "fail":
-            print(f"Recording start failed: {result.get('message')}")
-            raise HTTPException(status_code=400, detail=result.get("message"))
-        print(f"Recording started: {result.get('session_name')}")
+        logger.info(f"Recording service result: {result}")
+        
+        # 녹화 시작 후 다시 상태 확인
+        logger.info(f"After start_recording - RecordingService DataRecorder is_recording: {recording_service.data_recorder.is_recording}")
+        if recording_service.ws_server and hasattr(recording_service.ws_server, 'data_recorder'):
+            logger.info(f"After start_recording - WebSocketServer DataRecorder is_recording: {recording_service.ws_server.data_recorder.is_recording}")
+        
+        print(f"Recording started: {result.get('status')}")
         return result
     except Exception as e:
-        print(f"Recording start error: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"Error in start_recording_endpoint: {e}", exc_info=True)
+        print(f"Recording error: {e}")
+        return {"status": "fail", "message": f"Failed to start recording: {e}"}
 
 @router.post("/stop-recording", 
     response_model=RecordingResponse,

@@ -1,11 +1,10 @@
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Brain, Cpu, Battery, Wifi, Circle, HeartPulse, Move3d } from 'lucide-react';
-import { usePythonServerStore } from '../stores/pythonServerStore';
+import { useMonitoringData } from '../stores/core/SystemStore';
 import { useEngineStore } from '../stores/engine';
 import { useDeviceStore } from '../stores/device';
 import { useDataCenterStore } from '../stores/dataCenter';
-import { useMetricsStore } from '../stores/metrics';
 import { useEffect, useState } from 'react';
 
 interface StatusBarProps {
@@ -20,8 +19,10 @@ export function StatusBar({
   // isWebSocketConnected,
   batteryLevel 
 }: StatusBarProps) {
-  // Get Python server status
-  const { refreshStatus } = usePythonServerStore();
+  // 새로운 SystemStore에서 연결 상태 및 모니터링 데이터 가져오기
+  // const connectionStatus = useConnectionStatus();
+  const monitoringData = useMonitoringData();
+  
   // Get engine status from store
   const { engineStatus } = useEngineStore();
   
@@ -29,26 +30,9 @@ export function StatusBar({
   const deviceStatus = useDeviceStore((state) => state.deviceStatus);
   // Get recording status from DataCenter store
   const { recordingStatus, fetchRecordingStatus } = useDataCenterStore();
-  // Get system metrics for CPU, RAM, Disk
-  const { systemMetrics, startPolling: startMetricsPolling, stopPolling: stopMetricsPolling } = useMetricsStore();
   
   // State for recording duration
   const [recordingDuration, setRecordingDuration] = useState<string>('00.00 s');
-  
-  // Start metrics polling and refresh server status periodically
-  useEffect(() => {
-    startMetricsPolling();
-    
-    // Refresh server status less frequently to avoid interference
-    const interval = setInterval(() => {
-      refreshStatus();
-    }, 5000); // Refresh every 5 seconds instead of 2
-    
-    return () => {
-      clearInterval(interval);
-      stopMetricsPolling();
-    };
-  }, [refreshStatus, startMetricsPolling, stopMetricsPolling]);
 
   // Fetch recording status periodically
   useEffect(() => {
@@ -76,7 +60,7 @@ export function StatusBar({
     }
   }, [recordingStatus.is_recording, recordingStatus.start_time]);
   
-  // System status data - use Device store's sampling rates and Metrics store's system data
+  // System status data - use Device store's sampling rates and SystemStore's monitoring data
   const systemStats = {
     engine: engineStatus?.status === 'running',
     linkBand: isConnected,
@@ -85,9 +69,9 @@ export function StatusBar({
     ppg: { value: deviceStatus?.ppg_sampling_rate || 0, unit: 'Hz' },
     accel: { value: deviceStatus?.acc_sampling_rate || 0, unit: 'Hz' },
     battery: batteryLevel,
-    cpu: systemMetrics?.cpu?.toFixed(1) || 'N/A',
-    ram: systemMetrics?.ram?.toFixed(1) || 'N/A',
-    disk: systemMetrics?.disk?.toFixed(1) || 'N/A'
+    cpu: monitoringData.performance.cpuUsage?.toFixed(1) || 'N/A',
+    ram: monitoringData.performance.memoryUsage?.toFixed(1) || 'N/A',
+    disk: 'N/A' // 디스크 사용량은 현재 모니터링 데이터에 없음
   };
 
   return (

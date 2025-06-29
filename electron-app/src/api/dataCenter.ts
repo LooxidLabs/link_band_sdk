@@ -33,7 +33,7 @@ import type {
 //   end_time?: string;
 // }
 
-const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121'; // Base URL for the Python server
+const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL || 'http://localhost:8121'; // Base URL for the Python server
 const headers = {
   'Content-Type': 'application/json'
 };
@@ -46,56 +46,116 @@ const isAxiosLikeError = (error: any): error is { message: string; response?: { 
 // Helper to access exposed Electron APIs from preload.ts
 const electronApi = (window as any).electron;
 
+// 레코딩 디버깅 유틸리티 함수
+const recordingDebugLog = (message: string, data?: any) => {
+  console.log(`[RecordingDebug] [API] ${message}`, data ? data : '');
+};
+
+const recordingDebugWarn = (message: string, data?: any) => {
+  console.warn(`[RecordingDebug] [API] ⚠️ ${message}`, data ? data : '');
+};
+
+const recordingDebugError = (message: string, data?: any) => {
+  console.error(`[RecordingDebug] [API] ❌ ${message}`, data ? data : '');
+};
+
+const recordingDebugSuccess = (message: string, data?: any) => {
+  console.log(`[RecordingDebug] [API] ✅ ${message}`, data ? data : '');
+};
+
 export const getRecordingStatus = async (): Promise<RecordingStatusResponse> => {
+  recordingDebugLog('레코딩 상태 조회 HTTP 요청 시작');
+  recordingDebugLog('요청 URL:', `${API_BASE_URL}/data/recording-status`);
+  
   try {
     const response = await axios.get<RecordingStatusResponse>(`${API_BASE_URL}/data/recording-status`, { headers });
+    recordingDebugLog('HTTP 응답 수신:', {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data
+    });
+    
+    recordingDebugSuccess('레코딩 상태 조회 성공');
     return response.data;
-  } catch (error: unknown) {
-    if (isAxiosLikeError(error)) {
-      console.error('Error fetching recording status:', error.message);
-      if (error.response) {
-        console.error('Response data:', error.response.data);
-        console.error('Response status:', error.response.status);
-      }
-    } else {
-      console.error('Unexpected error fetching recording status:', error);
-    }
+  } catch (error: any) {
+    recordingDebugError('레코딩 상태 조회 HTTP 요청 실패:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    });
     throw error;
   }
 };
 
 export const startRecording = async (sessionData?: any): Promise<StartRecordingResponse> => {
+  recordingDebugLog('=== API: 레코딩 시작 HTTP 요청 ===');
+  recordingDebugLog('요청 URL:', `${API_BASE_URL}/data/start-recording`);
+  recordingDebugLog('요청 데이터:', sessionData);
+  recordingDebugLog('요청 헤더:', headers);
+  
   try {
-    const response = await axios.post<StartRecordingResponse>(`${API_BASE_URL}/data/start-recording`, sessionData || {}, { headers });
-    return response.data;
-  } catch (error: unknown) {
-    if (isAxiosLikeError(error)) {
-      console.error('Error starting recording:', error.message);
-      if (error.response) {
-        console.error('Response data:', error.response.data);
-        console.error('Response status:', error.response.status);
-      }
+    const response = await axios.post<StartRecordingResponse>(`${API_BASE_URL}/data/start-recording`, sessionData, { headers });
+    recordingDebugLog('레코딩 시작 HTTP 응답 수신:', {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data
+    });
+    
+    if (response.data.status === 'started') {
+      recordingDebugSuccess('레코딩 시작 API 성공');
     } else {
-      console.error('Unexpected error starting recording:', error);
+      recordingDebugWarn('레코딩 시작 API 응답이 예상과 다름:', response.data);
     }
+    
+    return response.data;
+  } catch (error: any) {
+    recordingDebugError('레코딩 시작 HTTP 요청 실패:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        data: error.config?.data
+      }
+    });
     throw error;
   }
 };
 
 export const stopRecording = async (): Promise<StopRecordingResponse> => {
+  recordingDebugLog('=== API: 레코딩 중지 HTTP 요청 ===');
+  recordingDebugLog('요청 URL:', `${API_BASE_URL}/data/stop-recording`);
+  recordingDebugLog('요청 헤더:', headers);
+  
   try {
     const response = await axios.post<StopRecordingResponse>(`${API_BASE_URL}/data/stop-recording`, {}, { headers });
-    return response.data;
-  } catch (error: unknown) {
-    if (isAxiosLikeError(error)) {
-      console.error('Error stopping recording:', error.message);
-      if (error.response) {
-        console.error('Response data:', error.response.data);
-        console.error('Response status:', error.response.status);
-      }
+    recordingDebugLog('레코딩 중지 HTTP 응답 수신:', {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data
+    });
+    
+    if (response.data.status === 'stopped') {
+      recordingDebugSuccess('레코딩 중지 API 성공');
     } else {
-      console.error('Unexpected error stopping recording:', error);
+      recordingDebugWarn('레코딩 중지 API 응답이 예상과 다름:', response.data);
     }
+    
+    return response.data;
+  } catch (error: any) {
+    recordingDebugError('레코딩 중지 HTTP 요청 실패:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method
+      }
+    });
     throw error;
   }
 };

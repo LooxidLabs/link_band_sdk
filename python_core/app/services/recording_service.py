@@ -16,7 +16,12 @@ class RecordingService:
         self.ws_server = ws_server
         self.is_device_connected_cached = None
         self.last_device_check_time = 0
-        logger.info(f"RecordingService initialized. DataRecorder: {self.data_recorder}, DBManager: {self.db}, WSServer: {self.ws_server}")
+        logger.info(f"RecordingService initialized. DataRecorder ID: {id(self.data_recorder)}, DBManager: {self.db}, WSServer: {self.ws_server}")
+        if self.ws_server and hasattr(self.ws_server, 'data_recorder'):
+            logger.info(f"WebSocketServer DataRecorder ID: {id(self.ws_server.data_recorder)}")
+            logger.info(f"DataRecorder instances match: {id(self.data_recorder) == id(self.ws_server.data_recorder)}")
+        else:
+            logger.warning("WebSocketServer or its data_recorder not available during RecordingService init")
 
     async def get_device_status_with_timeout(self, timeout=2):
         # Implementation of get_device_status_with_timeout method
@@ -81,15 +86,28 @@ class RecordingService:
             return {"status": "fail", "message": "Recording is already in progress."}
         
         try:
-            # Extract export_path from settings
+            # Extract export_path and data_format from settings
             export_path = None
+            data_format = None
             if settings and isinstance(settings, dict):
                 export_path = settings.get('export_path')
+                data_format = settings.get('data_format', 'JSON')  # 기본값 JSON
             
-            logger.info(f"Calling DataRecorder.start_recording() with session_name: {session_name}, export_path: {export_path}")
-            result = self.data_recorder.start_recording(session_name=session_name, export_path=export_path)
+            logger.info(f"Calling DataRecorder.start_recording() with session_name: {session_name}, export_path: {export_path}, data_format: {data_format}")
+            result = self.data_recorder.start_recording(session_name=session_name, export_path=export_path, data_format=data_format)
             logger.info(f"DataRecorder.start_recording() returned: {result}")
             logger.info(f"start_recording: After DataRecorder.start_recording(), data_recorder.is_recording: {self.data_recorder.is_recording}") 
+            
+            # WebSocketServer의 DataRecorder 강제 동기화
+            if self.ws_server and hasattr(self.ws_server, 'data_recorder'):
+                if self.ws_server.data_recorder != self.data_recorder:
+                    logger.warning("Different DataRecorder instances detected! Replacing WebSocketServer's DataRecorder...")
+                    # WebSocketServer의 DataRecorder를 RecordingService의 DataRecorder로 완전히 교체
+                    self.ws_server.data_recorder = self.data_recorder
+                    logger.info(f"WebSocketServer DataRecorder replaced with RecordingService DataRecorder (ID: {id(self.data_recorder)})")
+                    logger.info(f"WebSocketServer DataRecorder is_recording: {self.ws_server.data_recorder.is_recording}")
+                else:
+                    logger.info("DataRecorder instances are the same, no synchronization needed")
             
             if result.get("status") == "started":
                 logger.info("Recording started successfully in DataRecorder, broadcasting WebSocket event...")
@@ -119,6 +137,17 @@ class RecordingService:
             # DataRecorder에서 녹화 중지 및 파일 저장 처리
             recorder_result = self.data_recorder.stop_recording()
             logger.info(f"DataRecorder.stop_recording() result: {recorder_result}")
+
+            # WebSocketServer의 DataRecorder 강제 동기화 (중지 시)
+            if self.ws_server and hasattr(self.ws_server, 'data_recorder'):
+                if self.ws_server.data_recorder != self.data_recorder:
+                    logger.warning("Different DataRecorder instances detected during stop! Replacing WebSocketServer's DataRecorder...")
+                    # WebSocketServer의 DataRecorder를 RecordingService의 DataRecorder로 완전히 교체
+                    self.ws_server.data_recorder = self.data_recorder
+                    logger.info(f"WebSocketServer DataRecorder replaced on stop (ID: {id(self.data_recorder)})")
+                    logger.info(f"WebSocketServer DataRecorder is_recording: {self.ws_server.data_recorder.is_recording}")
+                else:
+                    logger.info("DataRecorder instances are the same during stop, no synchronization needed")
 
             if recorder_result.get("status") == "stopped":
                 logger.info("Recording stopped successfully in DataRecorder.")
@@ -163,18 +192,18 @@ class RecordingService:
         return self.data_recorder.get_recording_status()
 
     def add_data(self, data_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        if not self.ws_server or not hasattr(self.ws_server, 'data_recorder') or not self.ws_server.data_recorder: # Ensure ws_server and its data_recorder exist
-            logger.error("DataRecorder not initialized via ws_server. Cannot add data.")
+        if not self.data_recorder:
+            logger.error("DataRecorder not initialized. Cannot add data.")
             return {"status": "fail", "message": "DataRecorder not initialized."}
         
-        if not self.ws_server.data_recorder.is_recording:
+        if not self.data_recorder.is_recording:
             return {
                 "status": "fail",
                 "message": "No recording is in progress."
             }
 
         try:
-            self.ws_server.data_recorder.add_data(data_type, data)
+            self.data_recorder.add_data(data_type, data)
             return {"status": "success"}
         except Exception as e:
             logger.error(f"Error in RecordingService.add_data: {e}", exc_info=True)

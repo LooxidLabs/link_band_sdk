@@ -711,7 +711,7 @@ export const useDeviceManager = create<DeviceState & {
               window.electron?.ipcRenderer?.send('show-window');
             }
             
-            // 디바이스 연결 시 engine WebSocket 자동 연결 비활성화
+            // 디바이스 연결 시 engine WebSocket 자동 연결 비활성화 (useSystemManager에서 관리)
             // setTimeout(() => {
             //   const engineStore = (window as any).engineStore;
             //   if (engineStore && engineStore.getState) {
@@ -722,7 +722,6 @@ export const useDeviceManager = create<DeviceState & {
             //     }
             //   }
             // }, 1000); // 1초 후 연결 시도
-            console.log('디바이스 연결됨 - WebSocket 자동 연결 비활성화됨');
           }
           break;
         case 'device_disconnected':
@@ -789,19 +788,16 @@ export const useDeviceManager = create<DeviceState & {
     }
   };
 
-  // Python 서버가 준비되면 WebSocket 연결 시도
+  // Python 서버가 준비되면 WebSocket 연결 시도 (비활성화 - useSystemManager에서 관리)
   if ((window as any).electron?.ipcRenderer) {
     (window as any).electron.ipcRenderer.on('python-server-ready', () => {
-      console.log('Python server is ready, but auto-connect is disabled');
-      wsManager.disconnect();
-      // 자동 연결 완전히 비활성화
+      console.log('Python server is ready, WebSocket connection managed by useSystemManager');
       // setTimeout(() => {
       //   if (!wsManager.isConnectedPublic()) {
       //     wsManager.connect();
-      //     console.log('DeviceManager WebSocket connection disabled - using engine WebSocket instead');
+      //     console.log('DeviceManager WebSocket connection attempt started');
       //   }
       // }, 2000);
-      console.log('DeviceManager WebSocket 자동 연결 비활성화됨 - 수동 연결 필요');
     });
 
     (window as any).electron.ipcRenderer.on('python-server-stopped', () => {

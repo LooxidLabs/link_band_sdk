@@ -72,7 +72,7 @@ export interface DataCenterStore extends DataCenterState {
   openFile: (filePath: string) => Promise<void>;
   copyFilePath: (file: FileInfo) => Promise<void>;
   fetchRecordingStatus: () => Promise<void>;
-  startRecording: (sessionData?: any) => Promise<void>;
+  startRecording: (sessionData?: any) => Promise<StartRecordingResponse>;
   stopRecording: () => Promise<void>;
   fetchSessions: () => Promise<void>; // Added
   exportSession: (sessionId: string) => Promise<void>; // Added (replaces handleDownload)

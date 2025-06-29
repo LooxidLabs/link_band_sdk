@@ -25,6 +25,7 @@ from .batch_processor import BatchProcessor, global_batch_processor
 from .performance_monitor import PerformanceMonitor, global_performance_monitor
 from .streaming_optimizer import StreamingOptimizer, global_streaming_optimizer, StreamPriority
 from .monitoring_service import global_monitoring_service
+from .streaming_monitor import StreamingMonitor
 
 # Link Band SDK 통합 로깅 사용
 from .logging_config import (
@@ -73,6 +74,8 @@ class WebSocketServer:
             'acc': None,
             'battery': None
         }
+        # 클라이언트별 채널 구독 정보
+        self.client_subscriptions: Dict[websockets.WebSocketServerProtocol, Set[str]] = {}
         self.device_manager = device_manager
         self.device_registry = device_registry
         self.auto_connect_task: Optional[asyncio.Task] = None
@@ -120,11 +123,17 @@ class WebSocketServer:
         self.monitoring_service = global_monitoring_service
         self.monitoring_service.set_websocket_server(self)
         
+        # 스트리밍 모니터 초기화
+        self.streaming_monitor = StreamingMonitor()
+        
         logger.info(f"WebSocketServer initialized. Host: {host}, Port: {port}. "
                     f"DataRecorder {'IS' if self.data_recorder else 'IS NOT'} configured. "
                     f"DeviceManager {'IS' if self.device_manager else 'IS NOT'} configured. "
                     f"DeviceRegistry {'IS' if self.device_registry else 'IS NOT'} configured. "
-                    f"MonitoringService {'IS' if self.monitoring_service else 'IS NOT'} configured.")
+                    f"MonitoringService {'IS' if self.monitoring_service else 'IS NOT'} configured. "
+                    f"StreamingMonitor {'IS' if self.streaming_monitor else 'IS NOT'} configured.")
+        if self.data_recorder:
+            logger.info(f"WebSocketServer DataRecorder ID: {id(self.data_recorder)}")
         self.fastapi_ready = False  # Add flag to track FastAPI readiness
 
     def setup_routes(self):
@@ -212,7 +221,8 @@ class WebSocketServer:
                 'close_timeout': 10,       # 연결 종료 타임아웃
                 'max_size': 2**20,         # 1MB 메시지 크기 제한
                 'max_queue': 32,           # 큐 크기 제한
-                'compression': None        # 압축 비활성화 (안정성 향상)
+                'compression': None,       # 압축 비활성화 (안정성 향상)
+                'family': socket.AF_INET   # IPv4 강제 사용 (IPv6 연결 방지)
             }
             
             # 플랫폼별 추가 설정
@@ -399,14 +409,53 @@ class WebSocketServer:
             # Send current device status immediately
             await self._send_current_device_status(websocket)
             logger.info("[CONNECTION_DEBUG] Initial status sent successfully.")
+            
+            logger.info(f"[CONNECTION_DEBUG] About to start message handling loop for {client_address}")
+            logger.info(f"[CONNECTION_DEBUG] WebSocket state before loop: {getattr(websocket, 'state', 'unknown')}")
+            logger.info(f"[CONNECTION_DEBUG] WebSocket closed status: {getattr(websocket, 'closed', 'unknown')}")
 
-            # Continue handling subsequent messages
-            async for message in websocket:
-                try:
-                    await self.handle_client_message(websocket, message)
-                except Exception as e:
-                    logger.error(f"Error handling message from {client_address}: {e}")
-                    # Continue processing other messages instead of breaking
+            # Continue handling subsequent messages - using recv() instead of async for
+            logger.info(f"[MESSAGE_LOOP_DEBUG] Starting message loop for {client_address}")
+            try:
+                while True:
+                    try:
+                        # Use recv() with timeout to handle messages
+                        message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                        print(f"[WEBSOCKET_MESSAGE_DEBUG] Raw message received from {client_address}: {message}")
+                        print(f"[WEBSOCKET_MESSAGE_DEBUG] Message type: {type(message)}")
+                        print(f"[WEBSOCKET_MESSAGE_DEBUG] Message length: {len(message) if hasattr(message, '__len__') else 'N/A'}")
+                        logger.info(f"[MESSAGE_LOOP_DEBUG] Raw message received from {client_address}: {message}")
+                        logger.info(f"[MESSAGE_LOOP_DEBUG] Message type: {type(message)}")
+                        logger.info(f"[MESSAGE_LOOP_DEBUG] Message length: {len(message) if hasattr(message, '__len__') else 'N/A'}")
+                        
+                        # Handle both text and binary messages
+                        if isinstance(message, bytes):
+                            logger.info(f"[MESSAGE_LOOP_DEBUG] Converting bytes message to string")
+                            message = message.decode('utf-8')
+                            logger.info(f"[MESSAGE_LOOP_DEBUG] Decoded message: {message}")
+                        
+                        try:
+                            logger.info(f"[MESSAGE_LOOP_DEBUG] About to call handle_client_message for {client_address}")
+                            await self.handle_client_message(websocket, message)
+                            logger.info(f"[MESSAGE_LOOP_DEBUG] handle_client_message completed successfully for {client_address}")
+                        except Exception as e:
+                            logger.error(f"[MESSAGE_LOOP_DEBUG] Error handling message from {client_address}: {e}")
+                            logger.error(f"[MESSAGE_LOOP_DEBUG] Exception type: {type(e)}")
+                            logger.error(f"[MESSAGE_LOOP_DEBUG] Exception details: {str(e)}", exc_info=True)
+                            # Continue processing other messages instead of breaking
+                    except asyncio.TimeoutError:
+                        # Timeout is normal, continue loop
+                        continue
+                    except websockets.exceptions.ConnectionClosed:
+                        logger.info(f"[MESSAGE_LOOP_DEBUG] WebSocket connection closed for {client_address}")
+                        break
+                    except Exception as msg_error:
+                        logger.error(f"[MESSAGE_LOOP_DEBUG] Error receiving message from {client_address}: {msg_error}")
+                        break
+            except Exception as loop_error:
+                logger.error(f"[MESSAGE_LOOP_DEBUG] Error in message loop for {client_address}: {loop_error}")
+            finally:
+                logger.info(f"[MESSAGE_LOOP_DEBUG] Message loop ended for {client_address}")
 
         except websockets.exceptions.ConnectionClosed as e:
             logger.info(f"Client connection closed from {client_address}: {e}")
@@ -635,6 +684,11 @@ class WebSocketServer:
     async def _close_client_safely(self, client):
         """Safely close a WebSocket client connection"""
         try:
+            # 클라이언트 구독 정보 정리
+            if client in self.client_subscriptions:
+                del self.client_subscriptions[client]
+                logger.info(f"[CONNECTION_DEBUG] Client subscription info cleaned up")
+                
             # Windows 호환성을 위한 closed 상태 확인
             is_closed = getattr(client, 'closed', None)
             if is_closed is None:
@@ -648,6 +702,10 @@ class WebSocketServer:
                 await client.close(code=1000, reason="Server shutdown")
         except Exception as e:
             logger.warning(f"Error closing client connection: {e}")
+            # 오류 발생 시에도 구독 정보 정리
+            if client in self.client_subscriptions:
+                del self.client_subscriptions[client]
+                logger.info(f"[CONNECTION_DEBUG] Client subscription info forcibly cleaned up after error")
 
     async def _auto_connect_loop(self):
         """Periodically check and connect to registered devices"""
@@ -770,32 +828,116 @@ class WebSocketServer:
     async def handle_client_message(self, websocket: websockets.WebSocketServerProtocol, message: str):
         """Handle messages from clients"""
         try:
-            logger.info(f"[WEBSOCKET_DEBUG] Received raw message: {message}")
+            logger.info(f"[WEBSOCKET_DEBUG] ===== MESSAGE RECEIVED =====")
+            logger.info(f"[WEBSOCKET_DEBUG] Raw message: {message}")
+            logger.info(f"[WEBSOCKET_DEBUG] Message type: {type(message)}")
+            logger.info(f"[WEBSOCKET_DEBUG] Client address: {websocket.remote_address}")
+            
+            # Handle ping/pong first (before JSON parsing)
+            if isinstance(message, str) and message.strip() == "ping":
+                logger.info("[WEBSOCKET_DEBUG] Handling ping, sending pong")
+                await websocket.send("pong")
+                return
+            
             # Parse JSON message if it's a string
             if isinstance(message, str):
                 try:
                     data = json.loads(message)
                     logger.info(f"[WEBSOCKET_DEBUG] Parsed JSON data: {data}")
-                except json.JSONDecodeError:
-                    logger.error(f"Invalid JSON message received: {message}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"[WS_SERVER:ERROR] Invalid JSON string: {message} - Error: {e}")
+                    # Send error response to client but don't return - continue processing
+                    try:
+                        await websocket.send(json.dumps({
+                            "type": "error",
+                            "message": f"Invalid JSON format: {str(e)}",
+                            "original_message": message[:100]  # First 100 chars for debugging
+                        }))
+                    except Exception as send_error:
+                        logger.error(f"Failed to send JSON error response: {send_error}")
                     return
             else:
                 data = message
                 logger.info(f"[WEBSOCKET_DEBUG] Non-string message data: {data}")
 
-            # Handle ping/pong
-            if isinstance(data, str) and data.strip() == "ping":
-                logger.info("[WEBSOCKET_DEBUG] Handling ping, sending pong")
-                await websocket.send("pong")
-                return
-
             # Ensure data is a dictionary
             if not isinstance(data, dict):
-                logger.error(f"Invalid message format: {data}")
+                logger.error(f"[WEBSOCKET_DEBUG] Invalid message format: {data}")
                 await self.send_error_to_client(websocket, "Invalid message format: expected JSON object")
                 return
 
             message_type = data.get('type')
+            logger.info(f"[WEBSOCKET_DEBUG] Message type extracted: {message_type}")
+            
+            # Handle heartbeat messages
+            if message_type == 'heartbeat':
+                logger.info("[WEBSOCKET_DEBUG] Handling heartbeat, sending heartbeat_response")
+                await websocket.send(json.dumps({
+                    "type": "heartbeat_response",
+                    "timestamp": time.time()
+                }))
+                return
+            
+            # Handle ping messages
+            if message_type == 'ping':
+                logger.info("[WEBSOCKET_DEBUG] Handling ping, sending ping_response")
+                await websocket.send(json.dumps({
+                    "type": "ping_response",
+                    "timestamp": time.time(),
+                    "original_timestamp": data.get('timestamp')
+                }))
+                return
+            
+            # Handle subscription messages
+            if message_type == 'subscribe':
+                logger.info("[WEBSOCKET_DEBUG] ===== SUBSCRIPTION MESSAGE DETECTED =====")
+                channel = data.get('channel')
+                logger.info(f"[WEBSOCKET_DEBUG] Channel to subscribe: {channel}")
+                
+                if channel:
+                    if websocket not in self.client_subscriptions:
+                        self.client_subscriptions[websocket] = set()
+                        logger.info(f"[WEBSOCKET_DEBUG] Created new subscription set for client {websocket.remote_address}")
+                    
+                    self.client_subscriptions[websocket].add(channel)
+                    logger.info(f"[WEBSOCKET_SUBSCRIBE] Client {websocket.remote_address} subscribed to channel: {channel}")
+                    logger.info(f"[WEBSOCKET_SUBSCRIBE] Current subscriptions for this client: {self.client_subscriptions[websocket]}")
+                    logger.info(f"[WEBSOCKET_SUBSCRIBE] Total clients with subscriptions: {len(self.client_subscriptions)}")
+                    
+                    # 전체 구독 상태 디버깅
+                    logger.info(f"[WEBSOCKET_SUBSCRIBE] === FULL SUBSCRIPTION STATE ===")
+                    logger.info(f"[WEBSOCKET_SUBSCRIBE] Total clients connected: {len(self.clients)}")
+                    logger.info(f"[WEBSOCKET_SUBSCRIBE] Total clients with subscriptions: {len(self.client_subscriptions)}")
+                    for client, channels in self.client_subscriptions.items():
+                        client_addr = getattr(client, 'remote_address', 'unknown')
+                        logger.info(f"[WEBSOCKET_SUBSCRIBE] Client {client_addr}: {channels}")
+                    
+                    confirmation_message = {
+                        "type": "subscription_confirmed",
+                        "channel": channel,
+                        "timestamp": time.time()
+                    }
+                    logger.info(f"[WEBSOCKET_DEBUG] Sending confirmation: {confirmation_message}")
+                    await websocket.send(json.dumps(confirmation_message))
+                    logger.info(f"[WEBSOCKET_DEBUG] Confirmation sent successfully for channel: {channel}")
+                else:
+                    logger.warning("[WEBSOCKET_SUBSCRIBE] Subscribe message missing channel")
+                    await self.send_error_to_client(websocket, "Subscribe message missing channel")
+                return
+            
+            # Handle unsubscription messages
+            if message_type == 'unsubscribe':
+                logger.info("[WEBSOCKET_DEBUG] ===== UNSUBSCRIPTION MESSAGE DETECTED =====")
+                channel = data.get('channel')
+                if channel and websocket in self.client_subscriptions:
+                    self.client_subscriptions[websocket].discard(channel)
+                    logger.info(f"[WEBSOCKET_SUBSCRIBE] Client unsubscribed from channel: {channel}")
+                    await websocket.send(json.dumps({
+                        "type": "unsubscription_confirmed",
+                        "channel": channel,
+                        "timestamp": time.time()
+                    }))
+                return
             logger.info(f"[WEBSOCKET_DEBUG] Message type: {message_type}")
             if not message_type:
                 logger.warning("Message missing type")
@@ -1070,6 +1212,10 @@ class WebSocketServer:
     async def _cleanup_connection(self):
         """Clean up connection resources."""
         try:
+            # Stop streaming first
+            if self.is_streaming:
+                await self.stop_streaming()
+            
             # Stop battery monitoring
             await self.device_manager.stop_battery_monitoring()
             
@@ -1120,7 +1266,7 @@ class WebSocketServer:
             msg = "Cannot start streaming: Device not connected."
             logger.warning(msg)
             if websocket: await self.send_error_to_client(websocket, msg)
-            return
+            return False
 
         # Check if data acquisition is started
         if not self.device_manager._notifications_started:
@@ -1129,7 +1275,7 @@ class WebSocketServer:
                 msg = "Cannot start streaming: Failed to start data acquisition."
                 logger.warning(msg)
                 if websocket: await self.send_error_to_client(websocket, msg)
-                return
+                return False
             
             # Wait a moment for data acquisition to stabilize
             logger.info("Waiting 1 second for data acquisition to stabilize...")
@@ -1167,8 +1313,10 @@ class WebSocketServer:
 
             await self.broadcast_event(EventType.STREAM_STARTED, {"status": "streaming_started"})
             logger.info("Streaming started flag set.")
+            return True
         else:
             logger.info("Streaming is already active.")
+            return True
 
     async def stop_streaming(self):
         """Stop all streaming tasks."""
@@ -1271,29 +1419,23 @@ class WebSocketServer:
                     if processed_data_len > 0:
                         logger.debug(f"[STREAM_EEG_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
 
-                    # 디버깅을 위한 로그 추가
-                    logger.info(f"[STREAM_EEG_DEBUG] Checking recording condition: data_recorder={self.data_recorder is not None}, is_recording={self.data_recorder.is_recording if self.data_recorder else 'N/A'}")
-                    
+                    # 데이터 녹화 로직 - 클라이언트 연결과 독립적으로 실행
+                    # 레코딩 중인 경우 데이터 저장
                     if self.data_recorder and self.data_recorder.is_recording:
-                        logger.info(f"[STREAM_EEG_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
                         if eeg_buffer:
-                            for i, sample in enumerate(eeg_buffer): 
+                            for sample in eeg_buffer: 
                                 if isinstance(sample, dict):
                                     self.data_recorder.add_data(
                                         data_type=f"{device_id_for_filename}_eeg_raw",
                                         data=sample 
                                     )
-                                else:
-                                    logger.warning(f"Skipping non-dict EEG raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
                         if processed_data:
-                            for i, sample in enumerate(processed_data): 
+                            for sample in processed_data: 
                                 if isinstance(sample, dict):
                                     self.data_recorder.add_data(
                                         data_type=f"{device_id_for_filename}_eeg_processed",
                                         data=sample
                                     )
-                                else:
-                                    logger.warning(f"Skipping non-dict EEG processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
                     
                     if eeg_buffer:
                         raw_message = {
@@ -1305,6 +1447,8 @@ class WebSocketServer:
                         }
                         try:
                             await self.broadcast(json.dumps(raw_message))
+                            # StreamingMonitor에 데이터 흐름 추적 (실제 브로드캐스트 시점)
+                            self.streaming_monitor.track_data_flow('eeg', len(eeg_buffer))
                             total_samples_sent += len(eeg_buffer)
                             samples_since_last_log += len(eeg_buffer)
                             
@@ -1404,52 +1548,22 @@ class WebSocketServer:
                 
                 current_time = time.time()
                 
-                # 강화된 디버깅 로그
-                logger.info(f"[STREAM_PPG_DEBUG] === PPG Recording Check ===")
-                logger.info(f"[STREAM_PPG_DEBUG] DataRecorder object exists: {self.data_recorder is not None}")
-                if self.data_recorder:
-                    logger.info(f"[STREAM_PPG_DEBUG] DataRecorder.is_recording: {self.data_recorder.is_recording}")
-                else:
-                    logger.warning(f"[STREAM_PPG_DEBUG] DataRecorder is None!")
-                
-                raw_data_len = len(raw_data) if raw_data else 0
-                processed_data_len = len(processed_data) if processed_data else 0
-                logger.info(f"[STREAM_PPG_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
-                
-                # 레코딩 조건 상세 체크
-                recording_condition = self.data_recorder and self.data_recorder.is_recording
-                logger.info(f"[STREAM_PPG_DEBUG] Recording condition met: {recording_condition}")
-                if not recording_condition:
-                    if not self.data_recorder:
-                        logger.warning(f"[STREAM_PPG_DEBUG] Recording failed: DataRecorder is None")
-                    elif not self.data_recorder.is_recording:
-                        logger.warning(f"[STREAM_PPG_DEBUG] Recording failed: is_recording is False")
-                
-                if raw_data_len > 0:
-                    logger.debug(f"[STREAM_PPG_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
-                if processed_data_len > 0:
-                    logger.debug(f"[STREAM_PPG_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
-
+                # 레코딩 중인 경우 데이터 저장
                 if self.data_recorder and self.data_recorder.is_recording:
-                    logger.info(f"[STREAM_PPG_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
                     if raw_data:
-                        for i, sample in enumerate(raw_data):
+                        for sample in raw_data:
                             if isinstance(sample, dict):
                                 self.data_recorder.add_data(
                                     data_type=f"{device_id_for_filename}_ppg_raw",
                                     data=sample
                                 )
-                            else:
-                                logger.warning(f"Skipping non-dict PPG raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
                     if processed_data:
-                        for i, sample in enumerate(processed_data):
+                        for sample in processed_data:
                             if isinstance(sample, dict):
                                 self.data_recorder.add_data(
                                     data_type=f"{device_id_for_filename}_ppg_processed",
                                     data=sample
                                 )
-                            else:
-                                logger.warning(f"Skipping non-dict PPG processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
                 
                 if raw_data:
                     raw_message = {
@@ -1461,6 +1575,8 @@ class WebSocketServer:
                     }
                     try:
                         await self.broadcast(json.dumps(raw_message))
+                        # StreamingMonitor에 데이터 흐름 추적 (실제 브로드캐스트 시점)
+                        self.streaming_monitor.track_data_flow('ppg', len(raw_data))
                         total_samples_sent += len(raw_data)
                         samples_since_last_log += len(raw_data)
                         
@@ -1549,52 +1665,22 @@ class WebSocketServer:
                 
                 current_time = time.time()
                 
-                # 강화된 디버깅 로그 (PPG와 동일)
-                logger.info(f"[STREAM_ACC_DEBUG] === ACC Recording Check ===")
-                logger.info(f"[STREAM_ACC_DEBUG] DataRecorder object exists: {self.data_recorder is not None}")
-                if self.data_recorder:
-                    logger.info(f"[STREAM_ACC_DEBUG] DataRecorder.is_recording: {self.data_recorder.is_recording}")
-                else:
-                    logger.warning(f"[STREAM_ACC_DEBUG] DataRecorder is None!")
-                
-                raw_data_len = len(raw_data) if raw_data else 0
-                processed_data_len = len(processed_data) if processed_data else 0
-                logger.info(f"[STREAM_ACC_DEBUG] Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
-                
-                # 레코딩 조건 상세 체크
-                recording_condition = self.data_recorder and self.data_recorder.is_recording
-                logger.info(f"[STREAM_ACC_DEBUG] Recording condition met: {recording_condition}")
-                if not recording_condition:
-                    if not self.data_recorder:
-                        logger.warning(f"[STREAM_ACC_DEBUG] Recording failed: DataRecorder is None")
-                    elif not self.data_recorder.is_recording:
-                        logger.warning(f"[STREAM_ACC_DEBUG] Recording failed: is_recording is False")
-
-                if raw_data_len > 0:
-                    logger.debug(f"[STREAM_ACC_DEBUG] First raw sample type: {type(raw_data[0]) if raw_data_len > 0 else 'N/A'}")
-                if processed_data_len > 0:
-                    logger.debug(f"[STREAM_ACC_DEBUG] First processed sample type: {type(processed_data[0]) if processed_data_len > 0 else 'N/A'}")
-
+                # 레코딩 중인 경우 데이터 저장
                 if self.data_recorder and self.data_recorder.is_recording:
-                    logger.info(f"[STREAM_ACC_DEBUG] REC_CONDITION_MET. Raw data len: {raw_data_len}, Processed data len: {processed_data_len}")
                     if raw_data:
-                        for i, sample in enumerate(raw_data):
+                        for sample in raw_data:
                             if isinstance(sample, dict):
                                 self.data_recorder.add_data(
                                     data_type=f"{device_id_for_filename}_acc_raw",
                                     data=sample
                                 )
-                            else:
-                                logger.warning(f"Skipping non-dict ACC raw sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
                     if processed_data:
-                        for i, sample in enumerate(processed_data):
+                        for sample in processed_data:
                             if isinstance(sample, dict):
                                 self.data_recorder.add_data(
                                     data_type=f"{device_id_for_filename}_acc_processed",
                                     data=sample
                                 )
-                            else:
-                                logger.warning(f"Skipping non-dict ACC processed sample at index {i} for recording. Type: {type(sample)}, Data: {str(sample)[:100]}...")
                 
                 if raw_data:
                     raw_message = {
@@ -1606,6 +1692,8 @@ class WebSocketServer:
                     }
                     try:
                         await self.broadcast(json.dumps(raw_message))
+                        # StreamingMonitor에 데이터 흐름 추적 (실제 브로드캐스트 시점)
+                        self.streaming_monitor.track_data_flow('acc', len(raw_data))
                         total_samples_sent += len(raw_data)
                         samples_since_last_log += len(raw_data)
                         
@@ -1765,6 +1853,9 @@ class WebSocketServer:
                     
                     try:
                         await self.broadcast(json.dumps(message))
+                        # StreamingMonitor에 데이터 흐름 추적 (실제 브로드캐스트 시점)
+                        data_count = len(display_battery_data) if display_battery_data else 1  # 배터리 레벨 업데이트도 카운트
+                        self.streaming_monitor.track_data_flow('bat', data_count)
                         total_samples_sent += len(display_battery_data) # display_battery_data 사용
                         samples_since_last_log += len(display_battery_data) # display_battery_data 사용
                         
@@ -1838,26 +1929,18 @@ class WebSocketServer:
 
     async def broadcast(self, message: str):
         """Broadcast message to all connected clients with improved error handling for Windows."""
-        logger.info(f"[BROADCAST_DEBUG] Attempting to broadcast message to {len(self.clients)} clients")
-        logger.info(f"[BROADCAST_DEBUG] Message preview: {message[:200]}...")
-        
         if not self.clients:
-            logger.info("[BROADCAST_DEBUG] No clients connected, skipping broadcast")
             return
 
         # 연결이 끊어진 클라이언트를 추적
         disconnected_clients = set()
-        successful_sends = 0
         
         # 클라이언트 목록을 복사하여 순회 중 수정 방지
         clients_copy = list(self.clients)
 
         # 각 클라이언트에 메시지 전송 시도
-        for i, client in enumerate(clients_copy):
+        for client in clients_copy:
             try:
-                client_addr = getattr(client, 'remote_address', 'unknown')
-                logger.info(f"[BROADCAST_DEBUG] Sending to client {i+1}/{len(clients_copy)} ({client_addr})")
-                
                 # 클라이언트 연결 상태 확인 (Windows 호환성)
                 is_closed = getattr(client, 'closed', None)
                 if is_closed is None:
@@ -1869,49 +1952,86 @@ class WebSocketServer:
                         is_closed = False
                 
                 if is_closed:
-                    logger.info(f"[BROADCAST_DEBUG] Client {client_addr} is already closed")
                     disconnected_clients.add(client)
                     continue
                     
                 # 메시지 전송 (타임아웃 설정)
                 await asyncio.wait_for(client.send(message), timeout=1.0)
-                successful_sends += 1
-                logger.info(f"[BROADCAST_DEBUG] Successfully sent to client {client_addr}")
                 
-            except websockets.exceptions.ConnectionClosed:
-                logger.info(f"[BROADCAST_DEBUG] Connection closed for client {getattr(client, 'remote_address', 'unknown')}")
-                disconnected_clients.add(client)
-            except ConnectionResetError:
-                # Windows-specific: Handle connection reset errors
-                logger.info(f"[BROADCAST_DEBUG] Connection reset for client {getattr(client, 'remote_address', 'unknown')}")
+            except (websockets.exceptions.ConnectionClosed, ConnectionResetError, asyncio.TimeoutError):
                 disconnected_clients.add(client)
             except OSError as e:
                 # Handle Windows-specific OS errors
                 if e.errno in (995, 10054):  # WinError 995 or WSAECONNRESET
-                    logger.info(f"[BROADCAST_DEBUG] Windows connection error for client {getattr(client, 'remote_address', 'unknown')}: {e}")
-                else:
-                    logger.warning(f"[BROADCAST_DEBUG] OS error sending to client {getattr(client, 'remote_address', 'unknown')}: {e}")
-                disconnected_clients.add(client)
-            except asyncio.TimeoutError:
-                logger.warning(f"[BROADCAST_DEBUG] Timeout sending message to client {getattr(client, 'remote_address', 'unknown')}")
+                    pass
                 disconnected_clients.add(client)
             except Exception as e:
-                logger.error(f"[BROADCAST_DEBUG] Error sending message to client {getattr(client, 'remote_address', 'unknown')}: {e}", exc_info=True)
+                logger.error(f"Error sending message to client: {e}")
                 disconnected_clients.add(client)
 
         # 연결이 끊어진 클라이언트 정리
         for client in disconnected_clients:
             if client in self.clients:
                 self.clients.remove(client)
+                # 구독 정보도 정리
+                if client in self.client_subscriptions:
+                    del self.client_subscriptions[client]
                 try:
                     if not getattr(client, 'closed', False):
                         await client.close(code=1000, reason="Client cleanup")
-                except Exception as e:
-                    logger.debug(f"Error closing client: {e}")
+                except Exception:
+                    pass
 
-        logger.info(f"[BROADCAST_DEBUG] Broadcast complete: {successful_sends}/{len(clients_copy)} successful sends")
-        if disconnected_clients:
-            logger.info(f"[BROADCAST_DEBUG] Cleaned up {len(disconnected_clients)} disconnected clients. Active clients: {len(self.clients)}")
+    async def broadcast_to_channel(self, channel: str, message: str):
+        """특정 채널을 구독한 클라이언트에게만 브로드캐스트"""
+        if not self.clients:
+            return
+
+        # 해당 채널을 구독한 클라이언트 찾기
+        subscribed_clients = []
+        
+        for client in self.clients:
+            if client in self.client_subscriptions:
+                client_channels = self.client_subscriptions[client]
+                if channel in client_channels:
+                    subscribed_clients.append(client)
+
+        if not subscribed_clients:
+            return
+        
+        disconnected_clients = []
+        
+        for client in subscribed_clients:
+            try:
+                # Check if client is still connected
+                is_closed = getattr(client, 'closed', None)
+                if is_closed is None:
+                    try:
+                        state = getattr(client, 'state', None)
+                        is_closed = state is None or state != 1
+                    except:
+                        is_closed = False
+                
+                if is_closed:
+                    disconnected_clients.append(client)
+                    continue
+                
+                await asyncio.wait_for(client.send(message), timeout=1.0)
+                
+            except (websockets.exceptions.ConnectionClosed, Exception):
+                disconnected_clients.append(client)
+        
+        # Remove disconnected clients
+        for client in disconnected_clients:
+            if client in self.clients:
+                self.clients.remove(client)
+            if client in self.client_subscriptions:
+                del self.client_subscriptions[client]
+            try:
+                if not getattr(client, 'closed', False):
+                    await client.close(code=1000, reason="Client cleanup")
+            except Exception:
+                pass
 
     def get_connected_clients(self) -> int:
         """Get the number of currently connected clients"""
@@ -1968,14 +2088,21 @@ class WebSocketServer:
         return self.device_registry.is_device_registered(address)
 
     def get_stream_status(self):
+        # StreamingMonitor 기반 자동 감지 상태 사용
+        streaming_status = self.streaming_monitor.calculate_streaming_status()
+        
         return {
-            "status": "running" if self.is_streaming else "stopped",
+            "status": "running" if streaming_status['is_active'] else "stopped",
             "clients_connected": self.get_connected_clients(),
-            "eeg_sampling_rate": self.device_sampling_stats.get('eeg', {}).get('samples_per_sec', 0),
-            "ppg_sampling_rate": self.device_sampling_stats.get('ppg', {}).get('samples_per_sec', 0),
-            "acc_sampling_rate": self.device_sampling_stats.get('acc', {}).get('samples_per_sec', 0),
-            "bat_sampling_rate": self.device_sampling_stats.get('bat', {}).get('samples_per_sec', 0),
-            "bat_level": self.device_sampling_stats.get('bat_level', 0)
+            "eeg_sampling_rate": streaming_status['sensor_details']['eeg']['sampling_rate'],
+            "ppg_sampling_rate": streaming_status['sensor_details']['ppg']['sampling_rate'],
+            "acc_sampling_rate": streaming_status['sensor_details']['acc']['sampling_rate'],
+            "bat_sampling_rate": streaming_status['sensor_details']['bat']['sampling_rate'],
+            "bat_level": self.device_sampling_stats.get('bat_level', 0),
+            # 추가 정보
+            "active_sensors": streaming_status['active_sensors'],
+            "data_flow_health": streaming_status['data_flow_health'],
+            "auto_detected": True  # 자동 감지됨을 표시
         }
 
     def health_check(self):
@@ -2168,8 +2295,8 @@ class WebSocketServer:
             self.stream_engine.remove_data_callback(data_callback)
             await self.handle_client_disconnect(client_id)
 
-    async def handle_client_message(self, client_id: str, data: Dict[str, Any]):
-        """Handle incoming messages from clients."""
+    async def handle_fastapi_client_message(self, client_id: str, data: Dict[str, Any]):
+        """Handle incoming messages from FastAPI clients."""
         try:
             # 데이터 타입 확인 및 변환
             if isinstance(data, str):
@@ -2402,6 +2529,9 @@ class WebSocketServer:
         
         # WebSocket 브로드캐스트
         if eeg_buffer:
+            # StreamingMonitor에 데이터 흐름 추적
+            self.streaming_monitor.track_data_flow('eeg', len(eeg_buffer))
+            
             raw_message = {
                 "type": "raw_data",
                 "sensor_type": "eeg",
@@ -2462,6 +2592,9 @@ class WebSocketServer:
         
         # WebSocket 브로드캐스트
         if raw_data:
+            # StreamingMonitor에 데이터 흐름 추적
+            self.streaming_monitor.track_data_flow('ppg', len(raw_data))
+            
             raw_message = {
                 "type": "raw_data",
                 "sensor_type": "ppg",
@@ -2522,6 +2655,9 @@ class WebSocketServer:
         
         # WebSocket 브로드캐스트
         if raw_data:
+            # StreamingMonitor에 데이터 흐름 추적
+            self.streaming_monitor.track_data_flow('acc', len(raw_data))
+            
             raw_message = {
                 "type": "raw_data",
                 "sensor_type": "acc",
@@ -2575,6 +2711,10 @@ class WebSocketServer:
         
         # WebSocket 브로드캐스트
         if battery_buffer or battery_level is not None:
+            # StreamingMonitor에 데이터 흐름 추적
+            data_count = len(battery_buffer) if battery_buffer else 1  # 배터리 레벨 업데이트도 카운트
+            self.streaming_monitor.track_data_flow('bat', data_count)
+            
             battery_message = {
                 "type": "battery_data",
                 "sensor_type": "battery",

@@ -111,8 +111,12 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
 
   // Recording Actions with updated error handling
   fetchRecordingStatus: async () => {
+    recordingDebugLog('레코딩 상태 조회 API 호출 시작');
+    
     try {
       const statusData = await dataCenterApi.getRecordingStatus();
+      recordingDebugLog('레코딩 상태 조회 성공:', statusData);
+      
       set({ 
         recordingStatus: {
           is_recording: statusData.is_recording,
@@ -120,21 +124,30 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
           start_time: statusData.start_time,
         }
       });
+      
+      recordingDebugSuccess('레코딩 상태 업데이트 완료');
     } catch (error: any) {
       const detail = error?.response?.data?.detail;
       const msg = error?.response?.data?.message;
       const consoleErrorMessage = detail || msg || error?.message || 'Unknown error';
-      console.error("Failed to fetch recording status:", consoleErrorMessage);
+      recordingDebugError('레코딩 상태 조회 실패:', consoleErrorMessage);
+      
       // Optionally, show a non-intrusive snackbar for fetch errors, or handle silently
       // useUiStore.getState().showSnackbar({ message: `Recording status fetch failed: ${consoleErrorMessage}`, severity: 'warning' });
     }
   },
 
   startRecording: async (sessionData?: any) => {
+    recordingDebugLog('=== Store: 레코딩 시작 요청 ===', sessionData);
+    
     set({ loading: true });
     try {
+      recordingDebugLog('dataCenterApi.startRecording 호출 시작');
       const responseData = await dataCenterApi.startRecording(sessionData);
+      recordingDebugLog('dataCenterApi.startRecording 응답:', responseData);
+      
       if (responseData.status === 'started') {
+        recordingDebugSuccess('레코딩 시작 성공');
         useUiStore.getState().showSnackbar({ message: 'Recording started successfully', severity: 'success' });
         set({ 
           recordingStatus: {
@@ -144,25 +157,42 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
           },
           loading: false
         });
+        recordingDebugLog('Store 상태 업데이트 완료');
+        return responseData; // 결과 반환
       } else {
         const errorMessage = responseData.message || 'Failed to start recording (server reported not started)';
+        recordingDebugWarn('레코딩 시작 실패 - 서버 응답:', responseData);
         useUiStore.getState().showSnackbar({ message: errorMessage, severity: 'warning' });
         set({ loading: false });
+        return responseData; // 에러 상태도 반환
       }
     } catch (error: any) {
       const detail = error?.response?.data?.detail;
       const msg = error?.response?.data?.message;
       const errorMessage = detail || msg || error?.message || 'Failed to start recording';
+      recordingDebugError('레코딩 시작 중 오류:', {
+        error: errorMessage,
+        detail,
+        msg,
+        fullError: error
+      });
       useUiStore.getState().showSnackbar({ message: errorMessage, severity: 'error' });
       set({ loading: false });
+      throw error; // 에러는 그대로 throw
     }
   },
 
   stopRecording: async () => {
+    recordingDebugLog('=== Store: 레코딩 중지 요청 ===');
+    
     set({ loading: true });
     try {
+      recordingDebugLog('dataCenterApi.stopRecording 호출 시작');
       const responseData = await dataCenterApi.stopRecording();
+      recordingDebugLog('dataCenterApi.stopRecording 응답:', responseData);
+      
       if (responseData.status === 'stopped') {
+        recordingDebugSuccess('레코딩 중지 성공');
         useUiStore.getState().showSnackbar({ message: 'Recording stopped successfully', severity: 'success' });
         set({ 
           recordingStatus: {
@@ -172,16 +202,20 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
           },
           loading: false
         });
+        recordingDebugLog('Store 상태 업데이트 완료');
         
         // 레코딩 중지 후 세션 리스트 새로고침
         try {
+          recordingDebugLog('세션 리스트 새로고침 시작');
           const sessionsData = await dataCenterApi.getSessions();
+          recordingDebugLog('세션 리스트 새로고침 성공:', sessionsData);
           set({ sessions: sessionsData });
         } catch (sessionError) {
-          console.error('Failed to refresh sessions after recording stop:', sessionError);
+          recordingDebugError('세션 리스트 새로고침 실패:', sessionError);
         }
       } else {
         const errorMessage = responseData.message || 'Failed to stop recording (server reported not stopped)';
+        recordingDebugWarn('레코딩 중지 실패 - 서버 응답:', responseData);
         useUiStore.getState().showSnackbar({ message: errorMessage, severity: 'warning' });
         set({ loading: false });
       }
@@ -189,6 +223,12 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
       const detail = error?.response?.data?.detail;
       const msg = error?.response?.data?.message;
       const errorMessage = detail || msg || error?.message || 'Failed to stop recording';
+      recordingDebugError('레코딩 중지 중 오류:', {
+        error: errorMessage,
+        detail,
+        msg,
+        fullError: error
+      });
       useUiStore.getState().showSnackbar({ message: errorMessage, severity: 'error' });
       set({ loading: false });
     }
@@ -300,3 +340,20 @@ export const useDataCenterStore = create<DataCenterStore>((set) => ({
     }
   },
 })); 
+
+// 레코딩 디버깅 유틸리티 함수
+const recordingDebugLog = (message: string, data?: any) => {
+  console.log(`[RecordingDebug] [Store] ${message}`, data ? data : '');
+};
+
+const recordingDebugWarn = (message: string, data?: any) => {
+  console.warn(`[RecordingDebug] [Store] ⚠️ ${message}`, data ? data : '');
+};
+
+const recordingDebugError = (message: string, data?: any) => {
+  console.error(`[RecordingDebug] [Store] ❌ ${message}`, data ? data : '');
+};
+
+const recordingDebugSuccess = (message: string, data?: any) => {
+  console.log(`[RecordingDebug] [Store] ✅ ${message}`, data ? data : '');
+}; 

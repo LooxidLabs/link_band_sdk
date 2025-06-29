@@ -37,3 +37,7 @@ class StreamService:
     def update_stream_stats(self, sensor_type: str, samples_per_sec: int, total_samples: int):
         """Update streaming statistics"""
         self._engine.update_stream_stats(sensor_type, samples_per_sec, total_samples)
+    
+    async def get_auto_streaming_status(self) -> Dict[str, Any]:
+        """Get automatically detected streaming status from StreamingMonitor"""
+        return await self._engine.get_auto_streaming_status()

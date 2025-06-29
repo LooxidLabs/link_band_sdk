@@ -78,6 +78,21 @@ class StreamEngine:
     
     def get_device_info(self) -> Dict[str, Any]:
         return self.ws_server.get_device_info()
+    
+    async def get_auto_streaming_status(self) -> Dict[str, Any]:
+        """Get automatically detected streaming status from StreamingMonitor"""
+        if hasattr(self.ws_server, 'streaming_monitor'):
+            return self.ws_server.streaming_monitor.get_detailed_status()
+        else:
+            # Fallback to basic status if StreamingMonitor is not available
+            logger.warning("StreamingMonitor not available, falling back to basic status")
+            return {
+                "is_active": False,
+                "active_sensors": [],
+                "sensor_details": {},
+                "data_flow_health": "unknown",
+                "error": "StreamingMonitor not initialized"
+            }
 
     async def start(self):
         """Start the streaming engine."""

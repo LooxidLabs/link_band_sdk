@@ -63,8 +63,8 @@ def start_server():
         logger.info(f"[{LogTags.SERVER}:{LogTags.START}] Link Band SDK 서버 시작 중...")
         logger.info(f"[{LogTags.SERVER}] PYTHONPATH 설정: {Path(__file__).parent.absolute()}")
         logger.info(f"[{LogTags.SERVER}] FastAPI, Uvicorn 설치 확인됨")
-        logger.info(f"[{LogTags.SERVER}] 서버 주소: http://0.0.0.0:8121")
-        logger.info(f"[{LogTags.SERVER}] WebSocket: ws://localhost:18765")
+        logger.info(f"[{LogTags.SERVER}] 서버 주소: http://localhost:8121")
+        logger.info(f"[{LogTags.SERVER}] WebSocket: ws://127.0.0.1:18765")
         logger.info(f"[{LogTags.SERVER}] API 문서: http://localhost:8121/docs")
         logger.info(f"[{LogTags.SERVER}] " + "-" * 50)
         
@@ -73,7 +73,7 @@ def start_server():
             cmd = [
                 sys.executable, "-m", "uvicorn",
                 "app.main:app",
-                "--host", "0.0.0.0",
+                "--host", "localhost",
                 "--port", "8121",
                 "--reload"
             ]
@@ -94,8 +94,8 @@ def start_server():
         print("기본 print 모드로 실행")
         
         print("Link Band SDK 서버 시작 중...")
-        print("서버 주소: http://0.0.0.0:8121")
-        print("WebSocket: ws://localhost:18765")
+        print("서버 주소: http://localhost:8121")
+        print("WebSocket: ws://127.0.0.1:18765")
         print("API 문서: http://localhost:8121/docs")
         print("-" * 50)
         
@@ -103,7 +103,7 @@ def start_server():
             cmd = [
                 sys.executable, "-m", "uvicorn",
                 "app.main:app",
-                "--host", "0.0.0.0",
+                "--host", "localhost",
                 "--port", "8121",
                 "--reload"
             ]

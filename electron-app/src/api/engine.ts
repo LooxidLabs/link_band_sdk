@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { EngineStatus, ConnectionInfoResponse } from '../types/engine';
 
-const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121';
+const API_BASE_URL = import.meta.env.VITE_LINK_ENGINE_SERVER_URL || 'http://localhost:8121';
 
 // Custom type guard for Axios errors
 const isAxiosError = (error: unknown): error is { message: string; response?: { data: unknown; status: number } } => {
@@ -20,6 +20,28 @@ export const engineApi = {
     } catch (error: unknown) {
       if (isAxiosError(error)) {
         console.error('Error fetching engine status:', error.message);
+        if (error.response) {
+          console.error('Response data:', error.response.data);
+          console.error('Response status:', error.response.status);
+        }
+      } else {
+        console.error('Unexpected error:', error);
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * Get auto-detected streaming status (Phase 2 - Auto Streaming Detection)
+   * @returns Promise<any>
+   */
+  getAutoStreamingStatus: async (): Promise<any> => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stream/auto-status`);
+      return response.data;
+    } catch (error: unknown) {
+      if (isAxiosError(error)) {
+        console.error('Error fetching auto streaming status:', error.message);
         if (error.response) {
           console.error('Response data:', error.response.data);
           console.error('Response status:', error.response.status);

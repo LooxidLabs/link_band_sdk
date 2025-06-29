@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import JSONResponse
-from app.api import router_device, router_engine, router_metrics, router_data_center, router_monitoring, router_history
+from app.api import router_device, router_stream, router_metrics, router_data_center, router_monitoring, router_history
 from app.services.stream_service import StreamService
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.integrated_optimizer import IntegratedOptimizer
@@ -180,7 +180,7 @@ app.add_middleware(
 )
 
 app.include_router(router_device.router, prefix="/device", tags=["device"])
-app.include_router(router_engine.router, prefix="/stream", tags=["engine"])
+app.include_router(router_stream.router, prefix="/stream", tags=["engine"])
 app.include_router(router_metrics.router, prefix="/metrics", tags=["metrics"])
 app.include_router(router_data_center.router, prefix="/data", tags=["data_center"])
 app.include_router(router_monitoring.router, prefix="/monitoring", tags=["monitoring"])
@@ -193,7 +193,7 @@ async def startup_event():
     logger.info(f"[{LogTags.SERVER}:{LogTags.START}] Starting Link Band SDK Server")
 
     # Ensure required ports are available
-    ws_host = "127.0.0.1"  # IPv4 명시적 사용 (Windows 호환성)
+    ws_host = "localhost"  # localhost 사용으로 통일
     ws_port = 18765
     logger.info(f"[{LogTags.SERVER}] [1/8] Checking port availability...")
     if not ensure_port_available(ws_port):
@@ -222,12 +222,7 @@ async def startup_event():
     app.state.data_recorder = data_recorder_instance
     logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [5/8] Data recorder initialized")
 
-    logger.info(f"[{LogTags.SERVER}] [6/8] Initializing recording service...")
-    recording_service_instance = RecordingService(data_recorder_instance, db_manager_instance)
-    app.state.recording_service = recording_service_instance
-    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [6/8] Recording service initialized")
-
-    logger.info(f"[{LogTags.SERVER}] [7/8] Initializing WebSocket server...")
+    logger.info(f"[{LogTags.SERVER}] [6/8] Initializing WebSocket server...")
     ws_server_instance = WebSocketServer(
         host=ws_host,
         port=ws_port,
@@ -236,7 +231,13 @@ async def startup_event():
         device_registry=device_registry_instance
     )
     app.state.ws_server = ws_server_instance
-    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [7/8] WebSocket server initialized")
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [6/8] WebSocket server initialized")
+
+    logger.info(f"[{LogTags.SERVER}] [7/8] Initializing recording service...")
+    # WebSocketServer의 data_recorder를 사용하여 RecordingService 초기화
+    recording_service_instance = RecordingService(ws_server_instance.data_recorder, db_manager_instance, ws_server_instance)
+    app.state.recording_service = recording_service_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [7/8] Recording service initialized")
 
     logger.info(f"[{LogTags.SERVER}] [8/8] Starting WebSocket server...")
     await ws_server_instance.start()
@@ -262,6 +263,20 @@ async def startup_event():
     app.state.device_service = device_service_instance
     logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Device service initialized")
 
+    # Start monitoring service
+    logger.info(f"[{LogTags.SERVER}] Starting monitoring service...")
+    try:
+        from app.core.monitoring_service import global_monitoring_service
+        global_monitoring_service.set_websocket_server(ws_server_instance)
+        await global_monitoring_service.start_monitoring()
+        app.state.monitoring_service = global_monitoring_service
+        logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Monitoring service started")
+    except Exception as e:
+        logger.error(f"[{LogTags.SERVER}:{LogTags.ERROR}] Failed to start monitoring service: {e}")
+        logger.info(f"[{LogTags.SERVER}] Continuing without monitoring service...")
+        import traceback
+        logger.error(f"[{LogTags.SERVER}:{LogTags.ERROR}] Monitoring service error details: {traceback.format_exc()}")
+
     logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Link Band SDK Server startup completed successfully")
 
 @app.on_event("shutdown")
@@ -269,7 +284,13 @@ async def shutdown_event():
     logger.info(f"[{LogTags.SERVER}:{LogTags.STOP}] Shutting down Link Band SDK Server...")
     
     try:
-        # Stop WebSocket server first
+        # Stop monitoring service first
+        if hasattr(app.state, 'monitoring_service'):
+            logger.info(f"[{LogTags.SERVER}] Stopping monitoring service...")
+            await app.state.monitoring_service.stop_monitoring()
+            logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] Monitoring service stopped")
+        
+        # Stop WebSocket server
         if hasattr(app.state, 'ws_server'):
             logger.info(f"[{LogTags.SERVER}] Stopping WebSocket server...")
             await app.state.ws_server.shutdown()

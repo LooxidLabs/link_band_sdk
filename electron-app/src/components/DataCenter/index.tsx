@@ -2,14 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
-import { Play, Square, FolderOpen, Copy, Database, AlertCircle } from 'lucide-react';
+import { Play, Square, FolderOpen, Copy, Database, AlertCircle, RefreshCw } from 'lucide-react';
 import { RecordingStatus } from './RecordingStatus.tsx';
 import { SessionList } from './SessionList.tsx';
 import { SearchFilters } from './SearchFilters.tsx';
 import { RecordingOptions, type RecordingOptionsData } from './RecordingOptions.tsx';
 import { useDataCenterStore } from '../../stores/dataCenter';
 import { useDeviceStore } from '../../stores/device';
-import { usePythonServerStore } from '../../stores/pythonServerStore';
+import { useSystemStatus } from '../../hooks/useSystemManager';
+import { engineApi } from '../../api/engine';
 import type { FileInfo } from '../../types/data-center';
 
 // electronApi 타입 정의
@@ -35,8 +36,12 @@ const DataCenter: React.FC = () => {
   const deviceStatus = useDeviceStore((state) => state.deviceStatus);
   const isDeviceConnected = deviceStatus?.is_connected || false;
   
-  // Get Engine status from Python server store
-  const { isRunning: isEngineStarted } = usePythonServerStore();
+  // Get Engine status from SystemStore (same as TopNavigation)
+  const { isInitialized: isEngineStarted } = useSystemStatus();
+
+  // Auto-detected streaming status (Phase 2)
+  const [autoStreamingStatus, setAutoStreamingStatus] = useState<any>(null);
+  const [isStreamingActive, setIsStreamingActive] = useState(false);
 
   // Recording Options 상태 관리
   const getDefaultSessionName = () => {
@@ -119,7 +124,7 @@ const DataCenter: React.FC = () => {
         }
       } else {
         console.log('Electron API not available, using fallback validation');
-        // Electron API가 없는 경우 기본 검증
+        // Electron API가 없는 경우 기본 검증 - 경로가 있으면 유효한 것으로 간주
         setPathValidation({
           isValid: true,
           error: ''
@@ -127,10 +132,34 @@ const DataCenter: React.FC = () => {
       }
     } catch (error) {
       console.error('Error validating path:', error);
+      // 오류가 발생해도 경로가 설정되어 있으면 유효한 것으로 간주
       setPathValidation({
-        isValid: false,
-        error: 'Error occurred while validating path.'
+        isValid: true,
+        error: ''
       });
+    }
+  };
+
+  // Auto-detected streaming status 확인 함수 (Phase 2)
+  const fetchAutoStreamingStatus = async () => {
+    try {
+      const status = await engineApi.getAutoStreamingStatus();
+      console.log('🔄 [DataCenter] Auto streaming status:', status);
+      setAutoStreamingStatus(status);
+      
+      // 스트리밍 활성화 조건: is_active가 true이고 active_sensors가 있을 때
+      const isActive = status?.is_active === true && 
+                      status?.active_sensors && 
+                      status.active_sensors.length > 0;
+      setIsStreamingActive(isActive);
+      
+      console.log('🔄 [DataCenter] Streaming active:', isActive, 'Active sensors:', status?.active_sensors);
+      console.log('🔄 [DataCenter] is_active field:', status?.is_active);
+    } catch (error) {
+      console.error('🔄 [DataCenter] Error fetching auto streaming status:', error);
+      // API 오류 시 기본값으로 설정
+      setAutoStreamingStatus(null);
+      setIsStreamingActive(false);
     }
   };
 
@@ -146,6 +175,11 @@ const DataCenter: React.FC = () => {
               ...prev,
               exportPath: defaultPath.path
             }));
+            // 기본 경로가 설정되면 즉시 유효한 것으로 간주
+            setPathValidation({
+              isValid: true,
+              error: ''
+            });
             validatePath(defaultPath.path);
           } else {
             console.warn('Failed to get default export path, using fallback');
@@ -154,25 +188,44 @@ const DataCenter: React.FC = () => {
               ...prev,
               exportPath: fallbackPath
             }));
-            validatePath(fallbackPath);
+            // 폴백 경로도 즉시 유효한 것으로 간주
+            setPathValidation({
+              isValid: true,
+              error: ''
+            });
           }
         } catch (error) {
-          console.error('Error getting default export path:', error);
+          console.error('Error initializing export path:', error);
           const fallbackPath = '~/Documents/LinkBand Exports';
           setRecordingOptions(prev => ({
             ...prev,
             exportPath: fallbackPath
           }));
-          validatePath(fallbackPath);
+          // 오류 발생 시에도 폴백 경로를 유효한 것으로 간주
+          setPathValidation({
+            isValid: true,
+            error: ''
+          });
         }
-      } else {
-        console.log('Initial path validation for:', recordingOptions.exportPath);
-        validatePath(recordingOptions.exportPath);
       }
     };
 
     initializeExportPath();
-  }, []); // 빈 의존성 배열로 마운트 시에만 실행
+    
+    // 레코딩 상태 동기화 - 컴포넌트 마운트 시 즉시 새로고침
+    fetchRecordingStatus();
+    
+    // 자동 스트리밍 상태 확인 (Phase 2)
+    fetchAutoStreamingStatus();
+    
+    // 주기적으로 레코딩 상태 및 스트리밍 상태 새로고침 (5초마다)
+    const interval = setInterval(() => {
+      fetchRecordingStatus();
+      fetchAutoStreamingStatus();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []); // 빈 dependency array로 마운트 시에만 실행
 
   useEffect(() => {
     fetchRecordingStatus();
@@ -184,8 +237,13 @@ const DataCenter: React.FC = () => {
     setActiveTab(newValue);
   };
 
-  // Recording can only be started when both Engine is started and Link Band is connected and path is valid
-  const isStartRecordingDisabled = recordingStatus.is_recording || !isEngineStarted || !isDeviceConnected || !pathValidation.isValid;
+  // Recording can only be started when Engine is started, Link Band is connected, 
+  // streaming is active (auto-detected), and path is valid (Phase 2)
+  const isStartRecordingDisabled = recordingStatus.is_recording || 
+                                   !isEngineStarted || 
+                                   !isDeviceConnected || 
+                                   !isStreamingActive ||
+                                   (!pathValidation.isValid && !recordingOptions.exportPath.trim());
 
   const handleOpenFileClick = (file: FileInfo) => {
     if (file.is_accessible && file.file_path) {
@@ -206,6 +264,15 @@ const DataCenter: React.FC = () => {
 
   // 옵션을 포함한 Recording 시작
   const handleStartRecording = async () => {
+    console.log('🎬 [DataCenter] Start Recording Button Clicked!');
+    console.log('🎬 [DataCenter] Current States:', {
+      isEngineStarted,
+      isDeviceConnected,
+      recordingStatus,
+      pathValidation,
+      recordingOptions
+    });
+    
     try {
       // 세션 이름이 비어있으면 기본값 사용
       const sessionName = recordingOptions.sessionName.trim() || getDefaultSessionName();
@@ -218,12 +285,43 @@ const DataCenter: React.FC = () => {
         }
       };
 
-      console.log('Starting recording with options:', sessionData);
-      await startRecording(sessionData);
+      console.log('🎬 [DataCenter] Starting recording with options:', sessionData);
+      const result = await startRecording(sessionData);
+      console.log('🎬 [DataCenter] Recording start result:', result);
     } catch (error) {
-      console.error('Error starting recording:', error);
+      console.error('🎬 [DataCenter] Error starting recording:', error);
     }
   };
+
+  // 디버깅을 위한 상태 출력
+  useEffect(() => {
+    console.log('🔍 [DataCenter Debug] === Recording Button State Analysis ===');
+    console.log('🔍 [DataCenter Debug] Engine Status:', { isEngineStarted });
+    console.log('🔍 [DataCenter Debug] Device Status:', { deviceStatus, isDeviceConnected });
+    console.log('🔍 [DataCenter Debug] Streaming Status:', { autoStreamingStatus, isStreamingActive });
+    console.log('�� [DataCenter Debug] Auto Streaming Details:', {
+      activeSensors: autoStreamingStatus?.active_sensors || [],
+      dataFlowHealth: autoStreamingStatus?.data_flow_health || 'unknown',
+      totalActiveSensors: autoStreamingStatus?.total_active_sensors || 0,
+      sensorDetails: autoStreamingStatus?.sensor_details || {}
+    });
+    console.log('🔍 [DataCenter Debug] Recording Status:', recordingStatus);
+    console.log('🔍 [DataCenter Debug] Path Validation:', pathValidation);
+    console.log('🔍 [DataCenter Debug] Export Path:', recordingOptions.exportPath);
+    
+    // 각 조건을 개별적으로 체크
+    const conditions = {
+      isRecording: recordingStatus.is_recording,
+      engineNotStarted: !isEngineStarted,
+      deviceNotConnected: !isDeviceConnected,
+      streamingNotActive: !isStreamingActive,
+      pathInvalid: !pathValidation.isValid && !recordingOptions.exportPath.trim()
+    };
+    
+    console.log('🔍 [DataCenter Debug] Button Disable Conditions:', conditions);
+    console.log('🔍 [DataCenter Debug] Button Disabled:', isStartRecordingDisabled);
+    console.log('🔍 [DataCenter Debug] ==============================================');
+  }, [isEngineStarted, isDeviceConnected, isStreamingActive, recordingStatus, pathValidation, recordingOptions.exportPath, autoStreamingStatus]);
 
   return (
     <div className="p-6 space-y-6">
@@ -262,6 +360,14 @@ const DataCenter: React.FC = () => {
               <Square className="w-4 h-4 mr-2" />
               Stop Recording
             </Button>
+            <Button
+              variant="outline"
+              onClick={fetchRecordingStatus}
+              className="border-gray-600 text-gray-300 hover:bg-gray-700"
+              title="Refresh recording status"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
           </div>
           
           {/* Recording Options - 버튼 아래로 이동 */}
@@ -272,12 +378,35 @@ const DataCenter: React.FC = () => {
             onPathValidation={handlePathValidation}
           />
           
-          {(!isEngineStarted || !isDeviceConnected) && !recordingStatus.is_recording && (
+          {(!isEngineStarted || !isDeviceConnected || !isStreamingActive) && !recordingStatus.is_recording && (
             <div className="mb-4 p-4 bg-red-900/20 border border-red-800 rounded-md flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-400">
-                Recording can only be started when both Engine is started and Link Band is connected.
-              </p>
+              <div className="text-sm text-red-400">
+                <p className="font-medium mb-2">Recording requires all conditions to be met:</p>
+                <ul className="space-y-1">
+                  <li className="flex items-center gap-2">
+                    {isEngineStarted ? (
+                      <span className="text-green-400">✓ Engine: Started</span>
+                    ) : (
+                      <span className="text-red-400">✗ Engine: Not started</span>
+                    )}
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {isDeviceConnected ? (
+                      <span className="text-green-400">✓ Link Band: Connected</span>
+                    ) : (
+                      <span className="text-red-400">✗ Link Band: Not connected</span>
+                    )}
+                  </li>
+                  <li className="flex items-center gap-2">
+                    {isStreamingActive ? (
+                      <span className="text-green-400">✓ Data Streaming: Active</span>
+                    ) : (
+                      <span className="text-red-400">✗ Data Streaming: Inactive</span>
+                    )}
+                  </li>
+                </ul>
+              </div>
             </div>
           )}
           

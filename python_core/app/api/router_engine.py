@@ -75,17 +75,17 @@ async def get_stream_info(stream_svc: StreamService = Depends(get_stream_service
             return {
                 "status": "not_initialized",
                 "message": "Streaming server is not initialized",
-                "host": "localhost",
+                "host": "127.0.0.1",
                 "port": 18765,
-                "ws_url": "ws://localhost:18765"
+                "ws_url": "ws://127.0.0.1:18765"
             }
         
         health = await stream_svc.health_check()
         return {
             "status": "success",
-            "host": info.get("host", "localhost"),
+            "host": info.get("host", "127.0.0.1"),
             "port": info.get("port", 18765),
-            "ws_url": info.get("ws_url", "ws://localhost:18765"),
+            "ws_url": info.get("ws_url", "ws://127.0.0.1:18765"),
             "server_status": health.get("status", "unknown"),
             "is_streaming": health.get("is_streaming", False),
             "clients_connected": health.get("clients_connected", 0)

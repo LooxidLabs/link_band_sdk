@@ -1,5 +1,4 @@
 import React from 'react';
-import { usePythonServerStore } from '../stores/pythonServerStore';
 import { useDeviceStore } from '../stores/device';
 import { useSensorStore } from '../stores/sensor';
 import { useUIStore } from '../stores/uiStore';
@@ -7,8 +6,7 @@ import { useLanguageStore } from '../stores/languageStore';
 import { useTranslation } from '../locales';
 import { Badge } from './ui/badge';
 import { ChevronRight, Cpu, Brain, Nfc } from 'lucide-react';
-import { useEffect } from 'react';
-import { setupPythonServerEventListeners } from '../stores/pythonServerStore';
+import { useSystemStatus } from '../hooks/useSystemManager';
 
 interface TopNavigationProps {
   menuName: string;
@@ -16,13 +14,11 @@ interface TopNavigationProps {
 
 export const TopNavigation: React.FC<TopNavigationProps> = ({ menuName }) => {
   
-  // Get server status from Python server store - use detailed status info
+  // Get system status from SystemStore (same as EngineModule)
   const { 
-    status: serverStatus, 
-    isRunning: engineRunning, 
-    isVerifyingMetrics,
-    refreshStatus 
-  } = usePythonServerStore();
+    isInitialized,
+    isInitializing
+  } = useSystemStatus();
   
   // Get device connection status
   const deviceStatus = useDeviceStore((state) => state.deviceStatus);
@@ -38,17 +34,6 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ menuName }) => {
   // Get language and translation
   const { currentLanguage } = useLanguageStore();
   const t = useTranslation(currentLanguage);
-  
-  // Setup event listeners and refresh status on mount
-  useEffect(() => {
-    const cleanup = setupPythonServerEventListeners();
-    return cleanup;
-  }, []);
-  
-  // Refresh status only once on mount
-  useEffect(() => {
-    refreshStatus();
-  }, [refreshStatus]);
   
   // Convert menu id to display name
   const getMenuDisplayName = (menuId: string) => {
@@ -81,17 +66,17 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ menuName }) => {
           <div className="flex items-center space-x-2">
             <Cpu className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Engine:</span>
-            {serverStatus.status === 'starting' && isVerifyingMetrics ? (
+            {isInitializing ? (
               <Badge className="bg-yellow-600 hover:bg-yellow-700 flex items-center gap-1">
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                 Loading...
               </Badge>
             ) : (
               <Badge 
-                variant={engineRunning ? "default" : "destructive"}
-                className={engineRunning ? "bg-cyan-600 hover:bg-cyan-700" : "bg-red-600 hover:bg-red-700"}
+                variant={isInitialized ? "default" : "destructive"}
+                className={isInitialized ? "bg-cyan-600 hover:bg-cyan-700" : "bg-red-600 hover:bg-red-700"}
               >
-                {engineRunning ? "Started" : "Stopped"}
+                {isInitialized ? "Started" : "Stopped"}
               </Badge>
             )}
           </div>

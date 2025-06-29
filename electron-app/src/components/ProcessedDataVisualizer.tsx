@@ -226,11 +226,22 @@ export const ProcessedDataVisualizer: React.FC = () => {
       )}
       
       {isDeviceConnected && !isSensorContacted && (
-        <div className="mb-4 p-4 bg-red-900/20 border border-red-800 rounded-md flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-400">
-            Please ensure proper device placement for accurate data collection
-          </p>
+        <div className="mb-4 p-4 bg-yellow-900/20 border border-yellow-800 rounded-md flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-yellow-400">
+            <p className="font-semibold mb-1">⚠️ Electrode Contact Warning</p>
+            <p>
+              {eeg?.ch1_leadoff && eeg?.ch2_leadoff 
+                ? "Both channels are not in contact. Please adjust device placement." 
+                : eeg?.ch1_leadoff 
+                ? "Channel 1 is not in contact. Please adjust device placement."
+                : "Channel 2 is not in contact. Please adjust device placement."
+              }
+            </p>
+            <p className="mt-1 text-xs opacity-80">
+              Data is still being processed and displayed, but accuracy may be reduced.
+            </p>
+          </div>
         </div>
       )}
       
@@ -335,11 +346,15 @@ export const ProcessedDataVisualizer: React.FC = () => {
       )}
       
       {isDeviceConnected && !isSensorContacted && (
-        <div className="mb-4 p-4 bg-red-900/20 border border-red-800 rounded-md flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-400">
-            Please ensure proper device placement for accurate data collection
-          </p>
+        <div className="mb-4 p-4 bg-yellow-900/20 border border-yellow-800 rounded-md flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-yellow-400">
+            <p className="font-semibold mb-1">⚠️ Electrode Contact Warning</p>
+            <p>Poor electrode contact may affect PPG data quality. Please ensure proper device placement.</p>
+            <p className="mt-1 text-xs opacity-80">
+              Data is still being processed and displayed, but accuracy may be reduced.
+            </p>
+          </div>
         </div>
       )}
       

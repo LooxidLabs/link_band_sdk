@@ -1,10 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from app.services.stream_service import StreamService
 
 router = APIRouter()
-stream_service = StreamService()
+
+def get_stream_service(request: Request) -> StreamService:
+    """Get StreamService instance from app state"""
+    if hasattr(request.app.state, 'stream_service'):
+        return request.app.state.stream_service
+    else:
+        raise HTTPException(status_code=500, detail="StreamService not initialized")
 
 class StreamInitRequest(BaseModel):
     """Request model for stream initialization"""
@@ -89,13 +95,14 @@ class StreamInfoResponse(BaseModel):
         },
         500: {"description": "Failed to initialize streaming server"}
     })
-async def init_stream(host: str = "localhost", port: int = 18765) -> Dict[str, Any]:
+async def init_stream(request: Request, host: str = "localhost", port: int = 18765) -> Dict[str, Any]:
     """
     Initialize the streaming server
     
     Sets up the WebSocket server for real-time data streaming from Link Band devices.
     
     Args:
+        request: FastAPI request object
         host: Server host address (default: localhost)
         port: Server port number (default: 18765)
         
@@ -106,6 +113,7 @@ async def init_stream(host: str = "localhost", port: int = 18765) -> Dict[str, A
         HTTPException: If initialization fails
     """
     try:
+        stream_service = get_stream_service(request)
         success = await stream_service.init_stream(host, port)
         if not success:
             # raise HTTPException(status_code=500, detail="Failed to initialize streaming server")
@@ -151,7 +159,7 @@ async def init_stream(host: str = "localhost", port: int = 18765) -> Dict[str, A
         400: {"description": "Streaming already running or failed to start"},
         500: {"description": "Internal server error"}
     })
-async def start_stream() -> Dict[str, Any]:
+async def start_stream(request: Request) -> Dict[str, Any]:
     """
     Start streaming
     
@@ -165,6 +173,7 @@ async def start_stream() -> Dict[str, Any]:
         HTTPException: If streaming fails to start
     """
     try:
+        stream_service = get_stream_service(request)
         success = await stream_service.start_stream()
         if not success:
             return {"status": "fail", "message": "Streaming is already running or failed to start"}
@@ -202,7 +211,7 @@ async def start_stream() -> Dict[str, Any]:
         400: {"description": "Streaming not running or failed to stop"},
         500: {"description": "Internal server error"}
     })
-async def stop_stream() -> Dict[str, Any]:
+async def stop_stream(request: Request) -> Dict[str, Any]:
     """
     Stop streaming
     
@@ -216,6 +225,7 @@ async def stop_stream() -> Dict[str, Any]:
         HTTPException: If streaming fails to stop
     """
     try:
+        stream_service = get_stream_service(request)
         success = await stream_service.stop_stream()
         if not success:
             return {"status": "fail", "message": "Streaming is not running or failed to stop"}
@@ -259,7 +269,7 @@ async def stop_stream() -> Dict[str, Any]:
         },
         500: {"description": "Health check failed"}
     })
-async def health_check() -> Dict[str, Any]:
+async def health_check(request: Request) -> Dict[str, Any]:
     """
     Check streaming server health
     
@@ -269,10 +279,10 @@ async def health_check() -> Dict[str, Any]:
     Returns:
         Health check results
     """
+    stream_service = get_stream_service(request)
     return await stream_service.health_check()
 
 @router.get("/status",
-    response_model=StreamStatusResponse,
     summary="Get detailed streaming status and statistics",
     description="""
     Retrieve detailed information about the current streaming session.
@@ -308,7 +318,7 @@ async def health_check() -> Dict[str, Any]:
         },
         500: {"description": "Failed to get status"}
     })
-async def get_stream_status() -> Dict[str, Any]:
+async def get_stream_status(request: Request) -> Dict[str, Any]:
     """
     Get streaming status and statistics
     
@@ -318,6 +328,7 @@ async def get_stream_status() -> Dict[str, Any]:
     Returns:
         Streaming status and statistics
     """
+    stream_service = get_stream_service(request)
     return stream_service.get_stream_status()
 
 @router.get("/connection",
@@ -354,7 +365,7 @@ async def get_stream_status() -> Dict[str, Any]:
         },
         500: {"description": "Failed to get connection info"}
     })
-async def get_connection_info() -> Dict[str, Any]:
+async def get_connection_info(request: Request) -> Dict[str, Any]:
     """
     Get WebSocket server connection information
     
@@ -364,6 +375,7 @@ async def get_connection_info() -> Dict[str, Any]:
     Returns:
         WebSocket connection information
     """
+    stream_service = get_stream_service(request)
     return stream_service.get_connection_info()
 
 @router.get("/device",
@@ -401,7 +413,7 @@ async def get_connection_info() -> Dict[str, Any]:
         },
         500: {"description": "Failed to get device info"}
     })
-async def get_device_info() -> Dict[str, Any]:
+async def get_device_info(request: Request) -> Dict[str, Any]:
     """
     Get current device information
     
@@ -411,7 +423,76 @@ async def get_device_info() -> Dict[str, Any]:
     Returns:
         Device information for streaming
     """
+    stream_service = get_stream_service(request)
     return stream_service.get_device_info()
+
+@router.get("/auto-status",
+    summary="Get automatic streaming status (StreamingMonitor based)",
+    description="""
+    Get streaming status automatically detected based on actual data flow.
+    
+    **Auto-Detection Features:**
+    - Real-time data flow monitoring
+    - Sensor-specific activity detection
+    - Data quality assessment
+    - Automatic threshold-based status
+    
+    **Response Information:**
+    - Overall streaming status (active/inactive)
+    - Per-sensor activity status
+    - Data flow health assessment
+    - Real-time sampling rates
+    - Detection thresholds
+    
+    **Use Cases:**
+    - Automatic UI status updates
+    - Data flow monitoring
+    - System health assessment
+    - Troubleshooting data issues
+    """,
+    responses={
+        200: {
+            "description": "Automatic streaming status information",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "is_active": True,
+                        "active_sensors": ["eeg", "ppg", "acc"],
+                        "data_flow_health": "good",
+                        "sensor_details": {
+                            "eeg": {"sampling_rate": 250.0, "is_active": True},
+                            "ppg": {"sampling_rate": 50.0, "is_active": True},
+                            "acc": {"sampling_rate": 30.0, "is_active": True},
+                            "bat": {"sampling_rate": 1.0, "is_active": True}
+                        }
+                    }
+                }
+            }
+        },
+        500: {"description": "Failed to get auto status"}
+    })
+async def get_auto_streaming_status(request: Request) -> Dict[str, Any]:
+    """
+    Get streaming status automatically detected by StreamingMonitor
+    
+    Returns real-time streaming status based on actual data flow detection
+    rather than manual start/stop controls.
+    
+    Args:
+        request: FastAPI request object
+    
+    Returns:
+        Auto-detected streaming status with detailed sensor information
+        
+    Raises:
+        HTTPException: If status retrieval fails
+    """
+    try:
+        stream_service = get_stream_service(request)
+        status = await stream_service.get_auto_streaming_status()
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get auto streaming status: {e}")
 
 @router.get("/info",
     response_model=StreamInfoResponse,
@@ -454,7 +535,7 @@ async def get_device_info() -> Dict[str, Any]:
         },
         500: {"description": "Failed to get stream info"}
     })
-async def get_stream_info() -> Dict[str, Any]:
+async def get_stream_info(request: Request) -> Dict[str, Any]:
     """
     Get WebSocket server connection information including host and port
     
@@ -468,22 +549,23 @@ async def get_stream_info() -> Dict[str, Any]:
         HTTPException: If unable to retrieve stream information
     """
     try:
+        stream_service = get_stream_service(request)
         info = stream_service.get_connection_info()
         if not info or info.get("status") == "not_initialized":
             return {
                 "status": "not_initialized",
                 "message": "Streaming server is not initialized",
-                "host": "localhost",
+                "host": "127.0.0.1",
                 "port": 18765,
-                "ws_url": "ws://localhost:18765"
+                "ws_url": "ws://127.0.0.1:18765"
             }
         
         health = await stream_service.health_check()
         return {
             "status": "success",
-            "host": info.get("host", "localhost"),
+            "host": info.get("host", "127.0.0.1"),
             "port": info.get("port", 18765),
-            "ws_url": info.get("ws_url", "ws://localhost:18765"),
+            "ws_url": info.get("ws_url", "ws://127.0.0.1:18765"),
             "server_status": health.get("status", "unknown"),
             "is_streaming": health.get("is_streaming", False),
             "clients_connected": health.get("clients_connected", 0)

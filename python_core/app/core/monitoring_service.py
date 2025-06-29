@@ -45,26 +45,34 @@ class MonitoringService:
     async def start_monitoring(self):
         """모니터링 서비스 시작"""
         if self.is_monitoring:
-            logger.warning("Monitoring service is already running")
+            logger.warning("[MONITORING_SERVICE] Monitoring service is already running")
             return
         
         if not self.ws_server:
-            logger.error("WebSocket server not available for monitoring")
+            logger.error("[MONITORING_SERVICE] WebSocket server not available for monitoring")
             return
         
+        logger.info(f"[MONITORING_SERVICE] Starting monitoring service with ws_server: {self.ws_server}")
+        logger.info(f"[MONITORING_SERVICE] performance_monitor: {self.performance_monitor}")
+        logger.info(f"[MONITORING_SERVICE] buffer_manager: {self.buffer_manager}")
+        logger.info(f"[MONITORING_SERVICE] streaming_optimizer: {self.streaming_optimizer}")
+        
         self.is_monitoring = True
-        logger.info("Starting monitoring service...")
+        logger.info("[MONITORING_SERVICE] Setting is_monitoring = True")
         
         try:
             # 각 모니터링 태스크를 개별적으로 시작
+            logger.info("[MONITORING_SERVICE] Creating monitoring tasks...")
             self.monitoring_tasks = [
                 asyncio.create_task(self._metrics_broadcaster()),
                 asyncio.create_task(self._health_updater()),
                 asyncio.create_task(self._buffer_monitor()),
                 asyncio.create_task(self._alert_monitor())
             ]
+            logger.info(f"[MONITORING_SERVICE] Created {len(self.monitoring_tasks)} monitoring tasks")
+            logger.info(f"[MONITORING_SERVICE] Task details: {[str(task) for task in self.monitoring_tasks]}")
         except Exception as e:
-            logger.error(f"Error starting monitoring service: {e}")
+            logger.error(f"[MONITORING_SERVICE] Error starting monitoring service: {e}")
             self.is_monitoring = False
     
     async def stop_monitoring(self):
@@ -89,23 +97,28 @@ class MonitoringService:
     
     async def _metrics_broadcaster(self):
         """1초마다 성능 메트릭 브로드캐스트"""
-        logger.info("Starting metrics broadcaster...")
+        logger.info("[MONITORING_TASK] Starting metrics broadcaster...")
         
         while self.is_monitoring:
             try:
+                logger.info("[MONITORING_TASK] Collecting metrics...")
                 metrics = await self._collect_metrics()
+                logger.info(f"[MONITORING_TASK] Collected metrics: {len(str(metrics))} chars")
                 
                 if metrics:
+                    logger.info(f"[MONITORING_TASK] Broadcasting monitoring_metrics: {len(str(metrics))} chars")
                     await self._broadcast_monitoring_message("monitoring_metrics", metrics)
                     self.last_metrics = metrics
+                else:
+                    logger.warning("[MONITORING_TASK] No metrics collected - skipping broadcast")
                 
                 await asyncio.sleep(self.intervals['metrics'])
                 
             except asyncio.CancelledError:
-                logger.info("Metrics broadcaster cancelled")
+                logger.info("[MONITORING_TASK] Metrics broadcaster cancelled")
                 break
             except Exception as e:
-                logger.error(f"Error in metrics broadcaster: {e}")
+                logger.error(f"[MONITORING_TASK] Error in metrics broadcaster: {e}")
                 await asyncio.sleep(1.0)  # 에러 시 잠시 대기
     
     async def _health_updater(self):
@@ -176,6 +189,7 @@ class MonitoringService:
     async def _collect_metrics(self) -> Dict[str, Any]:
         """성능 메트릭 수집"""
         try:
+            logger.debug("Collecting system metrics...")
             # 시스템 메트릭
             system_metrics = {
                 'cpu_percent': psutil.cpu_percent(interval=0.1),
@@ -185,6 +199,7 @@ class MonitoringService:
                     'write': psutil.disk_io_counters().write_bytes if psutil.disk_io_counters() else 0
                 }
             }
+            logger.debug(f"System metrics: {system_metrics}")
             
             # 스트리밍 메트릭
             streaming_metrics = {}
@@ -207,18 +222,38 @@ class MonitoringService:
                     }
             
             # 시스템 건강 점수
-            health_score = 0.0
+            health_score = 75.0  # 기본값으로 설정
             if self.performance_monitor:
                 try:
-                    health_score = self.performance_monitor.get_health_score()
+                    health_result = self.performance_monitor.get_health_score()
+                    logger.debug(f"Got health result from performance_monitor: {health_result}, type: {type(health_result)}")
+                    
+                    # health_result가 딕셔너리인 경우 overall_score 추출
+                    if isinstance(health_result, dict):
+                        health_score = health_result.get('overall_score', 75.0)
+                    elif isinstance(health_result, (int, float)):
+                        health_score = float(health_result)
+                    else:
+                        logger.warning(f"Unexpected health_score type: {type(health_result)}, using default")
+                        health_score = 75.0
+                        
+                    logger.debug(f"Final health_score: {health_score}")
                 except Exception as e:
                     logger.debug(f"Error getting health score: {e}")
+                    health_score = 75.0
+            else:
+                logger.debug("performance_monitor not available, using default health score")
             
-            return {
+            result = {
                 'system': system_metrics,
                 'streaming': streaming_metrics,
-                'health_score': health_score
+                'health_score': {
+                    'overall_score': health_score,
+                    'health_grade': self._get_status_from_score(health_score).lower()
+                }
             }
+            logger.debug(f"Final metrics result: {result}")
+            return result
             
         except Exception as e:
             logger.error(f"Error collecting metrics: {e}")
@@ -230,7 +265,15 @@ class MonitoringService:
             if not self.performance_monitor:
                 return {}
             
-            health_score = self.performance_monitor.get_health_score()
+            health_result = self.performance_monitor.get_health_score()
+            
+            # health_result가 딕셔너리인 경우 overall_score 추출
+            if isinstance(health_result, dict):
+                health_score = health_result.get('overall_score', 75.0)
+            elif isinstance(health_result, (int, float)):
+                health_score = float(health_result)
+            else:
+                health_score = 75.0
             
             # 컴포넌트별 상태 계산
             components = {
@@ -435,8 +478,10 @@ class MonitoringService:
                 "data": data
             }
             
-            # WebSocket 서버의 브로드캐스트 메서드 호출
-            if hasattr(self.ws_server, 'broadcast'):
+            # 채널별 브로드캐스트 사용 (구독한 클라이언트에게만 전송)
+            if hasattr(self.ws_server, 'broadcast_to_channel'):
+                await self.ws_server.broadcast_to_channel(message_type, json.dumps(message))
+            elif hasattr(self.ws_server, 'broadcast'):
                 await self.ws_server.broadcast(json.dumps(message))
             
         except Exception as e:

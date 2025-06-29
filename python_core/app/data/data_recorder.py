@@ -56,7 +56,7 @@ class DataRecorder:
             logger.error(f"Error ensuring data directory {self.data_dir}: {e}", exc_info=True)
             raise
 
-    def start_recording(self, session_name: Optional[str] = None, export_path: Optional[str] = None) -> Dict[str, Any]:
+    def start_recording(self, session_name: Optional[str] = None, export_path: Optional[str] = None, data_format: Optional[str] = None) -> Dict[str, Any]:
         if self.is_recording:
             logger.warning("Start recording called but already recording.")
             return {"status": "fail", "message": "Recording is already in progress."}
@@ -107,7 +107,8 @@ class DataRecorder:
                 "start_time": now_dt.isoformat(),
                 "files": [], # 파일 정보는 stop_recording 시점에 채워짐
                 "status": "recording",
-                "export_path": base_dir  # 실제 사용된 경로 저장
+                "export_path": base_dir,  # 실제 사용된 경로 저장
+                "data_format": data_format or "JSON"  # 데이터 포맷 저장
             }
             # 초기 meta.json은 파일 정보 없이 저장
             meta_file_path = os.path.join(self.session_dir, "meta.json")
@@ -122,12 +123,14 @@ class DataRecorder:
         self.is_recording = True
         # self.thread = threading.Thread(target=self._recording_loop, daemon=True) # 스레드 제거
         # self.thread.start() # 스레드 제거
-        logger.info(f"Recording started. Session: {self.meta['session_name']}.")
+        logger.info(f"Recording started: {self.meta['session_name']}")
         return {
             "status": "started", 
             "message": "Recording started successfully",
             "session_name": self.meta["session_name"], 
-            "start_time": self.meta["start_time"]
+            "start_time": self.meta["start_time"],
+            "data_format": self.meta["data_format"],
+            "export_path": base_dir
         }
 
     def stop_recording(self) -> Dict[str, Any]:
@@ -212,19 +215,16 @@ class DataRecorder:
         }
 
     def add_data(self, data_type: str, data: Dict[str, Any]):
-        logger.info(f"[DataRecorder.add_data CALLED] data_type: {data_type}, is_recording: {self.is_recording}")
         if not isinstance(data, dict):
-            logger.error(f"[DataRecorder.add_data ERROR] Data is not a dict! Type: {type(data)}, For data_type: {data_type}")
+            logger.error(f"Data is not a dict! Type: {type(data)}, For data_type: {data_type}")
             return
 
         if not self.is_recording:
-            logger.warning(f"Add_data called when not recording. Type: {data_type}. Discarding.")
             return
         
         if data_type not in self.data_buffers:
             self.data_buffers[data_type] = []
         self.data_buffers[data_type].append(data)
-        logger.info(f"[DataRecorder.add_data BUFFERED] data_type: {data_type}. Buffer size for type: {len(self.data_buffers[data_type])}")
 
     # _recording_loop 메서드 제거
     # def _recording_loop(self):

@@ -192,6 +192,11 @@ class DatabaseManager:
             "exported_at": row[5],
         }
 
+    def close(self):
+        """데이터베이스 연결 종료 (SQLite는 연결을 유지하지 않으므로 실제로는 아무것도 하지 않음)"""
+        # SQLite는 각 쿼리마다 연결을 열고 닫으므로 특별히 할 일이 없음
+        pass
+
     def _row_to_session_dict(self, row):
         if not row:
             return None

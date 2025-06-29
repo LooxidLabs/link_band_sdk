@@ -13,10 +13,15 @@ const EEGPreprocessedGraph: React.FC<EEGPreprocessedGraphProps> = ({ channel }) 
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
   const data = useMemo(() => {
-    if (!eeg) return [];
-    if (channel === 'ch1') return eeg.ch1_filtered || [];
-    if (channel === 'ch2') return eeg.ch2_filtered || [];
-    return [];
+    if (!eeg) {
+      console.log(`[EEGPreprocessedGraph-${channel}] No EEG data available`);
+      return [];
+    }
+    
+    const filteredData = channel === 'ch1' ? eeg.ch1_filtered || [] : eeg.ch2_filtered || [];
+    console.log(`[EEGPreprocessedGraph-${channel}] Data length: ${filteredData.length}, leadoff: ${channel === 'ch1' ? eeg.ch1_leadoff : eeg.ch2_leadoff}`);
+    
+    return filteredData;
   }, [eeg, channel]);
 
   useEffect(() => {
