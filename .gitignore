@@ -74,3 +74,9 @@ data/session_*/
 docker-output/
 python_core/dist/linkband-server
 test_clone/
+
+# Server executables (large binary files)
+**/linkband-server-*
+linkband-server-*
+distribution/
+installers/distribution/
