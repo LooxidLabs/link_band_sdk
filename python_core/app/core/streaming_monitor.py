@@ -86,9 +86,9 @@ class StreamingMonitor:
             return 0.0
         return self.initialization_phase_duration - self.get_time_since_initialization()
     
-    def track_data_flow(self, sensor_type: str, data_count: int):
+    def track_data_flow(self, sensor_type: str, data_count: int, sample_timestamps: list = None):
         """실시간 데이터 흐름 추적 및 자동 재초기화"""
-        logger.info(f"[STREAMING_MONITOR] track_data_flow called: {sensor_type}, count: {data_count}")
+        logger.info(f"[STREAMING_MONITOR] track_data_flow called: {sensor_type}, count: {data_count}, timestamps: {len(sample_timestamps) if sample_timestamps else 0}")
         
         if sensor_type not in self.data_flow_tracker:
             logger.warning(f"[STREAMING_MONITOR] Unknown sensor type: {sensor_type}")
@@ -108,14 +108,30 @@ class StreamingMonitor:
             # 시간 간격 계산 (초)
             time_delta = current_time - flow_data.last_update
             if time_delta > 0:
-                # 현재 sampling rate 계산
-                current_rate = data_count / time_delta
-                flow_data.sample_buffer.append((current_time, current_rate))
-                
-                # 최근 5초간 평균 sampling rate 계산
-                recent_samples = [rate for timestamp, rate in flow_data.sample_buffer 
-                                if current_time - timestamp <= 5.0]
-                flow_data.samples_per_second = sum(recent_samples) / len(recent_samples) if recent_samples else 0
+                # EEG 타임스탬프 기반 계산 우선 적용
+                if sensor_type == 'eeg' and sample_timestamps and len(sample_timestamps) >= 2:
+                    # 타임스탬프 기반 정확한 샘플링 레이트 계산
+                    time_span = sample_timestamps[-1] - sample_timestamps[0]
+                    if time_span > 0:
+                        timestamp_based_rate = (len(sample_timestamps) - 1) / time_span
+                        flow_data.samples_per_second = timestamp_based_rate
+                        logger.info(f"[STREAMING_MONITOR] EEG: Using timestamp-based rate: {timestamp_based_rate:.1f} Hz (batch: {data_count} samples)")
+                    else:
+                        # 폴백: 기존 방식
+                        current_rate = data_count / time_delta
+                        flow_data.sample_buffer.append((current_time, current_rate))
+                        recent_samples = [rate for timestamp, rate in flow_data.sample_buffer 
+                                        if current_time - timestamp <= 5.0]
+                        flow_data.samples_per_second = sum(recent_samples) / len(recent_samples) if recent_samples else 0
+                else:
+                    # 다른 센서들은 기존 방식 사용
+                    current_rate = data_count / time_delta
+                    flow_data.sample_buffer.append((current_time, current_rate))
+                    
+                    # 최근 5초간 평균 sampling rate 계산
+                    recent_samples = [rate for timestamp, rate in flow_data.sample_buffer 
+                                    if current_time - timestamp <= 5.0]
+                    flow_data.samples_per_second = sum(recent_samples) / len(recent_samples) if recent_samples else 0
                 
                 # 활성화 상태 판정
                 threshold = self.streaming_threshold.get(sensor_type, 0)

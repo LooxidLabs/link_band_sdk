@@ -1460,8 +1460,14 @@ class WebSocketServer:
                         }
                         try:
                             await self.broadcast(json.dumps(raw_message))
-                            # StreamingMonitor에 데이터 흐름 추적 (실제 브로드캐스트 시점)
-                            self.streaming_monitor.track_data_flow('eeg', len(eeg_buffer))
+                            # EEG 타임스탬프 추출
+                            sample_timestamps = []
+                            if eeg_buffer:
+                                for sample in eeg_buffer:
+                                    if isinstance(sample, dict) and "timestamp" in sample:
+                                        sample_timestamps.append(sample["timestamp"])
+                            # StreamingMonitor에 데이터 흐름 추적 (타임스탬프 포함)
+                            self.streaming_monitor.track_data_flow('eeg', len(eeg_buffer), sample_timestamps)
                             total_samples_sent += len(eeg_buffer)
                             samples_since_last_log += len(eeg_buffer)
                             
