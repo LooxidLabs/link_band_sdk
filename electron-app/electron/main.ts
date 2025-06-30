@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, session, shell, dialog } from 'electron';
+import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, session, shell, dialog, globalShortcut } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcessWithoutNullStreams, exec } from 'child_process';
@@ -267,10 +267,8 @@ function createWindow() {
 
   win.loadFile(indexPath);
 
-  if (process.env.NODE_ENV === 'development') {
-    win.webContents.openDevTools();
-  }
-
+  // 개발자 도구 항상 열기 (디버깅용)
+  win.webContents.openDevTools();
   win.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
@@ -417,7 +415,7 @@ async function startPythonServer(): Promise<ServerControlResponse> {
         // Production mode 또는 빌드된 서버 테스트 모드 - use standalone Python server
         let serverPath: string;
         
-        if (useBuiltServer && isDev) {
+        if (useBuiltServer) {
           // 개발 모드에서 빌드된 서버 테스트
           const arch = process.arch;
           let serverName: string;
@@ -437,7 +435,14 @@ async function startPythonServer(): Promise<ServerControlResponse> {
           // 빌드된 서버 경로 (python_core/dist에서 찾기)
           serverPath = path.join(__dirname, '../../python_core/dist', serverName);
           
-          console.log('🧪 TEST MODE: Using built server for testing:', serverPath);
+          if (isDev) {
+            console.log('🧪 DEV MODE: Using built server for testing:', serverPath);
+          } else {
+            // 프로덕션 모드에서 빌드된 서버 사용
+            const resourcesPath = process.resourcesPath;
+            serverPath = path.join(resourcesPath, serverName);
+            console.log('🚀 PROD MODE: Using built server:', serverPath);
+          }
         } else {
           // 실제 프로덕션 모드
           const resourcesPath = process.resourcesPath;
@@ -534,7 +539,7 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       // Set up environment for bundled Python
       const pythonEnv = { ...process.env };
       
-      if (!isDev) {
+      if (!isDev && !useBuiltServer) {
         // Production mode - set up environment for bundled Python
         const venvPath = path.join(process.resourcesPath, 'python_core', 'venv');
         const pythonCoreDir = path.join(process.resourcesPath, 'python_core');
@@ -560,10 +565,25 @@ async function startPythonServer(): Promise<ServerControlResponse> {
           : path.join(venvPath, 'bin');
         pythonEnv.PATH = `${binPath}${path.delimiter}${process.env.PATH}`;
       }
-      
+
+      // For built server, use minimal clean environment
+      if (useBuiltServer) {
+        // Keep only essential environment variables for built server
+        const cleanEnv = {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          USER: process.env.USER,
+          TMPDIR: process.env.TMPDIR,
+          LANG: process.env.LANG
+        };
+        // pythonEnv = cleanEnv;
+      }      
       // Prepare spawn arguments
       const spawnArgs = isDev && pythonPath ? [pythonPath] : [];
-      const cwd = isDev && pythonPath ? path.dirname(pythonPath) : path.dirname(pythonExecutable);
+      // For built server, use a more appropriate working directory
+      const cwd = isDev && pythonPath 
+        ? path.dirname(pythonPath) 
+        : (useBuiltServer ? app.getAppPath() : path.dirname(pythonExecutable));
       
       pythonProcess = spawn(pythonExecutable, spawnArgs, {
         cwd: cwd,
@@ -834,7 +854,20 @@ function handleCustomUrl(url: string) {
 app.whenReady().then(() => {
   // Set app name for menu bar
   app.setName('Link Band SDK');
-  
+
+  // 개발자 도구 키보드 단축키 등록
+  globalShortcut.register("F12", () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (focusedWindow) {
+      focusedWindow.webContents.toggleDevTools();
+    }
+  });
+  globalShortcut.register("CommandOrControl+Shift+I", () => {
+    const focusedWindow = BrowserWindow.getFocusedWindow();
+    if (focusedWindow) {
+      focusedWindow.webContents.toggleDevTools();
+    }
+  });  
   // Set Dock icon for macOS
   if (process.platform === 'darwin' && app.dock) {
     const dockIconPath = path.join(__dirname, 'appIcon.png');

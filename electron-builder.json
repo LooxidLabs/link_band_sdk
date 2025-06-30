@@ -13,6 +13,10 @@
   ],
   "extraResources": [
     {
+      "from": "linkband-server-macos-arm64-v1.0.2",
+      "to": "linkband-server-macos-arm64-v1.0.2"
+    },
+    {
       "from": "../python_core",
       "to": "python_core",
       "filter": [
