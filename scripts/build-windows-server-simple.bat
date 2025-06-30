@@ -198,12 +198,40 @@ if not exist "linkband-server-windows-v1.0.2.spec" (
 )
 
 :: Check if run_server_production.py exists
-if not exist "run_server_production.py" (
+echo DEBUG: Checking for run_server_production.py in current directory...
+echo DEBUG: Current directory: %CD%
+dir run_server_production.py >nul 2>&1
+if %errorlevel% neq 0 (
     echo ERROR: run_server_production.py not found!
-    echo This file is required for building the server.
+    echo DEBUG: Current directory contents:
+    dir /B
+    echo.
+    echo SOLUTION: This file is required for building the server.
+    echo Please ensure you have the latest version from git:
+    echo   git pull origin main
+    echo.
+    echo Alternative files to check:
+    if exist "run_server.py" (
+        echo - Found run_server.py (development version)
+        set /p use_dev=Use run_server.py instead? (y/n): 
+        if /i "!use_dev!"=="y" (
+            echo DEBUG: Using run_server.py for build
+            goto :build_with_dev
+        )
+    )
+    if exist "main.py" (
+        echo - Found main.py
+        set /p use_main=Use main.py instead? (y/n): 
+        if /i "!use_main!"=="y" (
+            echo DEBUG: Using main.py for build
+            goto :build_with_main
+        )
+    )
+    echo ERROR: No suitable server file found for building.
     pause
     exit /b 1
 )
+echo DEBUG: run_server_production.py found successfully
 
 :: Clean previous build
 echo.
@@ -236,6 +264,29 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
+goto :build_success
+
+:build_with_dev
+echo DEBUG: Building with run_server.py...
+pyinstaller --onefile --name linkband-server-windows-v1.0.2 run_server.py
+if %errorlevel% neq 0 (
+    echo ERROR: PyInstaller build with run_server.py failed!
+    pause
+    exit /b 1
+)
+goto :build_success
+
+:build_with_main
+echo DEBUG: Building with main.py...
+pyinstaller --onefile --name linkband-server-windows-v1.0.2 main.py
+if %errorlevel% neq 0 (
+    echo ERROR: PyInstaller build with main.py failed!
+    pause
+    exit /b 1
+)
+goto :build_success
+
+:build_success
 
 :: Check if build was successful
 if not exist "dist\linkband-server-windows-v1.0.2.exe" (

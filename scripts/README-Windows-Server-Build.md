@@ -33,6 +33,12 @@ scripts\build-windows-server-simple.bat
 - **에러 감지**: 향상된 에러 감지 및 문제 해결 가이드
 - **자동 정리**: 빌드 후 자동 정리 및 최적화
 
+### 3. build-windows-server-fallback.bat (새로 추가)
+`run_server_production.py` 파일이 없을 때를 위한 폴백 빌드 스크립트입니다.
+- **자동 파일 감지**: 사용 가능한 서버 파일 자동 검색
+- **다중 폴백**: run_server.py, server.py, main.py, app\main.py 순서로 시도
+- **간단한 빌드**: 복잡한 설정 없이 기본 PyInstaller 사용
+
 **사용법:**
 ```cmd
 cd link_band_sdk
@@ -43,6 +49,16 @@ scripts\build-windows-server-quick.bat
 - Python 3.8+ 설치됨
 - PyInstaller 설치됨
 - 가상환경 설정 완료
+
+```cmd
+cd link_band_sdk
+scripts\build-windows-server-fallback.bat
+```
+
+**사용 시기:**
+- `run_server_production.py` 파일이 없을 때
+- 다른 빌드 스크립트가 실패할 때
+- 간단한 테스트 빌드가 필요할 때
 
 ## 빌드 결과
 
@@ -73,6 +89,26 @@ linkband-server-windows-v1.0.2.exe
 - WebSocket: ws://localhost:18765
 
 ## 문제 해결 (Enhanced)
+
+### run_server_production.py 파일 없음 오류
+이 오류가 발생하면 다음 해결 방법을 시도하세요:
+
+1. **최신 버전 확인**:
+   ```cmd
+   git pull origin main
+   ```
+
+2. **폴백 스크립트 사용**:
+   ```cmd
+   scripts\build-windows-server-fallback.bat
+   ```
+
+3. **수동 파일 확인**:
+   ```cmd
+   cd python_core
+   dir *.py
+   ```
+   사용 가능한 파일: `run_server.py`, `server.py`, `main.py`
 
 ### 네트워크 연결 문제
 Enhanced 스크립트는 자동으로 네트워크 연결을 체크합니다:

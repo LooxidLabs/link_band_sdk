@@ -70,11 +70,33 @@ if not exist "linkband-server-windows-v1.0.2.spec" (
     exit /b 1
 )
 
+echo DEBUG: Checking for run_server_production.py...
 if not exist "run_server_production.py" (
-    echo ERROR: run_server_production.py not found!
-    pause
-    exit /b 1
+    echo WARNING: run_server_production.py not found!
+    echo DEBUG: Looking for alternative server files...
+    if exist "run_server.py" (
+        echo DEBUG: Found run_server.py, using as alternative
+        set "SERVER_FILE=run_server.py"
+        goto :start_build
+    ) else if exist "main.py" (
+        echo DEBUG: Found main.py, using as alternative
+        set "SERVER_FILE=main.py"
+        goto :start_build
+    ) else (
+        echo ERROR: No suitable server file found!
+        echo Please ensure one of these files exists:
+        echo - run_server_production.py (preferred)
+        echo - run_server.py (development)
+        echo - main.py (fallback)
+        pause
+        exit /b 1
+    )
+) else (
+    echo DEBUG: run_server_production.py found
+    set "SERVER_FILE=run_server_production.py"
 )
+
+:start_build
 
 :: Clean previous build
 echo.
@@ -90,8 +112,13 @@ echo Building Windows server executable...
 echo This may take several minutes...
 echo.
 
-echo DEBUG: Running PyInstaller with spec file...
-pyinstaller linkband-server-windows-v1.0.2.spec --clean --noconfirm
+if exist "linkband-server-windows-v1.0.2.spec" (
+    echo DEBUG: Running PyInstaller with spec file...
+    pyinstaller linkband-server-windows-v1.0.2.spec --clean --noconfirm
+) else (
+    echo DEBUG: Spec file not found, building with %SERVER_FILE%...
+    pyinstaller --onefile --name linkband-server-windows-v1.0.2 %SERVER_FILE%
+)
 if %errorlevel% neq 0 (
     echo ERROR: PyInstaller build failed!
     echo.
