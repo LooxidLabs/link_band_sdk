@@ -9,38 +9,39 @@
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
-    "public/**/*"
+    "package.json",
+    "node_modules/**/*",
+    "!node_modules/**/test/**/*",
+    "!node_modules/**/tests/**/*",
+    "!node_modules/**/*.md",
+    "!node_modules/**/*.ts",
+    "!node_modules/**/.git/**/*",
+    "!node_modules/**/.github/**/*",
+    "!node_modules/**/docs/**/*",
+    "!node_modules/**/examples/**/*",
+    "!src/**/*",
+    "!**/*.ts",
+    "!**/*.tsx",
+    "!**/.DS_Store"
   ],
   "extraResources": [
     {
-      "from": "../python_core",
-      "to": "python_core",
-      "filter": ["**/*", "!**/__pycache__/", "!**/*.pyc", "!**/dist/**", "!**/build/**"]
+      "from": "linkband-server-macos-arm64-v1.0.2",
+      "to": "linkband-server-macos-arm64-v1.0.2"
     },
     {
-      "from": "../installers/distribution/macos-arm64/linkband-server-macos-arm64-final",
-      "to": "linkband-server-macos-arm64-final"
-    },
-    {
-      "from": "../installers/distribution/macos-intel/linkband-server-macos-x64",
-      "to": "linkband-server-macos-x64"
-    },
-    {
-      "from": "../installers/distribution/windows/linkband-server-windows.exe",
-      "to": "linkband-server-windows.exe"
+      "from": "../python_core/database",
+      "to": "database",
+      "filter": ["data_center.db", "!**/history.db", "!**/__pycache__/", "!**/archives/**"]
     },
     {
       "from": "public/docs",
       "to": "docs"
-    },
-    {
-      "from": "resources",
-      "to": "resources"
     }
   ],
   "asarUnpack": [
     "**/*.node",
-    "**/python_core/**/*"
+    "**/linkband-server-*"
   ],
   "publish": [
     {
