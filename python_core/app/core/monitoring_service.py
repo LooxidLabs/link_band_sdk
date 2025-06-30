@@ -96,30 +96,41 @@ class MonitoringService:
         logger.info("Monitoring service stopped")
     
     async def _metrics_broadcaster(self):
-        """1초마다 성능 메트릭 브로드캐스트"""
-        logger.info("[MONITORING_TASK] Starting metrics broadcaster...")
+        """메트릭 브로드캐스트 태스크"""
+        logger.info("[METRICS_BROADCASTER] Starting metrics broadcaster task")
         
         while self.is_monitoring:
             try:
-                logger.info("[MONITORING_TASK] Collecting metrics...")
+                logger.info("[METRICS_BROADCASTER] === BROADCAST CYCLE START ===")
+                logger.info(f"[METRICS_BROADCASTER] is_monitoring: {self.is_monitoring}")
+                logger.info(f"[METRICS_BROADCASTER] ws_server: {self.ws_server}")
+                
+                # 메트릭 수집
                 metrics = await self._collect_metrics()
-                logger.info(f"[MONITORING_TASK] Collected metrics: {len(str(metrics))} chars")
+                logger.info(f"[METRICS_BROADCASTER] Metrics collected: {bool(metrics)}")
                 
                 if metrics:
-                    logger.info(f"[MONITORING_TASK] Broadcasting monitoring_metrics: {len(str(metrics))} chars")
+                    # 브로드캐스트 시도
+                    logger.info("[METRICS_BROADCASTER] Attempting to broadcast metrics...")
                     await self._broadcast_monitoring_message("monitoring_metrics", metrics)
-                    self.last_metrics = metrics
+                    logger.info("[METRICS_BROADCASTER] Broadcast attempt completed")
                 else:
-                    logger.warning("[MONITORING_TASK] No metrics collected - skipping broadcast")
+                    logger.warning("[METRICS_BROADCASTER] No metrics to broadcast")
                 
+                # 캐시 업데이트
+                self.last_metrics = metrics
+                
+                logger.info(f"[METRICS_BROADCASTER] Sleeping for {self.intervals['metrics']} seconds")
                 await asyncio.sleep(self.intervals['metrics'])
                 
             except asyncio.CancelledError:
-                logger.info("[MONITORING_TASK] Metrics broadcaster cancelled")
+                logger.info("[METRICS_BROADCASTER] Metrics broadcaster task cancelled")
                 break
             except Exception as e:
-                logger.error(f"[MONITORING_TASK] Error in metrics broadcaster: {e}")
-                await asyncio.sleep(1.0)  # 에러 시 잠시 대기
+                logger.error(f"[METRICS_BROADCASTER] Error in metrics broadcaster: {e}", exc_info=True)
+                await asyncio.sleep(self.intervals['metrics'])
+        
+        logger.info("[METRICS_BROADCASTER] Metrics broadcaster task ended")
     
     async def _health_updater(self):
         """10초마다 시스템 건강 점수 업데이트"""
@@ -207,25 +218,131 @@ class MonitoringService:
             }
             logger.debug(f"System metrics: {system_metrics}")
             
-            # 스트리밍 메트릭
+            # 스트리밍 메트릭 (실시간 샘플링 속도 포함)
             streaming_metrics = {}
-            if self.streaming_optimizer:
+            if self.ws_server and hasattr(self.ws_server, 'streaming_monitor'):
                 try:
-                    # 각 센서별 처리량 계산
+                    # StreamingMonitor에서 실시간 샘플링 속도 가져오기
+                    monitor = self.ws_server.streaming_monitor
+                    
+                    if monitor and hasattr(monitor, 'sensor_rates') and monitor.sensor_rates:
+                        # 각 센서별 실시간 샘플링 속도
+                        eeg_rate = monitor.sensor_rates.get('eeg', {}).get('samples_per_sec', 0.0) if monitor.sensor_rates.get('eeg') else 0.0
+                        ppg_rate = monitor.sensor_rates.get('ppg', {}).get('samples_per_sec', 0.0) if monitor.sensor_rates.get('ppg') else 0.0
+                        acc_rate = monitor.sensor_rates.get('acc', {}).get('samples_per_sec', 0.0) if monitor.sensor_rates.get('acc') else 0.0
+                    else:
+                        logger.debug("StreamingMonitor sensor_rates not available")
+                        eeg_rate = ppg_rate = acc_rate = 0.0
+                    
+                    # 배터리 레벨 가져오기
+                    battery_level = 0
+                    if hasattr(self.ws_server, 'device_manager') and self.ws_server.device_manager:
+                        battery_level = getattr(self.ws_server.device_manager, '_battery_level', 0) or 0
+                    
+                    # 스트리밍 상태 정보 가져오기 (항상 포함)
+                    streaming_status = "stopped"
+                    device_connected = False
+                    streaming_reason = "unknown"
+                    auto_detected = False
+                    active_sensors = []
+                    data_flow_health = "none"
+                    device_info = {}
+                    
+                    try:
+                        # WebSocket 서버에서 스트림 상태 가져오기
+                        if hasattr(self.ws_server, 'get_stream_status'):
+                            stream_status = await self.ws_server.get_stream_status()
+                            if stream_status:
+                                streaming_status = stream_status.get('status', 'stopped')
+                                active_sensors = stream_status.get('active_sensors', [])
+                                data_flow_health = stream_status.get('data_flow_health', 'none')
+                                auto_detected = stream_status.get('auto_detected', False)
+                        
+                        # WebSocket 서버에서 디바이스 상태 가져오기
+                        if hasattr(self.ws_server, 'get_device_status'):
+                            device_status = await self.ws_server.get_device_status()
+                            if device_status:
+                                device_connected = device_status.get('is_connected', False)
+                                device_info = {
+                                    'name': device_status.get('device_name', ''),
+                                    'address': device_status.get('device_address', '')
+                                }
+                        
+                        # 스트리밍이 중단된 이유 판단
+                        if not device_connected:
+                            streaming_reason = "device_not_connected"
+                        elif streaming_status == "stopped":
+                            streaming_reason = "manually_stopped"
+                        elif streaming_status == "running":
+                            streaming_reason = "active"
+                        else:
+                            streaming_reason = "unknown"
+                            
+                    except Exception as e:
+                        logger.debug(f"Error getting streaming/device status: {e}")
+                        # 기본값 유지
+                    
                     streaming_metrics = {
+                        # 실시간 샘플링 레이트
+                        'eeg_sampling_rate': eeg_rate,
+                        'ppg_sampling_rate': ppg_rate,
+                        'acc_sampling_rate': acc_rate,
+                        'battery_level': battery_level,
+                        
+                        # 스트리밍 상태 정보 (항상 포함)
+                        'streaming_status': streaming_status,
+                        'device_connected': device_connected,
+                        'streaming_reason': streaming_reason,
+                        'auto_detected': auto_detected,
+                        'active_sensors': active_sensors,
+                        'data_flow_health': data_flow_health,
+                        'device_info': device_info,
+                        
+                        # 성능 메트릭
                         'eeg_throughput': self._calculate_throughput('eeg'),
                         'ppg_throughput': self._calculate_throughput('ppg'),
                         'acc_throughput': self._calculate_throughput('acc'),
                         'total_latency': self._calculate_average_latency()
                     }
+                    logger.debug(f"Real-time sampling rates - EEG: {eeg_rate}, PPG: {ppg_rate}, ACC: {acc_rate}")
+                    logger.debug(f"Streaming status: {streaming_status}, Device connected: {device_connected}, Reason: {streaming_reason}")
                 except Exception as e:
-                    logger.debug(f"Error collecting streaming metrics: {e}")
+                    logger.error(f"Error collecting streaming metrics: {e}", exc_info=True)
                     streaming_metrics = {
+                        'eeg_sampling_rate': 0.0,
+                        'ppg_sampling_rate': 0.0,
+                        'acc_sampling_rate': 0.0,
+                        'battery_level': 0,
+                        'streaming_status': 'error',
+                        'device_connected': False,
+                        'streaming_reason': 'collection_error',
+                        'auto_detected': False,
+                        'active_sensors': [],
+                        'data_flow_health': 'error',
+                        'device_info': {},
                         'eeg_throughput': 0.0,
                         'ppg_throughput': 0.0,
                         'acc_throughput': 0.0,
                         'total_latency': 0.0
                     }
+            else:
+                streaming_metrics = {
+                    'eeg_sampling_rate': 0.0,
+                    'ppg_sampling_rate': 0.0,
+                    'acc_sampling_rate': 0.0,
+                    'battery_level': 0,
+                    'streaming_status': 'unavailable',
+                    'device_connected': False,
+                    'streaming_reason': 'websocket_server_unavailable',
+                    'auto_detected': False,
+                    'active_sensors': [],
+                    'data_flow_health': 'unavailable',
+                    'device_info': {},
+                    'eeg_throughput': 0.0,
+                    'ppg_throughput': 0.0,
+                    'acc_throughput': 0.0,
+                    'total_latency': 0.0
+                }
             
             # 시스템 건강 점수
             health_score = 75.0  # 기본값으로 설정
@@ -473,33 +590,131 @@ class MonitoringService:
             return "STABLE"
     
     async def _broadcast_monitoring_message(self, message_type: str, data: Dict[str, Any]):
-        """모니터링 메시지 브로드캐스트"""
+        """모니터링 메시지 브로드캐스트 - 독립 WebSocket과 FastAPI WebSocket 모두 지원"""
         logger.info(f"[MONITORING_BROADCAST] Attempting to broadcast {message_type}")
         
         if not self.ws_server:
             logger.error(f"[MONITORING_BROADCAST] No WebSocket server available for {message_type}")
             return
         
+        # WebSocket 서버 인스턴스 디버깅
+        logger.info(f"[MONITORING_BROADCAST] WebSocket server instance: {type(self.ws_server).__name__}")
+        logger.info(f"[MONITORING_BROADCAST] WebSocket server ID: {id(self.ws_server)}")
+        
+        # 두 클라이언트 목록 모두 확인 (더 상세한 디버깅)
+        standalone_clients = getattr(self.ws_server, 'clients', set())
+        connected_clients = getattr(self.ws_server, 'connected_clients', {})
+        
+        # None 체크 및 안전한 접근
+        if standalone_clients is None:
+            standalone_clients = set()
+        if connected_clients is None:
+            connected_clients = {}
+            
+        standalone_client_count = len(standalone_clients) if standalone_clients else 0
+        fastapi_client_count = len(connected_clients) if connected_clients else 0
+        total_clients = standalone_client_count + fastapi_client_count
+        
+        logger.info(f"[MONITORING_BROADCAST] Standalone clients: {standalone_client_count}, FastAPI clients: {fastapi_client_count}, Total: {total_clients}")
+        logger.info(f"[MONITORING_BROADCAST] Standalone clients object: {type(standalone_clients)} - {standalone_clients}")
+        logger.info(f"[MONITORING_BROADCAST] FastAPI clients object: {type(connected_clients)} - {list(connected_clients.keys()) if connected_clients else 'None'}")
+        
+        # WebSocket 서버 속성 디버깅
+        logger.info(f"[MONITORING_BROADCAST] WebSocket server attributes: {[attr for attr in dir(self.ws_server) if 'client' in attr.lower()]}")
+        
+        # 실제 connected_clients 속성 확인
+        if hasattr(self.ws_server, 'connected_clients'):
+            actual_clients = self.ws_server.connected_clients
+            logger.info(f"[MONITORING_BROADCAST] Actual connected_clients: {type(actual_clients)} - {len(actual_clients) if actual_clients else 0} clients")
+            if actual_clients:
+                logger.info(f"[MONITORING_BROADCAST] Connected client IDs: {list(actual_clients.keys())}")
+        else:
+            logger.warning(f"[MONITORING_BROADCAST] WebSocket server has no 'connected_clients' attribute")
+        
         try:
             message = {
                 "type": message_type,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
-                "data": data
+                "data": data,
+                "monitoring_service_id": "MONITORING_METRICS_BROADCAST_TEST"  # 특별한 식별자 추가
             }
             
             logger.info(f"[MONITORING_BROADCAST] Message prepared: {len(str(message))} chars")
             
-            # 채널별 브로드캐스트 사용 (구독한 클라이언트에게만 전송)
-            if hasattr(self.ws_server, 'broadcast_to_channel'):
-                logger.info(f"[MONITORING_BROADCAST] Using broadcast_to_channel for {message_type}")
-                await self.ws_server.broadcast_to_channel(message_type, json.dumps(message))
-                logger.info(f"[MONITORING_BROADCAST] Successfully broadcasted {message_type}")
-            elif hasattr(self.ws_server, 'broadcast'):
-                logger.info(f"[MONITORING_BROADCAST] Using broadcast for {message_type}")
-                await self.ws_server.broadcast(json.dumps(message))
-                logger.info(f"[MONITORING_BROADCAST] Successfully broadcasted {message_type}")
+            message_json = json.dumps(message)
+            broadcast_success = False
+            
+            # 1. 독립 WebSocket 서버 클라이언트들에게 브로드캐스트
+            if standalone_client_count > 0:
+                try:
+                    if hasattr(self.ws_server, 'broadcast_to_channel'):
+                        # 채널 구독 기반 브로드캐스트 시도
+                        logger.info(f"[MONITORING_BROADCAST] Using channel-based broadcast for {message_type}")
+                        await self.ws_server.broadcast_to_channel(message_type, message_json)
+                        logger.info(f"[MONITORING_BROADCAST] Successfully broadcasted to {message_type} channel subscribers")
+                        broadcast_success = True
+                    elif hasattr(self.ws_server, 'broadcast'):
+                        # 일반 브로드캐스트 시도
+                        logger.info(f"[MONITORING_BROADCAST] Using general broadcast for standalone clients")
+                        await self.ws_server.broadcast(message_json)
+                        logger.info(f"[MONITORING_BROADCAST] Successfully broadcasted to {standalone_client_count} standalone clients")
+                        broadcast_success = True
+                    else:
+                        logger.error(f"[MONITORING_BROADCAST] No broadcast method available for standalone clients")
+                except Exception as e:
+                    logger.error(f"[MONITORING_BROADCAST] Error broadcasting to standalone clients: {e}", exc_info=True)
+            
+            # 2. FastAPI WebSocket 클라이언트들에게 브로드캐스트
+            if fastapi_client_count > 0:
+                try:
+                    fastapi_success_count = 0
+                    
+                    # FastAPI 구독자 확인
+                    fastapi_subscriptions = getattr(self.ws_server, 'fastapi_client_subscriptions', {})
+                    logger.info(f"[MONITORING_BROADCAST] FastAPI subscriptions: {fastapi_subscriptions}")
+                    
+                    for client_id, websocket in connected_clients.items():
+                        try:
+                            # 해당 클라이언트가 monitoring_metrics를 구독했는지 확인
+                            client_channels = fastapi_subscriptions.get(client_id, set())
+                            if message_type in client_channels:
+                                await websocket.send_json(message)
+                                fastapi_success_count += 1
+                                logger.info(f"[MONITORING_BROADCAST] Successfully sent to FastAPI subscriber {client_id}")
+                            else:
+                                # 구독하지 않은 클라이언트에게는 전송하지 않음
+                                logger.debug(f"[MONITORING_BROADCAST] Client {client_id} not subscribed to {message_type}")
+                        except Exception as client_error:
+                            logger.error(f"[MONITORING_BROADCAST] Error sending to FastAPI client {client_id}: {client_error}")
+                    
+                    if fastapi_success_count > 0:
+                        logger.info(f"[MONITORING_BROADCAST] Successfully broadcasted to {fastapi_success_count}/{fastapi_client_count} FastAPI subscribers")
+                        broadcast_success = True
+                    else:
+                        logger.warning(f"[MONITORING_BROADCAST] No FastAPI clients subscribed to {message_type}")
+                        
+                except Exception as e:
+                    logger.error(f"[MONITORING_BROADCAST] Error broadcasting to FastAPI clients: {e}", exc_info=True)
+            
+            # 3. 클라이언트가 없는 경우에도 채널 기반 브로드캐스트 시도
+            if total_clients == 0:
+                logger.warning(f"[MONITORING_BROADCAST] No clients detected, attempting fallback broadcast")
+                try:
+                    if hasattr(self.ws_server, 'broadcast_to_channel'):
+                        await self.ws_server.broadcast_to_channel(message_type, message_json)
+                        logger.info(f"[MONITORING_BROADCAST] Fallback channel broadcast completed")
+                        broadcast_success = True
+                    elif hasattr(self.ws_server, 'broadcast'):
+                        await self.ws_server.broadcast(message_json)
+                        logger.info(f"[MONITORING_BROADCAST] Fallback general broadcast completed")
+                        broadcast_success = True
+                except Exception as e:
+                    logger.error(f"[MONITORING_BROADCAST] Fallback broadcast failed: {e}")
+            
+            if broadcast_success:
+                logger.info(f"[MONITORING_BROADCAST] {message_type} broadcast completed successfully")
             else:
-                logger.error(f"[MONITORING_BROADCAST] No broadcast method available on WebSocket server")
+                logger.warning(f"[MONITORING_BROADCAST] {message_type} broadcast failed or no clients available")
             
         except Exception as e:
             logger.error(f"[MONITORING_BROADCAST] Error broadcasting monitoring message {message_type}: {e}", exc_info=True)

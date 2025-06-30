@@ -8,6 +8,8 @@ Link Band SDK 서버 메인 진입점
 import os
 import sys
 import subprocess
+import signal
+import time
 from pathlib import Path
 
 def setup_python_path():
@@ -39,12 +41,103 @@ def check_dependencies():
         print("pip install fastapi uvicorn 실행 필요")
         return False
 
+def cleanup_existing_processes():
+    """기존 서버 프로세스 및 포트 정리"""
+    try:
+        import psutil
+        
+        print("🔍 기존 서버 프로세스 확인 중...")
+        
+        # 1. run_server.py 프로세스 찾기
+        current_pid = os.getpid()
+        killed_processes = []
+        
+        for proc in psutil.process_iter(['pid', 'cmdline']):
+            try:
+                cmdline = proc.info['cmdline']
+                if cmdline and any('run_server.py' in arg for arg in cmdline):
+                    if proc.info['pid'] != current_pid:  # 현재 프로세스는 제외
+                        print(f"   기존 run_server.py 프로세스 발견: PID {proc.info['pid']}")
+                        proc.terminate()
+                        killed_processes.append(proc.info['pid'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        # 2. 포트 점유 프로세스 확인 및 종료
+        ports_to_check = [8121, 18765]
+        for port in ports_to_check:
+            for conn in psutil.net_connections():
+                if conn.laddr.port == port and conn.status == 'LISTEN':
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        if conn.pid not in killed_processes:
+                            print(f"   포트 {port} 점유 프로세스 발견: PID {conn.pid}")
+                            proc.terminate()
+                            killed_processes.append(conn.pid)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+        
+        # 3. 프로세스 종료 대기
+        if killed_processes:
+            print(f"   {len(killed_processes)}개 프로세스 종료 대기 중...")
+            time.sleep(2)
+            
+            # 강제 종료가 필요한 프로세스 확인
+            for pid in killed_processes:
+                try:
+                    proc = psutil.Process(pid)
+                    if proc.is_running():
+                        print(f"   PID {pid} 강제 종료 중...")
+                        proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            
+            time.sleep(1)
+            print("   ✅ 기존 프로세스 정리 완료")
+        else:
+            print("   ✅ 정리할 프로세스 없음")
+            
+    except ImportError:
+        # psutil이 없는 경우 기본 방법 사용
+        print("⚠️  psutil 미설치 - 기본 포트 정리 방법 사용")
+        try:
+            # lsof 명령어로 포트 점유 프로세스 확인
+            for port in [8121, 18765]:
+                result = subprocess.run(['lsof', '-ti', f':{port}'], 
+                                      capture_output=True, text=True)
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid.strip():
+                            print(f"   포트 {port} 점유 프로세스 종료: PID {pid}")
+                            try:
+                                os.kill(int(pid), signal.SIGTERM)
+                                time.sleep(1)
+                                os.kill(int(pid), signal.SIGKILL)
+                            except (ProcessLookupError, ValueError):
+                                pass
+        except FileNotFoundError:
+            print("   lsof 명령어를 찾을 수 없습니다.")
+    
+    except Exception as e:
+        print(f"⚠️  프로세스 정리 중 오류: {e}")
+    
+    # 포트 해제 대기
+    print("⏳ 포트 해제 대기 중...")
+    time.sleep(2)
+
 def start_server():
     """서버 시작"""
     setup_python_path()
     
     if not check_dependencies():
         return False
+    
+    # 기존 프로세스 정리 (--force 옵션이 있거나 기본 동작)
+    if len(sys.argv) > 1 and '--no-cleanup' in sys.argv:
+        print("⚠️  프로세스 정리 건너뛰기")
+    else:
+        cleanup_existing_processes()
     
     # 통합 로그 시스템 초기화 (의존성 확인 후)
     try:

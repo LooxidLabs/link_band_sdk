@@ -1,62 +1,84 @@
 const WebSocket = require('ws');
 
-console.log('🔍 Detailed Monitoring Data Test');
+console.log('=== 모니터링 서비스 디버깅 테스트 ===\n');
 
-const ws = new WebSocket('ws://localhost:18765');
+// 1. 먼저 FastAPI WebSocket 연결 및 구독
+console.log('🔍 [1단계] FastAPI WebSocket 연결 및 구독');
 
-ws.on('open', function() {
-  console.log('✅ Connected to WebSocket server');
-  
-  // monitoring_metrics 채널 구독
-  ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'monitoring_metrics'
-  }));
-  
-  console.log('📤 Subscribed to monitoring_metrics');
-});
+const fastapiWs = new WebSocket('ws://127.0.0.1:8121/ws');
+let subscriptionConfirmed = false;
+let monitoringReceived = false;
 
-ws.on('message', function(data) {
-  try {
-    const message = JSON.parse(data);
+fastapiWs.on('open', function open() {
+    console.log('✅ FastAPI WebSocket 연결 성공');
     
-    if (message.type === 'subscription_confirmed') {
-      console.log('✅ Subscription confirmed for channel:', message.channel);
-    } else if (message.type === 'monitoring_metrics') {
-      console.log('\n📨 Monitoring data received:');
-      console.log('Message structure:', JSON.stringify(message, null, 2));
-      
-      // 시스템 데이터 상세 분석
-      if (message.data && message.data.system) {
-        console.log('\n🖥️ System data details:');
-        console.log('- CPU:', message.data.system.cpu_percent, '%');
-        console.log('- Memory Percent:', message.data.system.memory_percent, '%');
-        console.log('- Memory Used MB:', message.data.system.memory_used_mb, 'MB');
-        console.log('- Process Memory MB:', message.data.system.process_memory_mb, 'MB');
-      }
-      
-      // 헬스 스코어 분석
-      if (message.data && message.data.health_score) {
-        console.log('\n💚 Health score details:');
-        console.log('Health score:', JSON.stringify(message.data.health_score, null, 2));
-      }
-    } else {
-      console.log('📨 Other message type:', message.type);
+    setTimeout(() => {
+        console.log('📤 monitoring_metrics 구독 요청');
+        fastapiWs.send(JSON.stringify({
+            type: 'subscribe',
+            channel: 'monitoring_metrics'
+        }));
+    }, 1000);
+});
+
+fastapiWs.on('message', function message(data) {
+    try {
+        const parsed = JSON.parse(data);
+        
+        if (parsed.type === 'subscription_confirmed') {
+            console.log('✅ 구독 확인됨');
+            subscriptionConfirmed = true;
+        } else if (parsed.type === 'monitoring_metrics') {
+            console.log('🎯 monitoring_metrics 수신!');
+            monitoringReceived = true;
+        }
+    } catch (e) {
+        // ignore
     }
-  } catch (e) {
-    console.log('📨 Raw message:', data.toString());
-  }
 });
 
-ws.on('error', function(error) {
-  console.log('❌ WebSocket error:', error.message);
-});
-
-ws.on('close', function() {
-  console.log('🔌 Connection closed');
-});
-
-// 10초 후 종료
-setTimeout(() => {
-  ws.close();
-}, 10000); 
+// 2. 10초 후 서버 상태 점검
+setTimeout(async () => {
+    console.log('\n🔍 [2단계] 서버 상태 점검');
+    
+    try {
+        // 서버 헬스 체크
+        const healthResponse = await fetch('http://localhost:8121/');
+        console.log(`📊 서버 응답: ${healthResponse.status}`);
+        
+        // 스트림 상태 확인
+        const streamResponse = await fetch('http://localhost:8121/stream/status');
+        const streamData = await streamResponse.json();
+        console.log(`📊 스트림 상태: ${JSON.stringify(streamData, null, 2)}`);
+        
+    } catch (e) {
+        console.log(`❌ API 호출 실패: ${e.message}`);
+    }
+    
+    console.log(`\n📋 현재 상태:`);
+    console.log(`- 구독 확인: ${subscriptionConfirmed ? '✅' : '❌'}`);
+    console.log(`- monitoring_metrics 수신: ${monitoringReceived ? '✅' : '❌'}`);
+    
+    // 3. 추가로 20초 더 대기
+    console.log('\n🔍 [3단계] 20초 추가 대기 중...');
+    
+    setTimeout(() => {
+        console.log('\n📋 === 최종 결과 ===');
+        console.log(`구독 확인: ${subscriptionConfirmed ? '✅' : '❌'}`);
+        console.log(`monitoring_metrics 수신: ${monitoringReceived ? '✅' : '❌'}`);
+        
+        if (subscriptionConfirmed && !monitoringReceived) {
+            console.log('\n🔍 문제 분석:');
+            console.log('1. FastAPI WebSocket 구독은 성공');
+            console.log('2. 하지만 모니터링 서비스가 브로드캐스트하지 않음');
+            console.log('3. 가능한 원인:');
+            console.log('   - 모니터링 서비스가 시작되지 않음');
+            console.log('   - 브로드캐스트 로직에서 FastAPI 구독자 인식 실패');
+            console.log('   - 모니터링 태스크가 실행되지 않음');
+        }
+        
+        fastapiWs.close();
+        process.exit(0);
+    }, 20000);
+    
+}, 10000);

@@ -2,15 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
-import { Play, Square, FolderOpen, Copy, Database, AlertCircle, RefreshCw } from 'lucide-react';
+import { Play, Square, FolderOpen, Copy, Database, RefreshCw } from 'lucide-react';
 import { RecordingStatus } from './RecordingStatus.tsx';
 import { SessionList } from './SessionList.tsx';
 import { SearchFilters } from './SearchFilters.tsx';
 import { RecordingOptions, type RecordingOptionsData } from './RecordingOptions.tsx';
+import { StreamingStatusIndicator } from './StreamingStatusIndicator.tsx';
 import { useDataCenterStore } from '../../stores/dataCenter';
 import { useDeviceStore } from '../../stores/device';
 import { useSystemStatus } from '../../hooks/useSystemManager';
 import { engineApi } from '../../api/engine';
+import { globalPollingManager } from '../../services/AdaptivePollingManager';
 import type { FileInfo } from '../../types/data-center';
 
 // electronApi 타입 정의
@@ -42,6 +44,8 @@ const DataCenter: React.FC = () => {
   // Auto-detected streaming status (Phase 2)
   const [autoStreamingStatus, setAutoStreamingStatus] = useState<any>(null);
   const [isStreamingActive, setIsStreamingActive] = useState(false);
+
+  // 전역 AdaptivePollingManager 사용
 
   // Recording Options 상태 관리
   const getDefaultSessionName = () => {
@@ -226,20 +230,28 @@ const DataCenter: React.FC = () => {
     // 자동 스트리밍 상태 확인 (Phase 2)
     fetchAutoStreamingStatus();
     
-    // 주기적으로 레코딩 상태 및 스트리밍 상태 새로고침 (5초마다)
-    const interval = setInterval(() => {
-      fetchRecordingStatus();
-      fetchAutoStreamingStatus();
-    }, 5000);
-    
-    return () => clearInterval(interval);
-  }, []); // 빈 dependency array로 마운트 시에만 실행
+    // AdaptivePollingManager를 사용한 적응형 폴링 시작
+    globalPollingManager.startAdaptivePolling('dataCenter-streamingStatus', async () => {
+      await fetchAutoStreamingStatus();
+    }, {
+      normalInterval: 5000,  // 정상 단계: 5초
+      initInterval: 1000,    // 초기화 단계: 1초
+      initDuration: 30000    // 초기화 단계 지속 시간: 30초
+    });
 
-  useEffect(() => {
-    fetchRecordingStatus();
-    const interval = setInterval(fetchRecordingStatus, 1000);
-    return () => clearInterval(interval);
-  }, [fetchRecordingStatus]);
+    globalPollingManager.startAdaptivePolling('dataCenter-recordingStatus', async () => {
+      await fetchRecordingStatus();
+    }, {
+      normalInterval: 1000,  // 정상 단계: 1초 (기존과 동일)
+      initInterval: 1000,    // 초기화 단계: 1초
+      initDuration: 30000    // 초기화 단계 지속 시간: 30초
+    });
+    
+    return () => {
+      globalPollingManager.stopPolling('dataCenter-streamingStatus');
+      globalPollingManager.stopPolling('dataCenter-recordingStatus');
+    };
+  }, []); // 빈 dependency array로 마운트 시에만 실행
 
   const handleTabChange = (newValue: string) => {
     setActiveTab(newValue);
@@ -386,37 +398,15 @@ const DataCenter: React.FC = () => {
             onPathValidation={handlePathValidation}
           />
           
-          {(!isEngineStarted || !isDeviceConnected || !isStreamingActive) && !recordingStatus.is_recording && (
-            <div className="mb-4 p-4 bg-red-900/20 border border-red-800 rounded-md flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-red-400">
-                <p className="font-medium mb-2">Recording requires all conditions to be met:</p>
-                <ul className="space-y-1">
-                  <li className="flex items-center gap-2">
-                    {isEngineStarted ? (
-                      <span className="text-green-400">✓ Engine: Started</span>
-                    ) : (
-                      <span className="text-red-400">✗ Engine: Not started</span>
-                    )}
-                  </li>
-                  <li className="flex items-center gap-2">
-                    {isDeviceConnected ? (
-                      <span className="text-green-400">✓ Link Band: Connected</span>
-                    ) : (
-                      <span className="text-red-400">✗ Link Band: Not connected</span>
-                    )}
-                  </li>
-                  <li className="flex items-center gap-2">
-                    {isStreamingActive ? (
-                      <span className="text-green-400">✓ Data Streaming: Active</span>
-                    ) : (
-                      <span className="text-red-400">✗ Data Streaming: Inactive</span>
-                    )}
-                  </li>
-                </ul>
-              </div>
-            </div>
-          )}
+          {/* 스트리밍 상태 표시 - 새로운 StreamingStatusIndicator 사용 */}
+          <div className="mb-4">
+            <StreamingStatusIndicator
+              autoStreamingStatus={autoStreamingStatus}
+              isStreamingActive={isStreamingActive}
+              isEngineStarted={isEngineStarted}
+              isDeviceConnected={isDeviceConnected}
+            />
+          </div>
           
           <Separator className="my-4" />
           

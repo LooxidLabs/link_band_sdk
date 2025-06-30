@@ -1,0 +1,28 @@
+key,value
+session_name,session_2025_06_30_20250630_064551
+start_time,2025-06-30T06:45:51.920089
+files,"[{""type"": ""015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw"", ""filename"": ""015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json"", ""path"": ""/Users/brian_chae/Library/Application Support/Link Band SDK/Exports/session_2025_06_30_20250630_064551/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json"", ""size"": 250526, ""record_count"": 1575, ""created_at"": ""2025-06-30T06:45:58.189853""}, {""type"": ""015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed"", ""filename"": ""015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json"", ""path"": ""/Users/brian_chae/Library/Application Support/Link Band SDK/Exports/session_2025_06_30_20250630_064551/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json"", ""size"": 127483, ""record_count"": 12, ""created_at"": ""2025-06-30T06:45:58.194410""}, {""type"": ""015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw"", ""filename"": ""015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json"", ""path"": ""/Users/brian_chae/Library/Application Support/Link Band SDK/Exports/session_2025_06_30_20250630_064551/015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json"", ""size"": 13776, ""record_count"": 150, ""created_at"": ""2025-06-30T06:45:58.195333""}, {""type"": ""015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed"", ""filename"": ""015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json"", ""path"": ""/Users/brian_chae/Library/Application Support/Link Band SDK/Exports/session_2025_06_30_20250630_064551/015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json"", ""size"": 29442, ""record_count"": 5, ""created_at"": ""2025-06-30T06:45:58.196439""}, {""type"": ""015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed"", ""filename"": ""015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json"", ""path"": ""/Users/brian_chae/Library/Application Support/Link Band SDK/Exports/session_2025_06_30_20250630_064551/015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json"", ""size"": 467600, ""record_count"": 21, ""created_at"": ""2025-06-30T06:45:58.207702""}, {""type"": ""015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw"", ""filename"": ""015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json"", ""path"": ""/Users/brian_chae/Library/Application Support/Link Band SDK/Exports/session_2025_06_30_20250630_064551/015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json"", ""size"": 25766, ""record_count"": 308, ""created_at"": ""2025-06-30T06:45:58.208975""}]"
+status,stopped
+export_path,/Users/brian_chae/Library/Application Support/Link Band SDK/Exports
+data_format,csv
+end_time,2025-06-30T06:45:58.182024
+stats_total_files,6
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw_filename,015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw.json
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw_record_count,1575
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_eeg_raw_size_bytes,250526
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed_filename,015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed.json
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed_record_count,12
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_ppg_processed_size_bytes,127483
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw_filename,015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw.json
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw_record_count,150
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_acc_raw_size_bytes,13776
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed_filename,015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed.json
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed_record_count,5
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_acc_processed_size_bytes,29442
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed_filename,015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed.json
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed_record_count,21
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_eeg_processed_size_bytes,467600
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw_filename,015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw.json
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw_record_count,308
+stats_type_details_015F2A8E-3772-FB6D-2197-548F305983B0_ppg_raw_size_bytes,25766
+stats_total_records,2071

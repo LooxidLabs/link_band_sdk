@@ -3,6 +3,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { communicationManager } from '../../services/communication/CommunicationManager';
 import { useSensorStore } from '../sensor';
+import { globalPollingManager } from '../../services/AdaptivePollingManager';
 import type { ConnectionStatus } from '../../services/communication/CommunicationManager';
 
 // 디바이스 상태 타입들
@@ -54,6 +55,11 @@ export interface StreamingStatus {
     ppg: number;
     acc: number;
     battery: number;
+  };
+  samplingRates: {
+    eeg: number;
+    ppg: number;
+    acc: number;
   };
   errors: string[];
   lastDataReceived: number;
@@ -229,6 +235,11 @@ const initialState: SystemState = {
       acc: 0,
       battery: 0
     },
+    samplingRates: {
+      eeg: 0,
+      ppg: 0,
+      acc: 0
+    },
     errors: [],
     lastDataReceived: 0
   },
@@ -321,6 +332,9 @@ export const useSystemStore = create<SystemState & SystemActions>()(
         initializationPromise = (async () => {
           try {
             console.log('[SystemStore] Initializing system...');
+            
+            // AdaptivePollingManager에 초기화 시작 알림
+            globalPollingManager.markInitializationStart();
             
             // 통신 매니저 초기화 (기본 연결)
             await communicationManager.initialize();
@@ -718,8 +732,10 @@ function setupWebSocketSubscriptions() {
         lastDataReceived: Date.now()
       });
       
-      // 데이터 수신 시 디바이스 연결 상태 자동 업데이트
+      // 🔄 데이터 흐름 기반 재초기화 로직
       const currentState = useSystemStore.getState();
+      
+      // 데이터 수신 시 디바이스 연결 상태 자동 업데이트
       if (!currentState.device.current && currentState.device.discovered.length > 0) {
         // 데이터를 받고 있다는 것은 디바이스가 연결되어 있다는 의미
         // discovered 배열의 첫 번째 디바이스를 current로 설정
@@ -731,6 +747,28 @@ function setupWebSocketSubscriptions() {
           isConnected: true,
           lastSeen: Date.now()
         });
+        
+        // 🚀 데이터 흐름 감지 시 AdaptivePollingManager 재시작
+        console.log('[SystemStore] Data flow detected - restarting AdaptivePollingManager...');
+        import('../../services/AdaptivePollingManager').then(({ globalPollingManager }) => {
+          globalPollingManager.markInitializationStart();
+          console.log('[SystemStore] AdaptivePollingManager restarted due to data flow detection');
+        });
+      }
+      
+      // 📊 EEG 데이터 특별 처리 (가장 중요한 신호)
+      if (sensor_type === 'eeg' && data && data.length > 0) {
+        // EEG 데이터가 들어오면 시스템이 완전히 활성화된 것으로 간주
+        console.log('[SystemStore] EEG data flow detected - system fully activated');
+        
+        // 스트리밍이 비활성 상태였다면 재초기화 트리거
+        if (!currentState.streaming.isStreaming || currentState.streaming.dataCount.eeg === 0) {
+          console.log('[SystemStore] EEG data detected but streaming was inactive - triggering reinitialization');
+          import('../../services/AdaptivePollingManager').then(({ globalPollingManager }) => {
+            globalPollingManager.markInitializationStart();
+            console.log('[SystemStore] AdaptivePollingManager restarted due to EEG data detection');
+          });
+        }
       }
       
       // 데이터 카운트 증가
@@ -911,6 +949,9 @@ function setupWebSocketSubscriptions() {
         case 'device_connected':
           console.log('[SystemStore] Device connected event:', data);
           if (data.device_address || data.device_info?.address) {
+            const currentState = useSystemStore.getState();
+            const wasDisconnected = !currentState.device.current?.isConnected;
+            
             const deviceInfo = {
               id: data.device_address || data.device_info?.address || 'unknown',
               name: data.device_info?.name || 'Link Band 2.0',
@@ -920,17 +961,91 @@ function setupWebSocketSubscriptions() {
               lastSeen: Date.now()
             };
             useSystemStore.getState().updateDeviceInfo(deviceInfo);
+            
+            // 🔄 디바이스 재연결 감지 및 재초기화
+            if (wasDisconnected) {
+              console.log('[SystemStore] 🔄 Device reconnection detected (Disconnected → Connected)');
+              console.log('[SystemStore] Triggering system reinitialization...');
+              
+              // 서버에 재초기화 요청
+              fetch('http://localhost:8121/stream/reinitialize', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              })
+              .then(response => response.json())
+              .then(result => {
+                console.log('[SystemStore] Reinitialization result:', result);
+                if (result.success) {
+                  console.log('[SystemStore] ✅ System reinitialized successfully after device reconnection');
+                  
+                  // AdaptivePollingManager 재시작 (초기화 상태로)
+                  import('../../services/AdaptivePollingManager').then(({ globalPollingManager }) => {
+                    globalPollingManager.markInitializationStart();
+                    
+                    // 데이터 흐름 안정화를 위해 3초 지연 후 상태 체크 시작
+                    setTimeout(() => {
+                      globalPollingManager.forceImmediateCheckAll();
+                      console.log('[SystemStore] AdaptivePollingManager status check started after 3s delay');
+                    }, 3000);
+                    
+                    console.log('[SystemStore] AdaptivePollingManager restarted with delayed check');
+                  });
+                } else {
+                  console.error('[SystemStore] ❌ Failed to reinitialize system:', result.error);
+                }
+              })
+              .catch(error => {
+                console.error('[SystemStore] ❌ Error during system reinitialization:', error);
+              });
+            } else {
+              // 이미 연결된 상태에서의 이벤트는 단순 스트리밍 시작
+              console.log('[SystemStore] Device already connected - starting streaming...');
+              
+              fetch('http://localhost:8121/stream/start', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              })
+              .then(response => response.json())
+              .then(result => {
+                console.log('[SystemStore] Auto-streaming start result:', result);
+                if (result.success) {
+                  console.log('[SystemStore] ✅ Streaming started automatically');
+                  
+                  import('../../services/AdaptivePollingManager').then(({ globalPollingManager }) => {
+                    globalPollingManager.markInitializationStart();
+                    console.log('[SystemStore] AdaptivePollingManager restarted');
+                  });
+                }
+              })
+              .catch(error => {
+                console.error('[SystemStore] ❌ Error starting streaming:', error);
+              });
+            }
           }
           break;
           
         case 'device_disconnected':
-          console.log('[SystemStore] Device disconnected event:', data);
+          console.log('[SystemStore] 🔌 Device disconnected event:', data);
           const currentState = useSystemStore.getState();
           if (currentState.device.current) {
+            console.log('[SystemStore] Updating device status to disconnected');
             useSystemStore.getState().updateDeviceInfo({
               isConnected: false,
               lastSeen: Date.now()
             });
+            
+            // 스트리밍 상태도 비활성화
+            useSystemStore.getState().syncStreamingStatus(false);
+            useSystemStore.getState().updateStreamingStats({
+              dataCount: { eeg: 0, ppg: 0, acc: 0, battery: 0 },
+              lastDataReceived: 0
+            });
+            
+            console.log('[SystemStore] Device disconnected - streaming status cleared');
           }
           break;
           
@@ -945,6 +1060,9 @@ function setupWebSocketSubscriptions() {
           // 디바이스 연결 상태 업데이트
           if (data.connected && data.device_info) {
             // 디바이스가 연결되어 있는 경우
+            const currentState = useSystemStore.getState();
+            const wasDisconnected = !currentState.device.current?.isConnected;
+            
             const deviceInfo = {
               id: data.device_info.address || data.device_info.name,
               name: data.device_info.name,
@@ -954,6 +1072,47 @@ function setupWebSocketSubscriptions() {
               lastSeen: Date.now()
             };
             useSystemStore.getState().updateDeviceInfo(deviceInfo);
+            
+            // 🔄 디바이스 재연결 감지 및 재초기화 (device_info 이벤트)
+            if (wasDisconnected) {
+              console.log('[SystemStore] 🔄 Device reconnection detected via device_info (Disconnected → Connected)');
+              console.log('[SystemStore] Triggering system reinitialization...');
+              
+              // 서버에 재초기화 요청
+              fetch('http://localhost:8121/stream/reinitialize', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              })
+              .then(response => response.json())
+              .then(result => {
+                console.log('[SystemStore] Reinitialization result (device_info):', result);
+                if (result.success) {
+                  console.log('[SystemStore] ✅ System reinitialized successfully after device reconnection (device_info)');
+                  
+                  // AdaptivePollingManager 재시작 (초기화 상태로)
+                  import('../../services/AdaptivePollingManager').then(({ globalPollingManager }) => {
+                    globalPollingManager.markInitializationStart();
+                    
+                    // 데이터 흐름 안정화를 위해 3초 지연 후 상태 체크 시작
+                    setTimeout(() => {
+                      globalPollingManager.forceImmediateCheckAll();
+                      console.log('[SystemStore] AdaptivePollingManager status check started after 3s delay (device_info)');
+                    }, 3000);
+                    
+                    console.log('[SystemStore] AdaptivePollingManager restarted with delayed check (device_info)');
+                  });
+                } else {
+                  console.error('[SystemStore] ❌ Failed to reinitialize system (device_info):', result.error);
+                }
+              })
+              .catch(error => {
+                console.error('[SystemStore] ❌ Error during system reinitialization (device_info):', error);
+              });
+            } else {
+              console.log('[SystemStore] Device already connected - maintaining current state (device_info)');
+            }
           } else if (data.connected === false) {
             // 디바이스가 연결되지 않은 경우
             const currentState = useSystemStore.getState();
@@ -1066,9 +1225,30 @@ function setupWebSocketSubscriptions() {
         }
       };
       
+      // 🔥 실시간 샘플링 속도 및 배터리 레벨 업데이트
+      const samplingRatesUpdate = {
+        eeg: streaming?.eeg_sampling_rate || 0,
+        ppg: streaming?.ppg_sampling_rate || 0,
+        acc: streaming?.acc_sampling_rate || 0
+      };
+      
+      // 배터리 레벨 업데이트 (현재 연결된 디바이스에)
+      const batteryLevel = streaming?.battery_level;
+      if (batteryLevel !== undefined && batteryLevel !== null) {
+        const currentDevice = useSystemStore.getState().device.current;
+        if (currentDevice) {
+          useSystemStore.getState().updateDeviceInfo({
+            batteryLevel: batteryLevel
+          });
+        }
+      }
+      
       console.log('[SystemStore] Updating monitoring data:', monitoringUpdate);
+      console.log('[SystemStore] Updating sampling rates:', samplingRatesUpdate);
+      console.log('[SystemStore] Updating battery level:', batteryLevel);
       
       useSystemStore.getState().updateMonitoringData(monitoringUpdate);
+      useSystemStore.getState().updateStreamingStats({ samplingRates: samplingRatesUpdate });
       
       console.log('[SystemStore] Monitoring data updated successfully. Current state:', 
         useSystemStore.getState().monitoring);

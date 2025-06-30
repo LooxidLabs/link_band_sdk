@@ -499,7 +499,7 @@ class WebSocketServer:
         # 배터리 정보 가져오기
         battery_data = []
         if is_connected and self.device_manager.battery_buffer:
-            battery_data = [{"timestamp": time.time(), "level": self.device_manager.battery_level}] if self.device_manager.battery_level is not None else []
+            battery_data = [{"timestamp": time.time(), "level": self.device_manager._battery_level}] if self.device_manager._battery_level is not None else []
         
         status_data = {
             "connected": is_connected,
@@ -1184,6 +1184,12 @@ class WebSocketServer:
                     "name": str(device_info["name"]),
                     "address": str(device_info["address"])
                 }
+                
+                # 디바이스 연결 시 StreamingMonitor 재초기화
+                from app.core.streaming_monitor import streaming_monitor
+                streaming_monitor.mark_system_initialized()
+                logger.info("StreamingMonitor reinitialized due to device connection")
+                
                 await self.broadcast_event(EventType.DEVICE_CONNECTED, safe_device_info)
                 logger.info(f"Device connected: {safe_device_info}")
                 
@@ -1982,6 +1988,68 @@ class WebSocketServer:
                 except Exception:
                     pass
 
+    async def broadcast_priority(self, message: str):
+        """Priority broadcast for critical messages like monitoring_metrics with longer timeout."""
+        logger.info(f"[PRIORITY_BROADCAST] Starting priority broadcast to {len(self.clients)} clients")
+        
+        if not self.clients:
+            logger.warning(f"[PRIORITY_BROADCAST] No clients connected, skipping broadcast")
+            return
+
+        # 연결이 끊어진 클라이언트를 추적
+        disconnected_clients = set()
+        
+        # 클라이언트 목록을 복사하여 순회 중 수정 방지
+        clients_copy = list(self.clients)
+
+        # 각 클라이언트에 메시지 전송 시도 (더 긴 타임아웃)
+        for client in clients_copy:
+            try:
+                # 클라이언트 연결 상태 확인 (Windows 호환성)
+                is_closed = getattr(client, 'closed', None)
+                if is_closed is None:
+                    # closed 속성이 없는 경우 state로 확인
+                    try:
+                        state = getattr(client, 'state', None)
+                        is_closed = state is None or state != 1  # 1은 OPEN 상태
+                    except:
+                        is_closed = False
+                
+                if is_closed:
+                    disconnected_clients.add(client)
+                    continue
+                    
+                # 우선순위 메시지는 더 긴 타임아웃 (5초)
+                await asyncio.wait_for(client.send(message), timeout=5.0)
+                logger.info(f"[PRIORITY_BROADCAST] Successfully sent to client {getattr(client, 'remote_address', 'unknown')}")
+                
+            except (websockets.exceptions.ConnectionClosed, ConnectionResetError):
+                disconnected_clients.add(client)
+            except asyncio.TimeoutError:
+                # 타임아웃이 발생해도 클라이언트를 제거하지 않음 (중요한 메시지이므로)
+                logger.warning(f"Priority message timeout for client {getattr(client, 'remote_address', 'unknown')}")
+            except OSError as e:
+                # Handle Windows-specific OS errors
+                if e.errno in (995, 10054):  # WinError 995 or WSAECONNRESET
+                    pass
+                disconnected_clients.add(client)
+            except Exception as e:
+                logger.error(f"Error sending priority message to client: {e}")
+                # 우선순위 메시지에서는 연결 에러가 아닌 경우 클라이언트를 제거하지 않음
+
+        # 실제 연결 에러가 발생한 클라이언트만 정리
+        for client in disconnected_clients:
+            if client in self.clients:
+                self.clients.remove(client)
+                # 구독 정보도 정리
+                if client in self.client_subscriptions:
+                    del self.client_subscriptions[client]
+                try:
+                    if not getattr(client, 'closed', False):
+                        await client.close(code=1000, reason="Client cleanup")
+                except Exception:
+                    pass
+
     async def broadcast_to_channel(self, channel: str, message: str):
         """특정 채널을 구독한 클라이언트에게만 브로드캐스트"""
         if not self.clients:
@@ -2173,10 +2241,10 @@ class WebSocketServer:
                 }
                 
                 # Use actual rates if available and streaming, otherwise use expected rates
-                eeg_rate = stream_status.get('eeg_sampling_rate', 0) if has_actual_eeg_rate else expected_rates['eeg']
-                ppg_rate = stream_status.get('ppg_sampling_rate', 0) if has_actual_ppg_rate else expected_rates['ppg']
-                acc_rate = stream_status.get('acc_sampling_rate', 0) if has_actual_acc_rate else expected_rates['acc']
-                bat_rate = stream_status.get('bat_sampling_rate', 0) if has_actual_bat_rate else expected_rates['bat']
+                eeg_rate = self.device_sampling_stats.get('eeg', {}).get('samples_per_sec', expected_rates['eeg']) if has_actual_eeg_rate else expected_rates['eeg']
+                ppg_rate = self.device_sampling_stats.get('ppg', {}).get('samples_per_sec', expected_rates['ppg']) if has_actual_ppg_rate else expected_rates['ppg']
+                acc_rate = self.device_sampling_stats.get('acc', {}).get('samples_per_sec', expected_rates['acc']) if has_actual_acc_rate else expected_rates['acc']
+                bat_rate = self.device_sampling_stats.get('bat', {}).get('samples_per_sec', expected_rates['bat']) if has_actual_bat_rate else expected_rates['bat']
                 
                 # For battery level, try to get actual level or use null
                 battery_level = stream_status.get('bat_level', 0)
@@ -2246,7 +2314,7 @@ class WebSocketServer:
             while True:
                 try:
                     data = await websocket.receive_json()
-                    await self.handle_client_message(client_id, data)
+                    await self.handle_fastapi_client_message(client_id, websocket, data)
                 except WebSocketDisconnect:
                     break
                 except json.JSONDecodeError:
@@ -2295,7 +2363,7 @@ class WebSocketServer:
             self.stream_engine.remove_data_callback(data_callback)
             await self.handle_client_disconnect(client_id)
 
-    async def handle_fastapi_client_message(self, client_id: str, data: Dict[str, Any]):
+    async def handle_fastapi_client_message(self, client_id: str, websocket: WebSocket, data: Dict[str, Any]):
         """Handle incoming messages from FastAPI clients."""
         try:
             # 데이터 타입 확인 및 변환
@@ -2317,6 +2385,56 @@ class WebSocketServer:
                                extra={"client_id": client_id, "data_type": type(data).__name__})
                 return
             
+            # 메시지 타입 확인
+            message_type = data.get('type')
+            
+            # 구독 메시지 처리
+            if message_type == 'subscribe':
+                channel = data.get('channel')
+                logger.info(f"[FASTAPI_WS_SUBSCRIBE] Client {client_id} subscribing to channel: {channel}")
+                
+                if channel:
+                    # FastAPI 클라이언트도 client_subscriptions에 추가
+                    if not hasattr(self, 'fastapi_client_subscriptions'):
+                        self.fastapi_client_subscriptions = {}
+                    
+                    if client_id not in self.fastapi_client_subscriptions:
+                        self.fastapi_client_subscriptions[client_id] = set()
+                    
+                    self.fastapi_client_subscriptions[client_id].add(channel)
+                    logger.info(f"[FASTAPI_WS_SUBSCRIBE] Client {client_id} subscribed to {channel}")
+                    logger.info(f"[FASTAPI_WS_SUBSCRIBE] Total FastAPI subscriptions: {len(self.fastapi_client_subscriptions)}")
+                    
+                    # 구독 확인 메시지 전송
+                    confirmation_message = {
+                        "type": "subscription_confirmed",
+                        "channel": channel,
+                        "timestamp": time.time()
+                    }
+                    await websocket.send_json(confirmation_message)
+                    logger.info(f"[FASTAPI_WS_SUBSCRIBE] Confirmation sent to client {client_id}")
+                else:
+                    logger.warning(f"[FASTAPI_WS_SUBSCRIBE] Subscribe message missing channel from client {client_id}")
+                return
+            
+            # 구독 해제 메시지 처리
+            if message_type == 'unsubscribe':
+                channel = data.get('channel')
+                logger.info(f"[FASTAPI_WS_UNSUBSCRIBE] Client {client_id} unsubscribing from channel: {channel}")
+                
+                if channel and hasattr(self, 'fastapi_client_subscriptions') and client_id in self.fastapi_client_subscriptions:
+                    self.fastapi_client_subscriptions[client_id].discard(channel)
+                    
+                    # 구독 해제 확인 메시지 전송
+                    confirmation_message = {
+                        "type": "unsubscription_confirmed",
+                        "channel": channel,
+                        "timestamp": time.time()
+                    }
+                    await websocket.send_json(confirmation_message)
+                    logger.info(f"[FASTAPI_WS_UNSUBSCRIBE] Unsubscription confirmed for client {client_id}")
+                return
+            
             # health_check는 로그하지 않음 (너무 빈번함)
             if data.get('command') != 'health_check':
                 ws_logger = get_websocket_logger(__name__)
@@ -2326,7 +2444,6 @@ class WebSocketServer:
             ws_logger = get_websocket_logger(__name__)
             ws_logger.error(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.ERROR}] Client message error", 
                            extra={"client_id": client_id, "error": str(e)}, exc_info=True)
-            # await self.broadcast_event(EventType.ERROR, {"error": str(e)})
 
     async def handle_command(self, client_id: str, data: Dict[str, Any]):
         """Handle command messages from clients."""
@@ -2370,6 +2487,12 @@ class WebSocketServer:
         """Handle client disconnection."""
         if client_id in self.connected_clients:
             del self.connected_clients[client_id]
+            
+            # FastAPI 구독 정보도 정리
+            if hasattr(self, 'fastapi_client_subscriptions') and client_id in self.fastapi_client_subscriptions:
+                del self.fastapi_client_subscriptions[client_id]
+                logger.info(f"[FASTAPI_WS_DISCONNECT] Cleaned up subscriptions for client {client_id}")
+            
             ws_logger = get_websocket_logger(__name__)
             ws_logger.info(f"[{LogTags.WEBSOCKET_SERVER}:{LogTags.DISCONNECT}] WebSocket client disconnected", 
                           extra={"client_id": client_id})

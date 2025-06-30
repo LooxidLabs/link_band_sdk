@@ -44,7 +44,6 @@ function App() {
   });
 
   const isConnected = deviceStatus?.is_connected || false;
-  const batteryLevel = deviceStatus?.battery_level || 0;
 
   useEffect(() => {
     // Initialize engine and start polling on component mount
@@ -138,7 +137,6 @@ function App() {
             isConnected={isConnected} 
             isWebSocketConnected={isWebSocketConnected}
             engineStatus={engineStatus}
-            batteryLevel={batteryLevel}
           />
         </div>
       </div>

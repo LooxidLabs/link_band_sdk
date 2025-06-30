@@ -212,15 +212,15 @@ async def startup_event():
     app.state.device_registry = device_registry_instance
     logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [3/8] Device registry initialized")
 
-    logger.info(f"[{LogTags.SERVER}] [4/8] Initializing device manager...")
-    device_manager_instance = DeviceManager(device_registry_instance)
-    app.state.device_manager = device_manager_instance
-    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [4/8] Device manager initialized")
-
-    logger.info(f"[{LogTags.SERVER}] [5/8] Initializing data recorder...")
+    logger.info(f"[{LogTags.SERVER}] [4/8] Initializing data recorder...")
     data_recorder_instance = DataRecorder()
     app.state.data_recorder = data_recorder_instance
-    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [5/8] Data recorder initialized")
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [4/8] Data recorder initialized")
+
+    logger.info(f"[{LogTags.SERVER}] [5/8] Initializing device manager...")
+    device_manager_instance = DeviceManager(device_registry_instance)
+    app.state.device_manager = device_manager_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [5/8] Device manager initialized")
 
     logger.info(f"[{LogTags.SERVER}] [6/8] Initializing WebSocket server...")
     ws_server_instance = WebSocketServer(
@@ -231,7 +231,10 @@ async def startup_event():
         device_registry=device_registry_instance
     )
     app.state.ws_server = ws_server_instance
-    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [6/8] WebSocket server initialized")
+    
+    # DeviceManager에 WebSocket 서버 인스턴스 설정
+    device_manager_instance.ws_server = ws_server_instance
+    logger.info(f"[{LogTags.SERVER}:{LogTags.SUCCESS}] [6/8] WebSocket server initialized and linked to DeviceManager")
 
     logger.info(f"[{LogTags.SERVER}] [7/8] Initializing recording service...")
     # WebSocketServer의 data_recorder를 사용하여 RecordingService 초기화
@@ -327,14 +330,23 @@ async def read_root():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    logger.info(f"[FASTAPI_WS_DEBUG] New WebSocket connection attempt to /ws endpoint")
+    logger.info(f"[FASTAPI_WS_DEBUG] === NEW WEBSOCKET CONNECTION ===")
     logger.info(f"[FASTAPI_WS_DEBUG] WebSocket client: {websocket.client}")
+    logger.info(f"[FASTAPI_WS_DEBUG] WebSocket state: {websocket.client_state}")
     
     if hasattr(app.state, 'ws_server') and app.state.ws_server:
+        logger.info(f"[FASTAPI_WS_DEBUG] WebSocketServer found in app.state")
+        logger.info(f"[FASTAPI_WS_DEBUG] Current connected_clients count: {len(getattr(app.state.ws_server, 'connected_clients', {}))}")
         logger.info(f"[FASTAPI_WS_DEBUG] Delegating to ws_server.handle_websocket_connection")
-        await app.state.ws_server.handle_websocket_connection(websocket)
+        
+        try:
+            await app.state.ws_server.handle_websocket_connection(websocket)
+            logger.info(f"[FASTAPI_WS_DEBUG] handle_websocket_connection completed successfully")
+        except Exception as e:
+            logger.error(f"[FASTAPI_WS_DEBUG] Error in handle_websocket_connection: {e}", exc_info=True)
     else:
         logger.error("[FASTAPI_WS_DEBUG] WebSocketServer not initialized in app.state for /ws endpoint.")
+        logger.error(f"[FASTAPI_WS_DEBUG] app.state attributes: {dir(app.state)}")
         logger.error(f"[FASTAPI_WS_DEBUG] Closing connection with code 1011")
         await websocket.close(code=1011) 
 

@@ -47,12 +47,13 @@ ACC_SAMPLE_RATE = 30
 TIMESTAMP_CLOCK = 32768.0  # 32.768 kHz 클럭 기반 타임스탬프
 
 class DeviceManager:
-    def __init__(self, registry: DeviceRegistry, server_disconnect_callback: Optional[Callable] = None):
+    def __init__(self, registry: DeviceRegistry, server_disconnect_callback: Optional[Callable] = None, ws_server=None):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         
         self.signal_processor = SignalProcessor()
         self.registry = registry
+        self.ws_server = ws_server  # WebSocket 서버 인스턴스 저장
         
         self.devices: Dict[str, Device] = {}
         self.connection_callbacks: List[Callable] = []
@@ -1000,26 +1001,27 @@ class DeviceManager:
 
     # 샘플링 속도 계산 및 로그 (1초마다)
     def _calculate_sampling_rate(self):
-        from app.core.ws_singleton import ws_server
-        now = time.time()
-        if now - self.last_sample_log_time >= 0.2:
-            ws_server.data_stream_stats(
-                eeg=self.eeg_sample_count,
-                ppg=self.ppg_sample_count,
-                acc=self.acc_sample_count,
-                bat=self.bat_sample_count,
-                bat_level=self.battery_level
-            )
-            print(f"[샘플링 속도] EEG: {self.eeg_sample_count} samples/sec, "
-                  f"PPG: {self.ppg_sample_count} samples/sec, "
-                  f"ACC: {self.acc_sample_count} samples/sec, "
-                  f"BAT: {self.bat_sample_count} samples/sec, "
-                  f"Battery: {self.battery_level}%")
-            self.eeg_sample_count = 0
-            self.ppg_sample_count = 0
-            self.acc_sample_count = 0
-            self.bat_sample_count = 0
-            self.last_sample_log_time = now
+        # ws_singleton 대신 self.ws_server 사용
+        if hasattr(self, 'ws_server') and self.ws_server:
+            now = time.time()
+            if now - self.last_sample_log_time >= 0.2:
+                self.ws_server.data_stream_stats(
+                    eeg=self.eeg_sample_count,
+                    ppg=self.ppg_sample_count,
+                    acc=self.acc_sample_count,
+                    bat=self.bat_sample_count,
+                    bat_level=self.battery_level
+                )
+                print(f"[샘플링 속도] EEG: {self.eeg_sample_count} samples/sec, "
+                      f"PPG: {self.ppg_sample_count} samples/sec, "
+                      f"ACC: {self.acc_sample_count} samples/sec, "
+                      f"BAT: {self.bat_sample_count} samples/sec, "
+                      f"Battery: {self.battery_level}%")
+                self.eeg_sample_count = 0
+                self.ppg_sample_count = 0
+                self.acc_sample_count = 0
+                self.bat_sample_count = 0
+                self.last_sample_log_time = now
 
     def add_processed_data_callback(self, callback):
         """Add a callback function to be called when data is processed"""
@@ -1043,14 +1045,16 @@ class DeviceManager:
             "timestamp": processed_data.get("timestamp", time.time())
         }
         
-        # 데이터 저장 로직 추가
+        # 데이터 저장 로직 수정 - ws_singleton 대신 self.ws_server 사용
         try:
-            from app.core.ws_singleton import ws_server
-            if ws_server and ws_server.data_recorder and ws_server.data_recorder.is_recording:
+            if hasattr(self, 'ws_server') and self.ws_server and self.ws_server.data_recorder and self.ws_server.data_recorder.is_recording:
                 self.logger.info(f"[DATA_STORAGE_DEBUG] Adding processed {data_type} data to recorder")
-                ws_server.data_recorder.add_data(data_type, message_data)
+                self.ws_server.data_recorder.add_data(data_type, message_data)
             else:
-                self.logger.debug(f"[DATA_STORAGE_DEBUG] Not recording - ws_server: {ws_server is not None}, data_recorder: {ws_server.data_recorder is not None if ws_server else False}, is_recording: {ws_server.data_recorder.is_recording if ws_server and ws_server.data_recorder else False}")
+                ws_available = hasattr(self, 'ws_server') and self.ws_server is not None
+                recorder_available = ws_available and self.ws_server.data_recorder is not None
+                is_recording = recorder_available and self.ws_server.data_recorder.is_recording
+                self.logger.debug(f"[DATA_STORAGE_DEBUG] Not recording - ws_server: {ws_available}, data_recorder: {recorder_available}, is_recording: {is_recording}")
         except Exception as e:
             self.logger.error(f"Error saving processed data: {e}")
         
@@ -1072,14 +1076,16 @@ class DeviceManager:
             "count": raw_data["count"]
         }
         
-        # 데이터 저장 로직 추가
+        # 데이터 저장 로직 수정 - ws_singleton 대신 self.ws_server 사용
         try:
-            from app.core.ws_singleton import ws_server
-            if ws_server and ws_server.data_recorder and ws_server.data_recorder.is_recording:
+            if hasattr(self, 'ws_server') and self.ws_server and self.ws_server.data_recorder and self.ws_server.data_recorder.is_recording:
                 self.logger.info(f"[DATA_STORAGE_DEBUG] Adding raw {data_type} data to recorder")
-                ws_server.data_recorder.add_data(data_type, message_data)
+                self.ws_server.data_recorder.add_data(data_type, message_data)
             else:
-                self.logger.debug(f"[DATA_STORAGE_DEBUG] Not recording raw data - ws_server: {ws_server is not None}, data_recorder: {ws_server.data_recorder is not None if ws_server else False}, is_recording: {ws_server.data_recorder.is_recording if ws_server and ws_server.data_recorder else False}")
+                ws_available = hasattr(self, 'ws_server') and self.ws_server is not None
+                recorder_available = ws_available and self.ws_server.data_recorder is not None
+                is_recording = recorder_available and self.ws_server.data_recorder.is_recording
+                self.logger.debug(f"[DATA_STORAGE_DEBUG] Not recording raw data - ws_server: {ws_available}, data_recorder: {recorder_available}, is_recording: {is_recording}")
         except Exception as e:
             self.logger.error(f"Error saving raw data: {e}")
         

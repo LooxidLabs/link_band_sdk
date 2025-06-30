@@ -118,6 +118,12 @@ async def init_stream(request: Request, host: str = "localhost", port: int = 187
         if not success:
             # raise HTTPException(status_code=500, detail="Failed to initialize streaming server")
             return {"status": "fail", "message": "Failed to initialize streaming server"}
+        
+        # 시스템 초기화 시점을 StreamingMonitor에 기록
+        ws_server = getattr(request.app.state, 'ws_server', None)
+        if ws_server and hasattr(ws_server, 'streaming_monitor'):
+            ws_server.streaming_monitor.mark_system_initialized()
+        
         return {"status": "success", "message": "Streaming server initialized"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Exception: {e}")
@@ -177,7 +183,13 @@ async def start_stream(request: Request) -> Dict[str, Any]:
         success = await stream_service.start_stream()
         if not success:
             return {"status": "fail", "message": "Streaming is already running or failed to start"}
-        return {"status": "success", "message": "Streaming server initialized"}
+        
+        # 논리적 스트리밍 상태를 StreamingMonitor에 설정
+        ws_server = getattr(request.app.state, 'ws_server', None)
+        if ws_server and hasattr(ws_server, 'streaming_monitor'):
+            ws_server.streaming_monitor.set_logical_streaming_status(True)
+        
+        return {"status": "success", "message": "Streaming started"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Exception: {e}")
 
@@ -229,8 +241,89 @@ async def stop_stream(request: Request) -> Dict[str, Any]:
         success = await stream_service.stop_stream()
         if not success:
             return {"status": "fail", "message": "Streaming is not running or failed to stop"}
+        
+        # 논리적 스트리밍 상태를 StreamingMonitor에 설정 및 트래킹 데이터 리셋
+        ws_server = getattr(request.app.state, 'ws_server', None)
+        if ws_server and hasattr(ws_server, 'streaming_monitor'):
+            ws_server.streaming_monitor.set_logical_streaming_status(False)
+            ws_server.streaming_monitor.reset_tracking()  # 트래킹 데이터 리셋으로 중복 재초기화 방지
+        
         return {"status": "success", "message": "Streaming stopped"}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Exception: {e}")
+
+@router.post("/reinitialize",
+    response_model=StreamResponse,
+    summary="Manually reinitialize streaming system",
+    description="""
+    Manually trigger streaming system reinitialization for troubleshooting.
+    
+    **Purpose:**
+    - Reset streaming state detection
+    - Clear cached status information
+    - Restart initialization phase
+    - Force system state refresh
+    
+    **Use Cases:**
+    - Troubleshoot streaming issues
+    - Reset after connection problems
+    - Manual recovery from error states
+    - UI retry functionality
+    
+    **Note:** This is primarily for manual troubleshooting and should not be
+    called frequently as it may interfere with normal operation.
+    """,
+    responses={
+        200: {
+            "description": "System reinitialized successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "success",
+                        "message": "Streaming system reinitialized manually"
+                    }
+                }
+            }
+        },
+        500: {"description": "Failed to reinitialize system"}
+    })
+async def reinitialize_streaming(request: Request) -> Dict[str, Any]:
+    """
+    Manually reinitialize streaming system
+    
+    Triggers a manual reinitialization of the streaming monitoring system,
+    useful for troubleshooting and recovery from error states.
+    
+    Returns:
+        Reinitialization result status
+        
+    Raises:
+        HTTPException: If reinitialization fails
+    """
+    try:
+        import time
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("[STREAM_API] Manual reinitialization requested")
+        
+        # StreamingMonitor 수동 재초기화
+        ws_server = getattr(request.app.state, 'ws_server', None)
+        if ws_server and hasattr(ws_server, 'streaming_monitor'):
+            ws_server.streaming_monitor.mark_system_initialized()
+            ws_server.streaming_monitor.set_logical_streaming_status(True)
+            logger.info("[STREAM_API] StreamingMonitor reinitialized successfully")
+        else:
+            logger.warning("[STREAM_API] StreamingMonitor not found, skipping reinitialization")
+        
+        logger.info("[STREAM_API] Manual reinitialization completed successfully")
+        
+        return {
+            "status": "success",
+            "message": "Streaming system reinitialized manually",
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"[STREAM_API] Error during manual reinitialization: {e}")
         raise HTTPException(status_code=500, detail=f"Exception: {e}")
 
 @router.get("/health",

@@ -1,9 +1,8 @@
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Brain, Cpu, Battery, Wifi, Circle, HeartPulse, Move3d } from 'lucide-react';
-import { useMonitoringData } from '../stores/core/SystemStore';
+import { useMonitoringData, useStreamingStatus, useDeviceState } from '../stores/core/SystemStore';
 import { useEngineStore } from '../stores/engine';
-import { useDeviceStore } from '../stores/device';
 import { useDataCenterStore } from '../stores/dataCenter';
 import { useEffect, useState } from 'react';
 
@@ -11,23 +10,20 @@ interface StatusBarProps {
   isConnected: boolean;
   isWebSocketConnected: boolean;
   engineStatus: any;
-  batteryLevel: number;
 }
 
 export function StatusBar({ 
-  isConnected, 
+  isConnected 
   // isWebSocketConnected,
-  batteryLevel 
 }: StatusBarProps) {
-  // 새로운 SystemStore에서 연결 상태 및 모니터링 데이터 가져오기
-  // const connectionStatus = useConnectionStatus();
+  // 🔥 SystemStore에서 모든 데이터 가져오기 (WebSocket 기반)
   const monitoringData = useMonitoringData();
+  const streamingStatus = useStreamingStatus();
+  const deviceState = useDeviceState();
   
   // Get engine status from store
   const { engineStatus } = useEngineStore();
   
-  // Get device status for sampling rates (same as Engine Module)
-  const deviceStatus = useDeviceStore((state) => state.deviceStatus);
   // Get recording status from DataCenter store
   const { recordingStatus, fetchRecordingStatus } = useDataCenterStore();
   
@@ -60,15 +56,15 @@ export function StatusBar({
     }
   }, [recordingStatus.is_recording, recordingStatus.start_time]);
   
-  // System status data - use Device store's sampling rates and SystemStore's monitoring data
+  // 🔥 System status data - 모든 데이터 WebSocket 기반으로 변경
   const systemStats = {
     engine: engineStatus?.status === 'running',
     linkBand: isConnected,
     clients: engineStatus?.clients_connected ? engineStatus?.clients_connected : 0,
-    eeg: { value: deviceStatus?.eeg_sampling_rate || 0, unit: 'Hz' },
-    ppg: { value: deviceStatus?.ppg_sampling_rate || 0, unit: 'Hz' },
-    accel: { value: deviceStatus?.acc_sampling_rate || 0, unit: 'Hz' },
-    battery: batteryLevel,
+    eeg: { value: streamingStatus.samplingRates.eeg || 0, unit: 'Hz' },
+    ppg: { value: streamingStatus.samplingRates.ppg || 0, unit: 'Hz' },
+    accel: { value: streamingStatus.samplingRates.acc || 0, unit: 'Hz' },
+    battery: deviceState.current?.batteryLevel || 0,
     cpu: monitoringData.performance.cpuUsage?.toFixed(1) || 'N/A',
     ram: monitoringData.performance.memoryUsage?.toFixed(1) || 'N/A'
   };
@@ -129,7 +125,7 @@ export function StatusBar({
 
           <div className="flex items-center gap-1">
             <Battery className="h-3 w-3 text-chart-4" />
-            <span className="text-foreground">Battery: {isConnected && batteryLevel ? batteryLevel : '-'}%</span>
+            <span className="text-foreground">Battery: {isConnected && systemStats.battery ? systemStats.battery : '-'}%</span>
           </div>
         </div>
 

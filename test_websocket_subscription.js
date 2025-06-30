@@ -1,67 +1,72 @@
 const WebSocket = require('ws');
 
-console.log('Starting WebSocket subscription test...');
+console.log('=== WebSocket 구독 메시지 테스트 ===');
 
-const ws = new WebSocket('ws://127.0.0.1:18765');
-let subscriptionConfirmed = 0;
-const expectedSubscriptions = 3;
+const ws = new WebSocket('ws://localhost:8121/ws');
 
-ws.on('open', function open() {
-  console.log('✅ WebSocket connected successfully');
-  
-  // 모니터링 메트릭 채널 구독
-  console.log('📡 Subscribing to monitoring_metrics channel...');
-  ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'monitoring_metrics'
-  }));
-  
-  // 헬스 업데이트 채널 구독
-  console.log('📡 Subscribing to health_updates channel...');
-  ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'health_updates'
-  }));
-  
-  // 버퍼 상태 채널 구독
-  console.log('📡 Subscribing to buffer_status channel...');
-  ws.send(JSON.stringify({
-    type: 'subscribe',
-    channel: 'buffer_status'
-  }));
-});
+let messageCount = 0;
+let monitoringMetricsCount = 0;
 
-ws.on('message', function message(data) {
-  try {
-    const parsed = JSON.parse(data.toString());
+ws.on('open', function() {
+    console.log('✅ WebSocket 연결 성공');
     
-    if (parsed.type === 'subscription_confirmed') {
-      subscriptionConfirmed++;
-      console.log(`✅ Subscription confirmed for channel: ${parsed.channel} (${subscriptionConfirmed}/${expectedSubscriptions})`);
-      
-      if (subscriptionConfirmed === expectedSubscriptions) {
-        console.log('🎉 All subscriptions confirmed! Backend should now send monitoring data to these channels.');
-      }
-    } else {
-      console.log('📨 Received message:', JSON.stringify(parsed, null, 2));
+    // 연결 후 구독 메시지 전송
+    setTimeout(() => {
+        console.log('📤 구독 메시지 전송...');
+        const subscribeMessage = {
+            type: 'subscribe',
+            topics: ['monitoring_metrics', 'health_updates', 'buffer_status']
+        };
+        ws.send(JSON.stringify(subscribeMessage));
+    }, 1000);
+    
+    // 15초 후 종료
+    setTimeout(() => {
+        console.log('\n📊 === 최종 결과 ===');
+        console.log(`📨 총 메시지: ${messageCount}개`);
+        console.log(`🎯 monitoring_metrics: ${monitoringMetricsCount}개`);
+        console.log(`📈 수신율: ${monitoringMetricsCount > 0 ? '성공' : '실패'}`);
+        ws.close();
+    }, 15000);
+});
+
+ws.on('message', function(data) {
+    messageCount++;
+    
+    try {
+        const message = JSON.parse(data.toString());
+        
+        if (message.type === 'monitoring_metrics') {
+            monitoringMetricsCount++;
+            console.log(`🎯 [${new Date().toISOString()}] monitoring_metrics #${monitoringMetricsCount}`);
+            
+            // 상세 정보 출력
+            if (message.data) {
+                const { system, streaming, health_score } = message.data;
+                console.log(`   📊 CPU: ${system?.cpu_percent}%, 메모리: ${system?.memory_percent}%`);
+                console.log(`   🔋 배터리: ${streaming?.battery_level}%, 스트리밍: ${streaming?.streaming_status}`);
+                console.log(`   💯 건강 점수: ${health_score?.overall_score} (${health_score?.health_grade})`);
+                console.log(`   🆔 서비스 ID: ${message.monitoring_service_id}`);
+            }
+        } else if (message.type === 'status') {
+            console.log(`📊 [${new Date().toISOString()}] status - 클라이언트: ${message.data?.connected_clients}개`);
+        } else if (message.type === 'health_updates') {
+            console.log(`🏥 [${new Date().toISOString()}] health_updates - 점수: ${message.data?.overall_score}`);
+        } else if (message.type === 'buffer_status') {
+            console.log(`📦 [${new Date().toISOString()}] buffer_status`);
+        } else {
+            console.log(`📨 [${new Date().toISOString()}] 기타: ${message.type}`);
+        }
+    } catch (e) {
+        console.log(`📨 [${new Date().toISOString()}] Raw 메시지: ${data.toString().substring(0, 100)}...`);
     }
-  } catch (e) {
-    console.log('📨 Received raw message:', data.toString());
-  }
 });
 
-ws.on('error', function error(err) {
-  console.error('❌ WebSocket error:', err);
+ws.on('error', function(error) {
+    console.log(`❌ WebSocket 오류: ${error.message}`);
 });
 
-ws.on('close', function close() {
-  console.log('🔌 WebSocket connection closed');
-  console.log(`📊 Final subscription count: ${subscriptionConfirmed}/${expectedSubscriptions}`);
-});
-
-// 15초 후 종료 (더 긴 시간)
-setTimeout(() => {
-  console.log('⏰ Test timeout, closing connection...');
-  ws.close();
-  process.exit(0);
-}, 15000); 
+ws.on('close', function(code, reason) {
+    console.log(`🔌 WebSocket 연결 종료 (코드: ${code})`);
+    process.exit(0);
+}); 

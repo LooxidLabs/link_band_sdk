@@ -41,10 +41,53 @@ class StreamingMonitor:
         self.status_cache_duration = 0.5  # 0.5초간 상태 캐시
         self._cached_status: Optional[Dict[str, Any]] = None
         
+        # 초기화 인식 기능 추가
+        self.initialization_timestamp: Optional[float] = None
+        self.initialization_phase_duration = 15.0  # 15초로 설정
+        self.is_post_initialization = False
+        self.logical_streaming_active = False  # 논리적 스트리밍 상태
+        
+        # 재초기화 쿨다운 메커니즘
+        self.last_reinitialization_time = 0
+        self.reinitialization_cooldown = 15.0  # 15초간 재초기화 방지
+        
         logger.info("[STREAMING_MONITOR] StreamingMonitor initialized")
     
+    def mark_system_initialized(self):
+        """시스템 초기화 시점 기록"""
+        with self.lock:
+            self.initialization_timestamp = time.time()
+            self.is_post_initialization = True
+            logger.info("[STREAMING_MONITOR] System initialization marked at timestamp: {:.2f}".format(self.initialization_timestamp))
+    
+    def set_logical_streaming_status(self, active: bool):
+        """논리적 스트리밍 상태 설정 (백엔드에서 스트리밍 시작/중지 시 호출)"""
+        with self.lock:
+            self.logical_streaming_active = active
+            logger.info(f"[STREAMING_MONITOR] Logical streaming status set to: {active}")
+            # 캐시 무효화
+            self._cached_status = None
+    
+    def is_in_initialization_phase(self) -> bool:
+        """초기화 단계 여부 확인"""
+        if not self.initialization_timestamp:
+            return False
+        return (time.time() - self.initialization_timestamp) < self.initialization_phase_duration
+    
+    def get_time_since_initialization(self) -> float:
+        """초기화 후 경과 시간 반환"""
+        if not self.initialization_timestamp:
+            return 0.0
+        return time.time() - self.initialization_timestamp
+    
+    def get_initialization_time_remaining(self) -> float:
+        """초기화 단계 남은 시간 반환"""
+        if not self.is_in_initialization_phase():
+            return 0.0
+        return self.initialization_phase_duration - self.get_time_since_initialization()
+    
     def track_data_flow(self, sensor_type: str, data_count: int):
-        """실시간 데이터 흐름 추적"""
+        """실시간 데이터 흐름 추적 및 자동 재초기화"""
         logger.info(f"[STREAMING_MONITOR] track_data_flow called: {sensor_type}, count: {data_count}")
         
         if sensor_type not in self.data_flow_tracker:
@@ -54,6 +97,10 @@ class StreamingMonitor:
         with self.lock:
             current_time = time.time()
             flow_data = self.data_flow_tracker[sensor_type]
+            
+            # 🔄 데이터 흐름 기반 재초기화 로직
+            was_inactive_before = not flow_data.is_active
+            previous_total_samples = flow_data.total_samples
             
             # 총 샘플 수 업데이트
             flow_data.total_samples += data_count
@@ -77,6 +124,18 @@ class StreamingMonitor:
                 logger.info(f"[STREAMING_MONITOR] {sensor_type.upper()}: {data_count} samples, "
                            f"rate: {flow_data.samples_per_second:.1f}/sec, "
                            f"active: {flow_data.is_active}, threshold: {threshold}")
+                
+                # 🔍 데이터 흐름 감지 로그만 남기고 자동 재초기화는 비활성화
+                if (sensor_type == 'eeg' and 
+                    was_inactive_before and 
+                    flow_data.is_active and 
+                    data_count > 0):
+                    logger.info(f"[STREAMING_MONITOR] EEG data flow detected after inactivity (auto-reinitialization disabled)")
+                
+                if (previous_total_samples == 0 and 
+                    data_count > 0 and 
+                    sensor_type in ['eeg', 'ppg', 'acc']):
+                    logger.info(f"[STREAMING_MONITOR] First {sensor_type.upper()} data received (auto-reinitialization disabled)")
             
             flow_data.last_update = current_time
             
@@ -84,12 +143,13 @@ class StreamingMonitor:
             self._cached_status = None
     
     def calculate_streaming_status(self) -> Dict[str, Any]:
-        """실제 데이터 흐름 기반 스트리밍 상태 계산"""
+        """초기화 단계를 고려한 스트리밍 상태 계산"""
         current_time = time.time()
         
-        # 캐시 확인
+        # 캐시 확인 (초기화 단계에서는 캐시 지속 시간 단축)
+        cache_duration = 0.2 if self.is_in_initialization_phase() else self.status_cache_duration
         if (self._cached_status and 
-            current_time - self.last_status_calculation < self.status_cache_duration):
+            current_time - self.last_status_calculation < cache_duration):
             return self._cached_status
         
         with self.lock:
@@ -113,9 +173,38 @@ class StreamingMonitor:
                 if flow_data.is_active:
                     active_sensors.append(sensor_type)
             
-            # 스트리밍 상태 결정
-            # EEG만 보고 판단: EEG가 활성화되어 있으면 스트리밍 활성화
-            is_streaming_active = 'eeg' in active_sensors
+            # 스트리밍 상태 결정 (초기화 단계 고려)
+            is_streaming_active = False
+            phase = 'normal'
+            message = None
+            
+            if self.is_in_initialization_phase():
+                # 초기화 단계에서의 상태 판정
+                phase = 'initializing'
+                time_remaining = self.get_initialization_time_remaining()
+                
+                if len(active_sensors) > 0 and 'eeg' in active_sensors:
+                    # 🚀 실제 데이터가 흐르고 있으면 즉시 초기화 완료 처리
+                    is_streaming_active = True
+                    phase = 'ready'
+                    message = 'Data flow detected, streaming active'
+                    # 초기화 단계를 즉시 종료
+                    self.initialization_timestamp = current_time - self.initialization_phase_duration
+                elif self.logical_streaming_active and len(active_sensors) == 0:
+                    # 논리적으로는 스트리밍 중이지만 아직 데이터가 없음
+                    is_streaming_active = False
+                    message = f'Streaming started, waiting for data flow... ({time_remaining:.0f}s remaining)'
+                else:
+                    # 아직 스트리밍이 시작되지 않음
+                    is_streaming_active = False
+                    message = f'System initializing... ({time_remaining:.0f}s remaining)'
+            else:
+                # 정상 단계에서의 기존 로직
+                is_streaming_active = 'eeg' in active_sensors
+                if is_streaming_active:
+                    message = 'Streaming active with data flow'
+                else:
+                    message = 'No active data flow detected'
             
             # 데이터 흐름 품질 평가
             if 'eeg' in active_sensors and len(active_sensors) >= 3:
@@ -131,8 +220,11 @@ class StreamingMonitor:
                 'sensor_details': sensor_details,
                 'data_flow_health': data_flow_health,
                 'total_active_sensors': len(active_sensors),
-                'last_data_received': max([flow_data.last_update for flow_data in self.data_flow_tracker.values()]),
-                'calculated_at': current_time
+                'last_data_received': max([flow_data.last_update for flow_data in self.data_flow_tracker.values()]) if self.data_flow_tracker else current_time,
+                'calculated_at': current_time,
+                'phase': phase,
+                'message': message,
+                'logical_streaming_active': self.logical_streaming_active
             }
             
             # 캐시 업데이트
@@ -140,12 +232,12 @@ class StreamingMonitor:
             self.last_status_calculation = current_time
             
             logger.debug(f"[STREAMING_MONITOR] Status calculated: active={is_streaming_active}, "
-                        f"sensors={active_sensors}, health={data_flow_health}")
+                        f"sensors={active_sensors}, health={data_flow_health}, phase={phase}")
             
             return status
     
     def get_detailed_status(self) -> Dict[str, Any]:
-        """상세 스트리밍 정보 반환"""
+        """초기화 정보를 포함한 상세 스트리밍 정보 반환"""
         status = self.calculate_streaming_status()
         
         # 추가 세부 정보
@@ -153,11 +245,19 @@ class StreamingMonitor:
             detailed_info = {
                 **status,
                 'thresholds': self.streaming_threshold.copy(),
-                'monitoring_duration': time.time() - min([flow_data.last_update for flow_data in self.data_flow_tracker.values()]),
+                'monitoring_duration': time.time() - min([flow_data.last_update for flow_data in self.data_flow_tracker.values()]) if self.data_flow_tracker else 0,
                 'cache_info': {
                     'last_calculation': self.last_status_calculation,
                     'cache_duration': self.status_cache_duration,
                     'is_cached': self._cached_status is not None
+                },
+                'initialization_info': {
+                    'is_in_init_phase': self.is_in_initialization_phase(),
+                    'time_since_init': self.get_time_since_initialization(),
+                    'time_remaining': self.get_initialization_time_remaining(),
+                    'init_phase_duration': self.initialization_phase_duration,
+                    'is_post_initialization': self.is_post_initialization,
+                    'initialization_timestamp': self.initialization_timestamp
                 }
             }
         
@@ -176,7 +276,10 @@ class StreamingMonitor:
             self._cached_status = None
             self.last_status_calculation = 0
             
-        logger.info("[STREAMING_MONITOR] Tracking data reset")
+            # 재초기화 쿨다운도 리셋
+            self.last_reinitialization_time = 0
+            
+        logger.info("[STREAMING_MONITOR] Tracking data reset (including reinitialization cooldown)")
     
     def get_sensor_status(self, sensor_type: str) -> Optional[Dict[str, Any]]:
         """특정 센서의 상태 정보 반환"""
