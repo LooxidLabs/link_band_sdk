@@ -768,9 +768,8 @@ class WebSocketServer:
                                     scanned_name = getattr(scanned_device, 'name', None) or 'Unknown'
                                     scanned_addr = getattr(scanned_device, 'address', None)
                                     
-                                    # 정확한 이름 매칭 또는 LXB- 접두사 매칭
-                                    if (scanned_name == device_name or 
-                                        (device_name.startswith('LXB-') and scanned_name.startswith('LXB-'))):
+                                    # 정확한 이름 매칭만 허용 (등록된 디바이스만 연결)
+                                    if scanned_name == device_name:
                                         if scanned_addr != address:
                                             device_logger.info(f"[{LogTags.AUTO_CONNECT}] Cross-platform address update: {device_name}", 
                                                               extra={"registered_addr": address, "current_addr": scanned_addr})
@@ -1112,6 +1111,17 @@ class WebSocketServer:
     async def _run_connect_and_notify(self, device_address: str):
         """Connect to device and start notifications."""
         try:
+            # 보안 검증: 등록된 디바이스인지 확인
+            if not self.device_registry.is_device_registered(device_address):
+                device_logger.error(f"[{LogTags.DEVICE_MANAGER}:{LogTags.CONNECT}] SECURITY: Attempted to connect to unregistered device", 
+                                  extra={"address": device_address})
+                await self.broadcast_event(EventType.DEVICE_CONNECTION_FAILED, {
+                    "address": device_address,
+                    "reason": "device_not_registered",
+                    "message": "Only registered devices can be connected"
+                })
+                return
+            
             log_device_connection(device_logger, device_address, "attempting")
             
             # 크로스 플랫폼 주소 매칭: 등록된 디바이스 이름으로 현재 플랫폼의 주소 찾기
@@ -1134,9 +1144,8 @@ class WebSocketServer:
                         scanned_name = getattr(scanned_device, 'name', None) or 'Unknown'
                         scanned_addr = getattr(scanned_device, 'address', None)
                         
-                        # 정확한 이름 매칭 또는 LXB- 접두사 매칭
-                        if (scanned_name == device_name or 
-                            (device_name.startswith('LXB-') and scanned_name.startswith('LXB-'))):
+                        # 정확한 이름 매칭만 허용 (등록된 디바이스만 연결)
+                        if scanned_name == device_name:
                             if scanned_addr and scanned_addr != device_address:
                                 device_logger.info(f"[{LogTags.DEVICE_MANAGER}:{LogTags.CONNECT}] Cross-platform address mapping found", 
                                                   extra={
@@ -1402,19 +1411,17 @@ class WebSocketServer:
 
                     eeg_buffer = self.device_manager.get_and_clear_eeg_buffer()
                     
+                    # Processed data는 raw data와 독립적으로 확인
+                    try:
+                        processed_data = await self.device_manager.get_and_clear_processed_eeg_buffer()
+                    except Exception as e:
+                        logger.error(f"Failed to get processed EEG buffer: {e}")
+                        processed_data = None
+                    
                     # Windows 디버깅
                     if platform.system() == 'Windows' and (consecutive_no_data == 0 or consecutive_no_data % 25 == 0):
-                        logger.info(f"[WINDOWS DEBUG] EEG buffer check - Buffer length: {len(eeg_buffer)}")
+                        logger.info(f"[WINDOWS DEBUG] EEG buffer check - Raw: {len(eeg_buffer) if eeg_buffer else 0}, Processed: {len(processed_data) if processed_data else 0}")
                         logger.info(f"[WINDOWS DEBUG] Device connected: {self.device_manager.is_connected()}")
-                    
-                    if eeg_buffer:
-                        try:
-                            processed_data = await self.device_manager.get_and_clear_processed_eeg_buffer()
-                        except Exception as e:
-                            logger.error(f"[WINDOWS ERROR] Failed to get processed EEG buffer: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            processed_data = None
                     
                     raw_data_len = len(eeg_buffer) if eeg_buffer else 0
                     processed_data_len = len(processed_data) if processed_data else 0

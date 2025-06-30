@@ -1037,11 +1037,11 @@ class DeviceManager:
 
     async def _notify_processed_data(self, data_type: str, processed_data: dict):
         """Notify all callbacks with processed data"""
-        # 클라이언트가 기대하는 processed data 형식으로 변경 (data를 배열로 감싸기)
+        # 클라이언트가 기대하는 processed data 형식으로 변경 (data를 직접 전달)
         message_data = {
             "type": "processed_data",
             "sensor_type": data_type,
-            "data": [processed_data],  # 배열로 감싸기
+            "data": processed_data,  # 직접 전달 (배열로 감싸지 않음)
             "timestamp": processed_data.get("timestamp", time.time())
         }
         

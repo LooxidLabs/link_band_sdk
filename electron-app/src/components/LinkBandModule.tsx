@@ -89,12 +89,7 @@ const LinkBandModule: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {isLoading.connect ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="w-6 h-6 animate-spin" />
-            </div>
-          ) : (
-            <div className="space-y-4">
+          <div className="space-y-4">
               {/* Registered Device Information */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
@@ -271,7 +266,6 @@ const LinkBandModule: React.FC = () => {
                 )}
               </div>
             </div>
-          )}
 
           {errors.connect && (
             <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20">

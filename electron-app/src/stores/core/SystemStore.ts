@@ -252,11 +252,11 @@ const initialState: SystemState = {
     filePath: null
   },
   monitoring: {
-    systemHealth: 75, // 기본값 설정
+    systemHealth: 0, // 초기값을 0으로 변경하여 실제 데이터 수신 확인 가능
     performance: {
-      cpuUsage: 15.2, // 기본값 설정
-      memoryUsage: 245.7, // MB 단위 기본값
-      networkLatency: 12.5 // 기본값 설정
+      cpuUsage: 0, // 초기값을 0으로 변경
+      memoryUsage: 0, // 초기값을 0으로 변경
+      networkLatency: 0 // 초기값을 0으로 변경
     },
     alerts: []
   },
@@ -278,10 +278,14 @@ let initializationPromise: Promise<void> | null = null;
 // API 폴링 관리
 let apiPollingInterval: NodeJS.Timeout | null = null;
 
-// API 폴링 함수
+// API 폴링 함수 - WebSocket 모니터링 우선 사용을 위해 비활성화
 function startApiPolling() {
+  console.log('[SystemStore] API polling disabled - using WebSocket monitoring_metrics instead');
+  return; // WebSocket 모니터링을 우선 사용하기 위해 API 폴링 비활성화
+  
   if (apiPollingInterval) {
-    clearInterval(apiPollingInterval);
+    clearInterval(apiPollingInterval as NodeJS.Timeout);
+    apiPollingInterval = null;
   }
   
   // 10초마다 모니터링 데이터 업데이트
@@ -1200,6 +1204,13 @@ function setupWebSocketSubscriptions() {
       
       const { system, streaming, health_score } = message.data;
       
+      // 🔥 상세 데이터 로깅
+      console.log('[SystemStore] Detailed monitoring data:', {
+        system: system,
+        streaming: streaming,
+        health_score: health_score
+      });
+      
       // health_score가 객체인 경우 overall_score 값 사용
       let healthValue = 0;
       if (typeof health_score === 'object' && health_score?.overall_score !== undefined) {
@@ -1216,11 +1227,15 @@ function setupWebSocketSubscriptions() {
         process_memory_mb: system?.process_memory_mb
       });
       
+      // 🔥 업데이트 전 현재 상태 로그
+      const currentState = useSystemStore.getState().monitoring;
+      console.log('[SystemStore] Current monitoring state before update:', currentState);
+      
       const monitoringUpdate = {
         systemHealth: healthValue,
         performance: {
           cpuUsage: system?.cpu_percent || 0,
-          memoryUsage: system?.process_memory_mb || 0, // MB 단위로 변경
+          memoryUsage: system?.process_memory_mb || 0,
           networkLatency: streaming?.total_latency || 0
         }
       };
@@ -1237,6 +1252,7 @@ function setupWebSocketSubscriptions() {
       if (batteryLevel !== undefined && batteryLevel !== null) {
         const currentDevice = useSystemStore.getState().device.current;
         if (currentDevice) {
+          console.log('[SystemStore] Updating device battery level:', batteryLevel);
           useSystemStore.getState().updateDeviceInfo({
             batteryLevel: batteryLevel
           });
@@ -1247,11 +1263,15 @@ function setupWebSocketSubscriptions() {
       console.log('[SystemStore] Updating sampling rates:', samplingRatesUpdate);
       console.log('[SystemStore] Updating battery level:', batteryLevel);
       
+      // 🔥 데이터 업데이트 실행
       useSystemStore.getState().updateMonitoringData(monitoringUpdate);
       useSystemStore.getState().updateStreamingStats({ samplingRates: samplingRatesUpdate });
       
-      console.log('[SystemStore] Monitoring data updated successfully. Current state:', 
-        useSystemStore.getState().monitoring);
+      // 🔥 업데이트 후 상태 확인
+      const updatedState = useSystemStore.getState().monitoring;
+      console.log('[SystemStore] Updated monitoring state after update:', updatedState);
+      console.log('[SystemStore] Monitoring data update completed successfully');
+      
     } else {
       console.log('[SystemStore] Non-monitoring message received:', message.type);
     }

@@ -180,12 +180,14 @@ async def connect_device(req: ConnectRequest, ws_server_instance: WebSocketServe
     # 따라서, DeviceManager를 직접 주입받거나, WebSocketServer가 DeviceManager를 속성으로 갖도록 수정 필요.
     # 여기서는 WebSocketServer가 device_manager를 가지고 있다고 가정하고 진행 (server.py 수정 필요할 수 있음)
     if not hasattr(ws_server_instance, 'device_manager') or ws_server_instance.device_manager is None:
-         # 임시로 DeviceManager를 ws_server_instance에 할당 (main.py의 app.state.device_manager 사용)
-         # 이 부분은 구조적으로 개선 필요. WebSocketServer가 DeviceManager를 갖거나, DeviceManager를 직접 주입.
-         # 지금 수정은 main.py의 app.state.device_manager를 가져와서 사용하는 임시 방편.
-         # logger.warning("Dynamically assigning device_manager to ws_server_instance in router_device. מאוד לא מומלץ.")
-         # ws_server_instance.device_manager = device_manager_dependency # 아래처럼 device_manager를 직접 주입받는게 나음
         raise HTTPException(status_code=500, detail="DeviceManager not available via WebSocketServer")
+    
+    # 보안 검증: 등록된 디바이스인지 확인
+    if not ws_server_instance.is_device_registered(req.address):
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Device {req.address} is not registered. Only registered devices can be connected. Please register the device first using /device/register_device"
+        )
 
     try:
         result = await ws_server_instance.device_manager.connect(req.address)

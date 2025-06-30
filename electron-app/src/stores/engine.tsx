@@ -621,39 +621,41 @@ export const useEngineStore = create<EngineState>((set, get) => {
           });
           break;
       }
-      
-      if (message.type === 'raw_data') {
-        // console.log('Raw data received:', message.data);
-        switch (message.sensor_type) {
-          case 'eeg':
-            set(state => ({
-              sampleCounts: { ...state.sampleCounts, eeg: state.sampleCounts.eeg + dataLength },
-              lastSampleTimestamps: { ...state.lastSampleTimestamps, eeg: now }
-            }));
-            get().addEEGData(message.data);
-            break;
-          case 'ppg':
-            set(state => ({
-              sampleCounts: { ...state.sampleCounts, ppg: state.sampleCounts.ppg + dataLength },
-              lastSampleTimestamps: { ...state.lastSampleTimestamps, ppg: now }
-            }));
-            get().addPPGData(message.data);
-            break;
-          case 'acc':
-            set(state => ({
-              sampleCounts: { ...state.sampleCounts, acc: state.sampleCounts.acc + dataLength },
-              lastSampleTimestamps: { ...state.lastSampleTimestamps, acc: now }
-            }));
-            get().addAccData(message.data);
-            break;
-          case 'bat':
-            set(state => ({
-              sampleCounts: { ...state.sampleCounts, bat: state.sampleCounts.bat + dataLength },
-              lastSampleTimestamps: { ...state.lastSampleTimestamps, bat: now }
-            }));
-            get().addBatData(message.data);
-            break;
-        }
+    }
+    
+    if (message.type === 'raw_data') {
+      const now = Date.now();
+      const dataLength = message.data ? message.data.length : 0;
+      // console.log('Raw data received:', message.data);
+      switch (message.sensor_type) {
+        case 'eeg':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, eeg: state.sampleCounts.eeg + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, eeg: now }
+          }));
+          get().addEEGData(message.data);
+          break;
+        case 'ppg':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, ppg: state.sampleCounts.ppg + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, ppg: now }
+          }));
+          get().addPPGData(message.data);
+          break;
+        case 'acc':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, acc: state.sampleCounts.acc + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, acc: now }
+          }));
+          get().addAccData(message.data);
+          break;
+        case 'bat':
+          set(state => ({
+            sampleCounts: { ...state.sampleCounts, bat: state.sampleCounts.bat + dataLength },
+            lastSampleTimestamps: { ...state.lastSampleTimestamps, bat: now }
+          }));
+          get().addBatData(message.data);
+          break;
       }
     }
   };

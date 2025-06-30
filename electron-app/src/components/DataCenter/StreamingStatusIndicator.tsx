@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, CheckCircle, Clock, Wifi, WifiOff, RotateCcw } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock, Wifi, WifiOff } from 'lucide-react';
 
 export interface StreamingStatusIndicatorProps {
   autoStreamingStatus: any;
@@ -15,74 +15,6 @@ export const StreamingStatusIndicator: React.FC<StreamingStatusIndicatorProps> =
   isDeviceConnected
 }) => {
   
-  // Retry 버튼 핸들러
-  const handleRetry = async () => {
-    try {
-      console.log('[StreamingStatusIndicator] Retry button clicked - attempting to restart streaming...');
-      
-      // 1. 현재 상태 확인
-      const statusResponse = await fetch('http://localhost:8121/stream/auto-status');
-      const currentStatus = await statusResponse.json();
-      console.log('[StreamingStatusIndicator] Current status before retry:', currentStatus);
-      
-      // 2. 스트리밍 중지 (안전하게)
-      console.log('[StreamingStatusIndicator] Stopping streaming...');
-      const stopResponse = await fetch('http://localhost:8121/stream/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const stopResult = await stopResponse.json();
-      console.log('[StreamingStatusIndicator] Stop result:', stopResult);
-      
-      // 2초 대기 (서버가 안정화될 시간)
-      console.log('[StreamingStatusIndicator] Waiting for server stabilization...');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // 3. 스트리밍 재시작
-      console.log('[StreamingStatusIndicator] Starting streaming...');
-      const startResponse = await fetch('http://localhost:8121/stream/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      
-      const startResult = await startResponse.json();
-      console.log('[StreamingStatusIndicator] Start result:', startResult);
-      
-      if (startResult.status === 'success') {
-        console.log('[StreamingStatusIndicator] ✅ Streaming restarted successfully');
-        
-        // 4. 수동 재초기화 API 호출
-        console.log('[StreamingStatusIndicator] Calling manual reinitialization...');
-        const reinitResponse = await fetch('http://localhost:8121/stream/reinitialize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        
-        const reinitResult = await reinitResponse.json();
-        console.log('[StreamingStatusIndicator] Reinitialization result:', reinitResult);
-        
-        if (reinitResult.status === 'success') {
-          console.log('[StreamingStatusIndicator] ✅ Manual reinitialization completed');
-          
-          // 5. AdaptivePollingManager 재시작
-          const { globalPollingManager } = await import('../../services/AdaptivePollingManager');
-          globalPollingManager.markInitializationStart();
-          console.log('[StreamingStatusIndicator] ✅ AdaptivePollingManager restarted');
-          
-          // 6. 즉시 상태 확인 (폴링 대기 없이)
-          console.log('[StreamingStatusIndicator] Force immediate status check...');
-          await globalPollingManager.forceImmediateCheckAll();
-          console.log('[StreamingStatusIndicator] ✅ Immediate status check completed');
-        } else {
-          console.error('[StreamingStatusIndicator] ❌ Failed to reinitialize:', reinitResult.message);
-        }
-      } else {
-        console.error('[StreamingStatusIndicator] ❌ Failed to restart streaming:', startResult.message);
-      }
-    } catch (error) {
-      console.error('[StreamingStatusIndicator] ❌ Error during retry:', error);
-    }
-  };
   // 상태 결정 로직
   const getStatusInfo = () => {
     // 초기화 정보가 있는 경우
@@ -109,8 +41,7 @@ export const StreamingStatusIndicator: React.FC<StreamingStatusIndicatorProps> =
             title: 'Waiting for Data Flow',
             message: `Streaming started, waiting for data... (${timeRemainingDisplay}s remaining)`,
             color: 'text-yellow-400',
-            bgColor: 'bg-yellow-900/20 border-yellow-800',
-            showRetryButton: timeRemaining < 10 // 10초 미만 남았을 때 Retry 버튼 표시
+            bgColor: 'bg-yellow-900/20 border-yellow-800'
           };
         } else {
           return {
@@ -162,10 +93,9 @@ export const StreamingStatusIndicator: React.FC<StreamingStatusIndicatorProps> =
         status: 'inactive',
         icon: <AlertCircle className="w-5 h-5 text-red-400" />,
         title: 'No Data Flow',
-        message: 'No active data flow detected',
+        message: 'No active data flow detected - use EngineModule to control streaming',
         color: 'text-red-400',
-        bgColor: 'bg-red-900/20 border-red-800',
-        showRetryButton: true
+        bgColor: 'bg-red-900/20 border-red-800'
       };
     }
   };
@@ -219,22 +149,6 @@ export const StreamingStatusIndicator: React.FC<StreamingStatusIndicatorProps> =
                 </span>
               ))}
             </div>
-          </div>
-        )}
-        
-        {/* Retry 버튼 (No Data Flow 상태일 때) */}
-        {statusInfo.showRetryButton && isDeviceConnected && (
-          <div className="mt-3">
-            <button
-              onClick={handleRetry}
-              className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Retry Streaming
-            </button>
-            <p className="text-xs text-gray-500 mt-1">
-              Click to restart streaming and data flow detection
-            </p>
           </div>
         )}
       </div>

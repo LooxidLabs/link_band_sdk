@@ -249,24 +249,34 @@ class MonitoringService:
                     device_info = {}
                     
                     try:
-                        # WebSocket 서버에서 스트림 상태 가져오기
+                        # WebSocket 서버에서 스트림 상태 가져오기 (동기 함수)
                         if hasattr(self.ws_server, 'get_stream_status'):
-                            stream_status = await self.ws_server.get_stream_status()
+                            stream_status = self.ws_server.get_stream_status()  # await 제거
                             if stream_status:
                                 streaming_status = stream_status.get('status', 'stopped')
                                 active_sensors = stream_status.get('active_sensors', [])
                                 data_flow_health = stream_status.get('data_flow_health', 'none')
                                 auto_detected = stream_status.get('auto_detected', False)
+                                
+                                # 🔥 실제 sampling rate 데이터 가져오기
+                                eeg_rate = stream_status.get('eeg_sampling_rate', 0.0)
+                                ppg_rate = stream_status.get('ppg_sampling_rate', 0.0)
+                                acc_rate = stream_status.get('acc_sampling_rate', 0.0)
+                                logger.debug(f"Got sampling rates from stream_status - EEG: {eeg_rate}, PPG: {ppg_rate}, ACC: {acc_rate}")
                         
-                        # WebSocket 서버에서 디바이스 상태 가져오기
+                        # WebSocket 서버에서 디바이스 상태 가져오기 (동기 함수)
                         if hasattr(self.ws_server, 'get_device_status'):
-                            device_status = await self.ws_server.get_device_status()
+                            device_status = self.ws_server.get_device_status()  # await 제거
                             if device_status:
                                 device_connected = device_status.get('is_connected', False)
                                 device_info = {
                                     'name': device_status.get('device_name', ''),
                                     'address': device_status.get('device_address', '')
                                 }
+                                
+                                # 🔥 배터리 레벨 가져오기
+                                if device_status.get('battery_level') is not None:
+                                    battery_level = device_status.get('battery_level', 0)
                         
                         # 스트리밍이 중단된 이유 판단
                         if not device_connected:
@@ -279,7 +289,7 @@ class MonitoringService:
                             streaming_reason = "unknown"
                             
                     except Exception as e:
-                        logger.debug(f"Error getting streaming/device status: {e}")
+                        logger.error(f"Error getting streaming/device status: {e}", exc_info=True)
                         # 기본값 유지
                     
                     streaming_metrics = {

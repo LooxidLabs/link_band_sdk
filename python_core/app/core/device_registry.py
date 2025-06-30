@@ -83,11 +83,11 @@ class DeviceRegistry:
         return None
 
     def find_device_by_partial_name(self, partial_name: str) -> Optional[Dict]:
-        """Find a device by partial name match (e.g., LXB- prefix)"""
-        for device_info in self.registered_devices.values():
-            device_name = device_info.get('name', '')
-            if partial_name.lower() in device_name.lower():
-                return device_info
+        """
+        DEPRECATED: Partial name matching is disabled for security reasons.
+        Only exact name matching is allowed to prevent unauthorized device connections.
+        """
+        logger.warning(f"SECURITY: Attempted partial name matching for '{partial_name}' - This feature is disabled")
         return None
 
     def get_registered_addresses(self) -> List[str]:

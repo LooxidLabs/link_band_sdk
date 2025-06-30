@@ -17,11 +17,15 @@ import {
   MemoryStick,
   Activity,
   Loader2,
-  Settings
+  Settings,
+  Play,
+  Square,
+  RotateCcw
 } from 'lucide-react';
 import { useSystemStatus, useSystemActions } from '../hooks/useSystemManager';
 import { useSystemStore } from '../stores/core/SystemStore';
 import { engineApi } from '../api/engine';
+import { StreamingStatusIndicator } from './DataCenter/StreamingStatusIndicator';
 
 const EngineModule: React.FC = () => {
   const {
@@ -40,6 +44,122 @@ const EngineModule: React.FC = () => {
 
   // 스트리밍 상태 자동 감지 (Phase 2)
   const [autoStreamingStatus, setAutoStreamingStatus] = useState<any>(null);
+  const [isStreamingLoading, setIsStreamingLoading] = useState(false);
+
+  // 스트리밍 제어 함수들
+  const startStreaming = async () => {
+    setIsStreamingLoading(true);
+    try {
+      console.log('[EngineModule] Starting streaming...');
+      const response = await fetch('http://localhost:8121/stream/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const result = await response.json();
+      console.log('[EngineModule] Start streaming result:', result);
+      
+      if (response.ok) {
+        console.log('[EngineModule] Streaming started successfully');
+        // 상태 업데이트를 위해 잠시 대기
+        setTimeout(() => {
+          fetchAutoStreamingStatus();
+        }, 1000);
+      } else {
+        console.error('[EngineModule] Failed to start streaming:', result);
+      }
+    } catch (error) {
+      console.error('[EngineModule] Error starting streaming:', error);
+    } finally {
+      setIsStreamingLoading(false);
+    }
+  };
+
+  const stopStreaming = async () => {
+    setIsStreamingLoading(true);
+    try {
+      console.log('[EngineModule] Stopping streaming...');
+      const response = await fetch('http://localhost:8121/stream/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const result = await response.json();
+      console.log('[EngineModule] Stop streaming result:', result);
+      
+      if (response.ok) {
+        console.log('[EngineModule] Streaming stopped successfully');
+        // 상태 업데이트를 위해 잠시 대기
+        setTimeout(() => {
+          fetchAutoStreamingStatus();
+        }, 1000);
+      } else {
+        console.error('[EngineModule] Failed to stop streaming:', result);
+      }
+    } catch (error) {
+      console.error('[EngineModule] Error stopping streaming:', error);
+    } finally {
+      setIsStreamingLoading(false);
+    }
+  };
+
+  const retryStreaming = async () => {
+    setIsStreamingLoading(true);
+    try {
+      console.log('[EngineModule] Retrying streaming...');
+      
+      // 1. 현재 상태 확인
+      const statusResponse = await fetch('http://localhost:8121/stream/auto-status');
+      const currentStatus = await statusResponse.json();
+      console.log('[EngineModule] Current status before retry:', currentStatus);
+      
+      // 2. 스트리밍 중지 (안전하게)
+      console.log('[EngineModule] Stopping streaming...');
+      const stopResponse = await fetch('http://localhost:8121/stream/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const stopResult = await stopResponse.json();
+      console.log('[EngineModule] Stop result:', stopResult);
+      
+      // 2초 대기 (서버가 안정화될 시간)
+      console.log('[EngineModule] Waiting for server stabilization...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 3. 스트리밍 재시작
+      console.log('[EngineModule] Starting streaming...');
+      const startResponse = await fetch('http://localhost:8121/stream/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const startResult = await startResponse.json();
+      console.log('[EngineModule] Start result:', startResult);
+      
+      if (startResponse.ok) {
+        console.log('[EngineModule] Streaming retry completed successfully');
+        // 상태 업데이트를 위해 잠시 대기
+        setTimeout(() => {
+          fetchAutoStreamingStatus();
+        }, 1000);
+      } else {
+        console.error('[EngineModule] Failed to restart streaming:', startResult);
+      }
+    } catch (error) {
+      console.error('[EngineModule] Error during streaming retry:', error);
+    } finally {
+      setIsStreamingLoading(false);
+    }
+  };
+
+  const fetchAutoStreamingStatus = async () => {
+    try {
+      const status = await engineApi.getAutoStreamingStatus();
+      setAutoStreamingStatus(status);
+    } catch (error) {
+      console.error('[EngineModule] Failed to fetch auto streaming status:', error);
+    }
+  };
 
   // 모니터링 데이터 변경 감지
   useEffect(() => {
@@ -49,15 +169,6 @@ const EngineModule: React.FC = () => {
   // 자동 스트리밍 상태 주기적 업데이트
   useEffect(() => {
     if (!isInitialized || !connectionState.api) return;
-
-    const fetchAutoStreamingStatus = async () => {
-      try {
-        const status = await engineApi.getAutoStreamingStatus();
-        setAutoStreamingStatus(status);
-      } catch (error) {
-        console.error('[EngineModule] Failed to fetch auto streaming status:', error);
-      }
-    };
 
     // 초기 로드
     fetchAutoStreamingStatus();
@@ -339,8 +450,24 @@ const EngineModule: React.FC = () => {
             <h3 className="text-base font-semibold text-foreground">Device Status</h3>
             <div className="bg-muted rounded-lg p-4 space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Connected</span>
-                <span className="text-sm font-medium">{deviceState.current?.isConnected ? 'Yes' : 'No'}</span>
+                <span className="text-sm text-muted-foreground">Connection Status</span>
+                <div className="flex items-center gap-2">
+                  {deviceState.current?.isConnected ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-green-500" />
+                      <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                        Connected
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 text-red-500" />
+                      <Badge variant="destructive">
+                        Disconnected
+                      </Badge>
+                    </>
+                  )}
+                </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Device Name</span>
@@ -348,11 +475,29 @@ const EngineModule: React.FC = () => {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Scanning</span>
-                <span className="text-sm font-medium">{deviceState.isScanning ? 'Active' : 'Inactive'}</span>
+                <div className="flex items-center gap-2">
+                  {deviceState.isScanning ? (
+                    <>
+                      <Activity className="w-4 h-4 text-blue-500" />
+                      <Badge variant="secondary" className="bg-blue-600 text-white">
+                        Active
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="w-4 h-4 text-gray-500" />
+                      <Badge variant="outline">
+                        Inactive
+                      </Badge>
+                    </>
+                  )}
+                </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Discovered Devices</span>
-                <span className="text-sm font-medium">{deviceState.discovered.length}</span>
+                <Badge variant="secondary" className="bg-gray-600">
+                  {deviceState.discovered.length}
+                </Badge>
               </div>
             </div>
           </div>
@@ -361,43 +506,74 @@ const EngineModule: React.FC = () => {
 
           {/* Streaming Status */}
           <div className="space-y-3">
-            <h3 className="text-base font-semibold text-foreground">Streaming Status</h3>
-            <div className="bg-muted rounded-lg p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Streaming Active</span>
-                <div className="flex items-center gap-2">
-                  {streamingStatus.isStreaming ? (
-                    <>
-                      <Activity className="w-4 h-4 text-green-500" />
-                      <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
-                        Active
-                      </Badge>
-                    </>
-                  ) : (
-                    <>
-                      <Activity className="w-4 h-4 text-gray-500" />
-                      <Badge variant="secondary">Inactive</Badge>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">EEG Packets</span>
-                <span className="text-sm font-medium">{streamingStatus.dataCount.eeg}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">PPG Packets</span>
-                <span className="text-sm font-medium">{streamingStatus.dataCount.ppg}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">ACC Packets</span>
-                <span className="text-sm font-medium">{streamingStatus.dataCount.acc}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Battery Packets</span>
-                <span className="text-sm font-medium">{streamingStatus.dataCount.battery}</span>
+            <div className="flex justify-between items-center">
+              <h3 className="text-base font-semibold text-foreground">Streaming Status</h3>
+              <div className="flex gap-2">
+                {/* 스트리밍 제어 버튼들 */}
+                {!autoStreamingStatus?.is_streaming && !streamingStatus.isStreaming ? (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={startStreaming}
+                    disabled={!deviceState.current?.isConnected || isStreamingLoading}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {isStreamingLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                    <span className="ml-1">Start</span>
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={stopStreaming}
+                      disabled={isStreamingLoading}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      {isStreamingLoading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                      <span className="ml-1">Stop</span>
+                    </Button>
+                    
+                    {/* No Data Flow 상황에서 Refresh 버튼 표시 */}
+                    {isInitialized && 
+                     deviceState.current?.isConnected && 
+                     (autoStreamingStatus?.is_streaming || streamingStatus.isStreaming) && 
+                     !autoStreamingStatus?.is_active && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={retryStreaming}
+                        disabled={isStreamingLoading}
+                        className="border-blue-600 text-blue-400 hover:bg-blue-600 hover:text-white"
+                      >
+                        {isStreamingLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-4 h-4" />
+                        )}
+                        <span className="ml-1">Refresh</span>
+                      </Button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
+            
+            {/* StreamingStatusIndicator 컴포넌트 */}
+            <StreamingStatusIndicator
+              autoStreamingStatus={autoStreamingStatus}
+              isStreamingActive={autoStreamingStatus?.is_active || false}
+              isEngineStarted={isInitialized}
+              isDeviceConnected={deviceState.current?.isConnected || false}
+            />
           </div>
 
           <Separator />

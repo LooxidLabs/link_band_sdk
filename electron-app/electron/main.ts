@@ -70,6 +70,19 @@ function isPortInUse(port: number): Promise<boolean> {
   });
 }
 
+// Function to check if server is responding properly
+async function isServerHealthy(): Promise<boolean> {
+  try {
+    const response = await axios.get('http://localhost:8121/device/status', { 
+      timeout: 2000,
+      validateStatus: (status) => status === 200
+    });
+    return response.status === 200;
+  } catch (error) {
+    return false;
+  }
+}
+
 // Function to kill process on port (macOS/Linux)
 function killProcessOnPort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -430,10 +443,24 @@ async function startPythonServer(): Promise<ServerControlResponse> {
     console.log('Development mode:', isDev);
     console.log('Resources path:', process.resourcesPath);
     
-    // Check if ports are in use and free them if necessary
+    // Check if server is already running properly
     const wsPort = 18765;
     const apiPort = 8121;
     
+    // First, check if the API server is responding properly
+    try {
+      const response = await axios.get(`http://localhost:${apiPort}/device/status`, { timeout: 3000 });
+      if (response.status === 200) {
+        console.log('✅ Server is already running and responding properly');
+        updateServerStatus({ status: 'running', pid: undefined });
+        resolve({ success: true, message: 'Server is already running', status: serverStatus });
+        return;
+      }
+    } catch (error) {
+      console.log('Server not responding, will start new instance');
+    }
+    
+    // If server is not responding, check if ports are in use and free them
     if (await isPortInUse(wsPort)) {
       console.log(`WebSocket port ${wsPort} is in use, attempting to free it...`);
       await killProcessOnPort(wsPort);
@@ -887,13 +914,23 @@ app.whenReady().then(() => {
     console.error('Error setting up default export directory:', error);
   });
 
-  // Start Python server on app startup with delay to ensure stability
-  setTimeout(() => {
-    startPythonServer().then(result => {
-      console.log('Python server startup result:', result);
-    }).catch(error => {
-      console.error('Failed to start Python server on startup:', error);
-    });
+  // Check if server is already running, if not start it
+  setTimeout(async () => {
+    console.log('Checking if Python server is already running...');
+    
+    try {
+      const isHealthy = await isServerHealthy();
+      if (isHealthy) {
+        console.log('✅ Python server is already running and healthy');
+        updateServerStatus({ status: 'running', pid: undefined });
+      } else {
+        console.log('Python server not detected, starting new instance...');
+        const result = await startPythonServer();
+        console.log('Python server startup result:', result);
+      }
+    } catch (error) {
+      console.error('Failed to check/start Python server on startup:', error);
+    }
   }, 2000); // 2 second delay to let the app fully initialize
 
 });

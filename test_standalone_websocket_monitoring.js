@@ -35,14 +35,44 @@ ws.on('message', function(data) {
     
     if (message.type === 'monitoring_metrics') {
         monitoringMetricsCount++;
-        console.log(`   🎯 MONITORING METRICS #${monitoringMetricsCount}`);
-        console.log(`   Data keys: ${Object.keys(message.data || {}).join(', ')}`);
+        console.log(`🎯 MONITORING METRICS #${monitoringMetricsCount}`);
         
-        // 주요 메트릭 표시
-        if (message.data) {
-            console.log(`   - CPU: ${message.data.cpu_usage}%`);
-            console.log(`   - Memory: ${message.data.memory_usage}%`);
-            console.log(`   - Clients: ${message.data.clients_connected}`);
+        // 🔥 실제 데이터 구조 상세 출력
+        console.log('📊 Full monitoring_metrics data:');
+        console.log(JSON.stringify(message.data, null, 2));
+        
+        const { system, streaming, health_score } = message.data;
+        console.log(`Data keys: ${Object.keys(message.data).join(', ')}`);
+        
+        // 🔥 각 섹션별 상세 데이터 출력
+        if (system) {
+            console.log('🖥️ System data:');
+            console.log(`   - cpu_percent: ${system.cpu_percent}%`);
+            console.log(`   - memory_percent: ${system.memory_percent}%`);
+            console.log(`   - memory_used_mb: ${system.memory_used_mb}MB`);
+            console.log(`   - process_memory_mb: ${system.process_memory_mb}MB`);
+        } else {
+            console.log('❌ No system data');
+        }
+        
+        if (streaming) {
+            console.log('📡 Streaming data:');
+            console.log(`   - eeg_sampling_rate: ${streaming.eeg_sampling_rate}Hz`);
+            console.log(`   - ppg_sampling_rate: ${streaming.ppg_sampling_rate}Hz`);
+            console.log(`   - acc_sampling_rate: ${streaming.acc_sampling_rate}Hz`);
+            console.log(`   - battery_level: ${streaming.battery_level}%`);
+            console.log(`   - streaming_status: ${streaming.streaming_status}`);
+            console.log(`   - device_connected: ${streaming.device_connected}`);
+        } else {
+            console.log('❌ No streaming data');
+        }
+        
+        if (health_score) {
+            console.log('💚 Health data:');
+            console.log(`   - overall_score: ${health_score.overall_score}`);
+            console.log(`   - health_grade: ${health_score.health_grade}`);
+        } else {
+            console.log('❌ No health data');
         }
     } else if (message.type === 'raw_data') {
         rawDataCount++;

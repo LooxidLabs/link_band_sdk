@@ -48,72 +48,90 @@ def cleanup_existing_processes():
         
         print("🔍 기존 서버 프로세스 확인 중...")
         
-        # 1. run_server.py 프로세스 찾기
+        # 1. 현재 프로세스 정보
         current_pid = os.getpid()
+        current_process = psutil.Process(current_pid)
+        current_cmdline = current_process.cmdline()
+        
+        # 2. run_server.py 프로세스 찾기 (현재 프로세스 제외)
         killed_processes = []
         
-        for proc in psutil.process_iter(['pid', 'cmdline']):
+        for proc in psutil.process_iter(['pid', 'cmdline', 'create_time']):
             try:
                 cmdline = proc.info['cmdline']
-                if cmdline and any('run_server.py' in arg for arg in cmdline):
-                    if proc.info['pid'] != current_pid:  # 현재 프로세스는 제외
-                        print(f"   기존 run_server.py 프로세스 발견: PID {proc.info['pid']}")
-                        proc.terminate()
-                        killed_processes.append(proc.info['pid'])
+                pid = proc.info['pid']
+                
+                # 현재 프로세스는 건너뛰기
+                if pid == current_pid:
+                    continue
+                
+                # run_server.py 프로세스 확인
+                if cmdline and any('run_server.py' in str(arg) for arg in cmdline):
+                    print(f"   기존 run_server.py 프로세스 발견: PID {pid}")
+                    try:
+                        process = psutil.Process(pid)
+                        process.terminate()
+                        killed_processes.append(pid)
+                        print(f"   PID {pid} 종료 신호 전송")
+                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                        print(f"⚠️  프로세스 정리 중 오류: (pid={pid}) {e}")
+                        
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
         
-        # 2. 포트 점유 프로세스 확인 및 종료
+        # 3. 포트 점유 프로세스 확인 및 종료 (uvicorn 프로세스)
         ports_to_check = [8121, 18765]
         for port in ports_to_check:
             for conn in psutil.net_connections():
-                if conn.laddr.port == port and conn.status == 'LISTEN':
-                    try:
-                        proc = psutil.Process(conn.pid)
-                        if conn.pid not in killed_processes:
+                try:
+                    if hasattr(conn, 'laddr') and conn.laddr and conn.laddr.port == port:
+                        if conn.status == 'LISTEN' and conn.pid not in killed_processes and conn.pid != current_pid:
                             print(f"   포트 {port} 점유 프로세스 발견: PID {conn.pid}")
+                            proc = psutil.Process(conn.pid)
                             proc.terminate()
                             killed_processes.append(conn.pid)
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        continue
+                            print(f"   Killed process {conn.pid} on port {port}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+                    continue
         
-        # 3. 프로세스 종료 대기
+        # 4. 프로세스 종료 대기
         if killed_processes:
             print(f"   {len(killed_processes)}개 프로세스 종료 대기 중...")
-            time.sleep(2)
+            time.sleep(3)  # 더 충분한 대기 시간
             
-            # 강제 종료가 필요한 프로세스 확인
+            # 아직 살아있는 프로세스 강제 종료
             for pid in killed_processes:
                 try:
                     proc = psutil.Process(pid)
                     if proc.is_running():
                         print(f"   PID {pid} 강제 종료 중...")
                         proc.kill()
+                        time.sleep(0.5)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             
-            time.sleep(1)
             print("   ✅ 기존 프로세스 정리 완료")
         else:
             print("   ✅ 정리할 프로세스 없음")
             
     except ImportError:
-        # psutil이 없는 경우 기본 방법 사용
+        # psutil이 없는 경우 더 안전한 방법 사용
         print("⚠️  psutil 미설치 - 기본 포트 정리 방법 사용")
         try:
-            # lsof 명령어로 포트 점유 프로세스 확인
+            # 현재 프로세스는 제외하고 포트만 정리
             for port in [8121, 18765]:
                 result = subprocess.run(['lsof', '-ti', f':{port}'], 
                                       capture_output=True, text=True)
                 if result.stdout.strip():
                     pids = result.stdout.strip().split('\n')
+                    current_pid = os.getpid()
+                    
                     for pid in pids:
-                        if pid.strip():
+                        if pid.strip() and int(pid.strip()) != current_pid:
                             print(f"   포트 {port} 점유 프로세스 종료: PID {pid}")
                             try:
                                 os.kill(int(pid), signal.SIGTERM)
                                 time.sleep(1)
-                                os.kill(int(pid), signal.SIGKILL)
                             except (ProcessLookupError, ValueError):
                                 pass
         except FileNotFoundError:
