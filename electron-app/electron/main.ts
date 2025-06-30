@@ -138,7 +138,7 @@ const store = new Store({
 
 // Define the backend API base URL (replace with your actual URL if different)
 // It's good practice to get this from an environment variable or config
-const API_BASE_URL = process.env.VITE_LINK_ENGINE_SERVER_URL || 'http://localhost:8121';
+const API_BASE_URL = process.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121';
 
 // Define a type for the backend's prepare-export response
 interface PrepareExportResponse {
@@ -362,13 +362,16 @@ async function startPythonServer(): Promise<ServerControlResponse> {
       
       const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
       
+      // 임시: 빌드된 서버 테스트를 위한 환경 변수 추가
+      const useBuiltServer = process.env.USE_BUILT_SERVER === 'true';
+      
       updateServerStatus({ status: 'starting', lastError: undefined });
       serverStartTime = new Date();
     
       let pythonPath: string;
       let pythonExecutable: string;
     
-      if (isDev) {
+      if (isDev && !useBuiltServer) {
         // Development mode - use Python script directly to avoid PyInstaller multiprocessing issues
         pythonPath = path.join(__dirname, '../../python_core/run_server.py');
         
@@ -411,30 +414,43 @@ async function startPythonServer(): Promise<ServerControlResponse> {
         console.log('Development mode: Using Python script:', pythonPath);
         console.log('Python executable:', pythonExecutable);
       } else {
-        // Production mode - use standalone Python server
-        const resourcesPath = process.resourcesPath;
+        // Production mode 또는 빌드된 서버 테스트 모드 - use standalone Python server
+        let serverPath: string;
         
-        // Determine which standalone server to use based on architecture
-        const arch = process.arch;
-        let serverName: string;
-        
-        if (process.platform === 'darwin') {
-          if (arch === 'arm64') {
-            serverName = 'linkband-server-macos-arm64-final';
+        if (useBuiltServer && isDev) {
+          // 개발 모드에서 빌드된 서버 테스트
+          const arch = process.arch;
+          let serverName: string;
+          
+          if (process.platform === 'darwin') {
+            if (arch === 'arm64') {
+              serverName = 'linkband-server-macos-arm64-v1.0.2';
+            } else {
+              serverName = 'linkband-server-macos-intel-v1.0.2';
+            }
+          } else if (process.platform === 'win32') {
+            serverName = 'linkband-server-windows-v1.0.2.exe';
           } else {
-            serverName = 'linkband-server-macos-x64';
+            serverName = 'linkband-server-linux-v1.0.2';
           }
-        } else if (process.platform === 'win32') {
-          serverName = 'linkband-server-windows.exe';
+          
+          // 빌드된 서버 경로 (python_core/dist에서 찾기)
+          serverPath = path.join(__dirname, '../../python_core/dist', serverName);
+          
+          console.log('🧪 TEST MODE: Using built server for testing:', serverPath);
         } else {
-          serverName = 'linkband-server-linux';
+          // 실제 프로덕션 모드
+          const resourcesPath = process.resourcesPath;
+          
+          // Use the optimized server name (single server for all architectures)
+          serverPath = path.join(resourcesPath, 'linkband-server-macos-arm64-v1.0.2');
+          console.log('Using standalone Python server:', serverPath);
         }
         
-        pythonExecutable = path.join(resourcesPath, serverName);
+        pythonExecutable = serverPath;
         pythonPath = ''; // No script path needed for standalone executable
         
-        console.log('Using standalone Python server:', pythonExecutable);
-        console.log('Architecture:', arch);
+        console.log('Architecture:', process.arch);
         console.log('Platform:', process.platform);
       }
     
@@ -914,24 +930,33 @@ app.whenReady().then(() => {
     console.error('Error setting up default export directory:', error);
   });
 
-  // Check if server is already running, if not start it
-  setTimeout(async () => {
-    console.log('Checking if Python server is already running...');
-    
-    try {
-      const isHealthy = await isServerHealthy();
-      if (isHealthy) {
-        console.log('✅ Python server is already running and healthy');
-        updateServerStatus({ status: 'running', pid: undefined });
-      } else {
-        console.log('Python server not detected, starting new instance...');
-        const result = await startPythonServer();
-        console.log('Python server startup result:', result);
+  // Check server mode and conditionally start Python server
+  const serverMode = process.env.LINKBAND_SERVER_MODE;
+  
+  if (serverMode === 'code') {
+    console.log('🔧 CODE MODE: Python server auto-start disabled');
+    console.log('   Run server manually: npm run server:dev');
+    updateServerStatus({ status: 'stopped' });
+  } else {
+    // Default behavior: auto-start server
+    setTimeout(async () => {
+      console.log('Checking if Python server is already running...');
+      
+      try {
+        const isHealthy = await isServerHealthy();
+        if (isHealthy) {
+          console.log('✅ Python server is already running and healthy');
+          updateServerStatus({ status: 'running', pid: undefined });
+        } else {
+          console.log('Python server not detected, starting new instance...');
+          const result = await startPythonServer();
+          console.log('Python server startup result:', result);
+        }
+      } catch (error) {
+        console.error('Failed to check/start Python server on startup:', error);
       }
-    } catch (error) {
-      console.error('Failed to check/start Python server on startup:', error);
-    }
-  }, 2000); // 2 second delay to let the app fully initialize
+    }, 2000); // 2 second delay to let the app fully initialize
+  }
 
 });
 

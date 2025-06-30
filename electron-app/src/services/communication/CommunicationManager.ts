@@ -45,8 +45,8 @@ export class CommunicationManager {
 
   private constructor(config: CommunicationConfig = {}) {
     this.config = {
-      websocketUrl: config.websocketUrl || 'ws://127.0.0.1:18765',
-      apiBaseUrl: config.apiBaseUrl || 'http://127.0.0.1:8121',
+      websocketUrl: config.websocketUrl || import.meta.env.VITE_WEBSOCKET_URL || 'ws://127.0.0.1:18765',
+      apiBaseUrl: config.apiBaseUrl || import.meta.env.VITE_LINK_ENGINE_SERVER_URL || 'http://127.0.0.1:8121',
       retryAttempts: config.retryAttempts || 3,
       heartbeatInterval: config.heartbeatInterval || 60000, // 60초로 증가
       reconnectDelay: config.reconnectDelay || 2000

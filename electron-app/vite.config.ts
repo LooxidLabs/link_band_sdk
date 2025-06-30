@@ -6,6 +6,12 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   base: './',
+  define: {
+    // 환경 변수를 빌드 시에 정적으로 대체
+    'import.meta.env.VITE_LINK_ENGINE_SERVER_URL': JSON.stringify('http://127.0.0.1:8121'),
+    'import.meta.env.VITE_LINK_CLOUD_SERVER_URL': JSON.stringify('http://127.0.0.1:8121'),
+    'import.meta.env.VITE_WEBSOCKET_URL': JSON.stringify('ws://127.0.0.1:18765'),
+  },
   resolve: {
     alias: {
       '@mui/styled-engine': '@mui/styled-engine-sc',
