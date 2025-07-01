@@ -34,6 +34,13 @@ scripts\build-windows-server-safe.bat
 - 대체 서버 파일 자동 감지 (`run_server.py`, `server.py`, `main.py`)
 - 상세한 디버깅 및 대체 옵션
 
+### 5. `build-windows-server-enhanced.bat` 🔧 **FOR DEPENDENCY ISSUES**
+- **aiosqlite 의존성 문제 해결 특화**
+- 포괄적인 의존성 수집 및 검증
+- 빌드 전 모듈 import 테스트
+- 강화된 PyInstaller 설정
+- 실행파일 생성 후 의존성 검증
+
 ## 🚨 특수 문자 오류 해결
 
 만약 다음과 같은 오류가 발생한다면:
@@ -139,21 +146,45 @@ ERROR: No server file found
    - `run_server.py` (개발용)
    - `main.py` (기본)
 
+### 문제 5: aiosqlite 모듈 없음 🔥
+```
+로그 시스템 초기화 실패: No module named 'aiosqlite'
+서버 시작 실패: No module named 'aiosqlite'
+```
+**해결책:**
+1. **Enhanced 스크립트 사용** (가장 효과적):
+   ```cmd
+   scripts\build-windows-server-enhanced.bat
+   ```
+2. **수동 의존성 확인**:
+   ```cmd
+   cd python_core
+   venv\Scripts\activate
+   python -c "import aiosqlite; print('OK')"
+   ```
+3. **강제 재설치**:
+   ```cmd
+   pip uninstall aiosqlite -y
+   pip install aiosqlite --force-reinstall
+   ```
+
 ## 📊 Build Performance
 
-| Script | Build Time | Features | Stability |
-|--------|------------|----------|-----------|
-| safe | ~3-5분 | 기본 + UTF-8 | ⭐⭐⭐⭐⭐ |
-| simple | ~5-8분 | 고급 + 네트워크 체크 | ⭐⭐⭐⭐ |
-| quick | ~2-4분 | 빠른 + 사전구성 | ⭐⭐⭐ |
-| fallback | ~4-6분 | 대체 + 디버깅 | ⭐⭐⭐⭐ |
+| Script | Build Time | Features | Stability | Use Case |
+|--------|------------|----------|-----------|----------|
+| safe | ~3-5분 | 기본 + UTF-8 | ⭐⭐⭐⭐⭐ | 첫 번째 빌드 |
+| simple | ~5-8분 | 고급 + 네트워크 체크 | ⭐⭐⭐⭐ | 일반적인 빌드 |
+| quick | ~2-4분 | 빠른 + 사전구성 | ⭐⭐⭐ | 개발 중 빠른 빌드 |
+| fallback | ~4-6분 | 대체 + 디버깅 | ⭐⭐⭐⭐ | 파일 누락 시 |
+| enhanced | ~6-10분 | 의존성 해결 + 검증 | ⭐⭐⭐⭐⭐ | **aiosqlite 오류 시** |
 
 ## 🎯 Recommendations
 
 1. **첫 번째 빌드**: `build-windows-server-safe.bat` 사용
-2. **개발 중 빠른 빌드**: `build-windows-server-quick.bat` 사용
-3. **문제 발생 시**: `build-windows-server-fallback.bat` 사용
-4. **고급 기능 필요**: `build-windows-server-simple.bat` 사용
+2. **aiosqlite 오류 발생**: `build-windows-server-enhanced.bat` 사용 🔥
+3. **개발 중 빠른 빌드**: `build-windows-server-quick.bat` 사용
+4. **문제 발생 시**: `build-windows-server-fallback.bat` 사용
+5. **고급 기능 필요**: `build-windows-server-simple.bat` 사용
 
 ## 📝 Notes
 

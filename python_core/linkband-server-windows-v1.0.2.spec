@@ -149,7 +149,16 @@ a = Analysis(
         
         # System monitoring
         'psutil',
+        
+        # Database modules (Enhanced for aiosqlite)
         'aiosqlite',
+        'aiosqlite.core',
+        'aiosqlite.context',
+        'aiosqlite.cursor',
+        'aiosqlite.connection',
+        'sqlite3',
+        'sqlite3.dbapi2',
+        'sqlite3.dump',
         
         # Configuration and utilities
         'lazy_loader',
