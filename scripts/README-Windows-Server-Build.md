@@ -42,13 +42,15 @@ scripts\build-windows-server-safe.bat
 - 실행파일 생성 후 의존성 검증
 
 ### 6. `build-windows-server-v1.0.2.bat` ⭐ **LATEST & MOST COMPREHENSIVE**
-- **성공한 빌드 설정 기반의 최신 버전**
+- **macOS ARM64 성공 빌드 설정 완전 적용**
 - 완전한 FastAPI/uvicorn 의존성 지원
+- **포괄적인 MNE 지원** (40+ 서브모듈 포함)
+- matplotlib 시각화 지원
+- aiohttp HTTP 클라이언트 지원
 - 모든 애플리케이션 모듈 자동 포함
 - Windows 인코딩 모듈 필수 포함
-- MNE 지원 (선택적)
 - module_collection_mode 최적화
-- 포괄적인 의존성 검증 및 테스트
+- MNE 데이터 파일 선별적 포함 (.pyi 파일)
 
 ## 🚨 특수 문자 오류 해결
 

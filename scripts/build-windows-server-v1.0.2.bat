@@ -89,7 +89,7 @@ echo Installing utilities...
 pip install python-dotenv python-multipart
 
 echo Installing optional packages...
-pip install mne matplotlib scikit-learn lazy-loader 2>nul
+pip install mne matplotlib scikit-learn lazy-loader aiohttp importlib-metadata 2>nul
 
 if exist "requirements.txt" (
     echo Installing from requirements.txt...
@@ -125,6 +125,22 @@ if !errorlevel! neq 0 (
     echo ERROR: bleak import failed
     pause
     exit /b 1
+)
+
+echo Testing optional but important modules...
+python -c "import mne; print('mne OK')" 2>nul
+if !errorlevel! equ 0 (
+    echo MNE available - will include comprehensive MNE support
+) else (
+    echo MNE not available - building without MNE support
+)
+
+python -c "import aiohttp; print('aiohttp OK')" 2>nul
+if !errorlevel! equ 0 (
+    echo aiohttp available
+) else (
+    echo aiohttp not available - installing...
+    pip install aiohttp
 )
 
 echo All critical modules verified successfully!
@@ -183,9 +199,7 @@ echo     binaries=[], >> linkband-server-v1.0.2.spec
 echo     datas=[ >> linkband-server-v1.0.2.spec
 echo         ('app', 'app'^), >> linkband-server-v1.0.2.spec
 echo         ('database', 'database'^), >> linkband-server-v1.0.2.spec
-echo     ] + ([ >> linkband-server-v1.0.2.spec
-echo         (str(mne_data_path^), 'mne'^), >> linkband-server-v1.0.2.spec
-echo     ] if mne_data_path else []^), >> linkband-server-v1.0.2.spec
+echo     ], >> linkband-server-v1.0.2.spec
 
 echo     hiddenimports=[ >> linkband-server-v1.0.2.spec
 echo         # Core Python modules >> linkband-server-v1.0.2.spec
@@ -264,6 +278,51 @@ echo         'scipy.integrate', >> linkband-server-v1.0.2.spec
 echo         'scipy.linalg', >> linkband-server-v1.0.2.spec
 echo         'scipy.ndimage', >> linkband-server-v1.0.2.spec
 echo. >> linkband-server-v1.0.2.spec
+echo         # MNE and related (comprehensive from macOS success^) >> linkband-server-v1.0.2.spec
+echo         'mne', >> linkband-server-v1.0.2.spec
+echo         'mne.io', >> linkband-server-v1.0.2.spec
+echo         'mne.io.array', >> linkband-server-v1.0.2.spec
+echo         'mne.io.base', >> linkband-server-v1.0.2.spec
+echo         'mne.io.meas_info', >> linkband-server-v1.0.2.spec
+echo         'mne.filter', >> linkband-server-v1.0.2.spec
+echo         'mne.viz', >> linkband-server-v1.0.2.spec
+echo         'mne.viz.backends', >> linkband-server-v1.0.2.spec
+echo         'mne.viz.backends._notebook', >> linkband-server-v1.0.2.spec
+echo         'mne.viz.backends._utils', >> linkband-server-v1.0.2.spec
+echo         'mne.viz.backends.renderer', >> linkband-server-v1.0.2.spec
+echo         'mne.viz.misc', >> linkband-server-v1.0.2.spec
+echo         'mne.viz.utils', >> linkband-server-v1.0.2.spec
+echo         'mne.channels', >> linkband-server-v1.0.2.spec
+echo         'mne.datasets', >> linkband-server-v1.0.2.spec
+echo         'mne.epochs', >> linkband-server-v1.0.2.spec
+echo         'mne.event', >> linkband-server-v1.0.2.spec
+echo         'mne.forward', >> linkband-server-v1.0.2.spec
+echo         'mne.minimum_norm', >> linkband-server-v1.0.2.spec
+echo         'mne.preprocessing', >> linkband-server-v1.0.2.spec
+echo         'mne.source_estimate', >> linkband-server-v1.0.2.spec
+echo         'mne.source_space', >> linkband-server-v1.0.2.spec
+echo         'mne.surface', >> linkband-server-v1.0.2.spec
+echo         'mne.time_frequency', >> linkband-server-v1.0.2.spec
+echo         'mne.utils', >> linkband-server-v1.0.2.spec
+echo         'mne.utils.dataframe', >> linkband-server-v1.0.2.spec
+echo         'mne.utils.linalg', >> linkband-server-v1.0.2.spec
+echo         'mne.utils.progressbar', >> linkband-server-v1.0.2.spec
+echo         'mne.utils._testing', >> linkband-server-v1.0.2.spec
+echo         'mne.utils.mixin', >> linkband-server-v1.0.2.spec
+echo         'mne.html_templates', >> linkband-server-v1.0.2.spec
+echo         'mne.html_templates._templates', >> linkband-server-v1.0.2.spec
+echo         'mne._fiff', >> linkband-server-v1.0.2.spec
+echo         'mne._fiff.meas_info', >> linkband-server-v1.0.2.spec
+echo         'mne._fiff.constants', >> linkband-server-v1.0.2.spec
+echo         'mne.bem', >> linkband-server-v1.0.2.spec
+echo         'mne.parallel', >> linkband-server-v1.0.2.spec
+echo. >> linkband-server-v1.0.2.spec
+echo         # Visualization (MNE support^) >> linkband-server-v1.0.2.spec
+echo         'matplotlib', >> linkband-server-v1.0.2.spec
+echo         'matplotlib.pyplot', >> linkband-server-v1.0.2.spec
+echo         'matplotlib.backends', >> linkband-server-v1.0.2.spec
+echo         'matplotlib.backends.backend_agg', >> linkband-server-v1.0.2.spec
+echo. >> linkband-server-v1.0.2.spec
 echo         # Database modules (comprehensive^) >> linkband-server-v1.0.2.spec
 echo         'sqlite3', >> linkband-server-v1.0.2.spec
 echo         'sqlite3.dbapi2', >> linkband-server-v1.0.2.spec
@@ -292,6 +351,9 @@ echo         'multipart', >> linkband-server-v1.0.2.spec
 echo         'importlib-metadata', >> linkband-server-v1.0.2.spec
 echo         'importlib_metadata', >> linkband-server-v1.0.2.spec
 echo         'lazy_loader', >> linkband-server-v1.0.2.spec
+echo         'aiohttp', >> linkband-server-v1.0.2.spec
+echo         'aiohttp.client', >> linkband-server-v1.0.2.spec
+echo         'aiohttp.connector', >> linkband-server-v1.0.2.spec
 echo. >> linkband-server-v1.0.2.spec
 echo         # Application modules >> linkband-server-v1.0.2.spec
 echo         'app', >> linkband-server-v1.0.2.spec
@@ -365,6 +427,22 @@ echo         'asyncio': 'py', >> linkband-server-v1.0.2.spec
 echo         'concurrent': 'py', >> linkband-server-v1.0.2.spec
 echo     }, >> linkband-server-v1.0.2.spec
 echo ^) >> linkband-server-v1.0.2.spec
+echo. >> linkband-server-v1.0.2.spec
+echo # Add MNE data files if available (macOS success method^) >> linkband-server-v1.0.2.spec
+echo if mne_data_path and mne_data_path.exists(^): >> linkband-server-v1.0.2.spec
+echo     print("Adding MNE data files..."^) >> linkband-server-v1.0.2.spec
+echo     try: >> linkband-server-v1.0.2.spec
+echo         # Add essential MNE data files (especially .pyi files for stub issues^) >> linkband-server-v1.0.2.spec
+echo         mne_files = list(mne_data_path.rglob('*.pyi'^)^) >> linkband-server-v1.0.2.spec
+echo         for f in mne_files[:100]:  # Limit to first 100 files to avoid bloat >> linkband-server-v1.0.2.spec
+echo             try: >> linkband-server-v1.0.2.spec
+echo                 relative_path = f.relative_to(mne_data_path^).as_posix(^) >> linkband-server-v1.0.2.spec
+echo                 a.datas.append((f'mne/{relative_path}', str(f^), 'DATA'^)^) >> linkband-server-v1.0.2.spec
+echo             except Exception as e: >> linkband-server-v1.0.2.spec
+echo                 print(f"Warning: Could not add MNE file {f}: {e}"^) >> linkband-server-v1.0.2.spec
+echo         print(f"Added {len(mne_files^)} MNE data files"^) >> linkband-server-v1.0.2.spec
+echo     except Exception as e: >> linkband-server-v1.0.2.spec
+echo         print(f"Warning: Error adding MNE data files: {e}"^) >> linkband-server-v1.0.2.spec
 echo. >> linkband-server-v1.0.2.spec
 echo pyz = PYZ(a.pure^) >> linkband-server-v1.0.2.spec
 echo. >> linkband-server-v1.0.2.spec
@@ -458,9 +536,11 @@ echo - FastAPI + uvicorn (comprehensive^) >> "!DIST_DIR!\BUILD_INFO.txt"
 echo - SQLite + aiosqlite (complete^) >> "!DIST_DIR!\BUILD_INFO.txt"
 echo - Bleak (Bluetooth^) >> "!DIST_DIR!\BUILD_INFO.txt"
 echo - NumPy + SciPy (scientific^) >> "!DIST_DIR!\BUILD_INFO.txt"
+echo - MNE (comprehensive - based on macOS success^) >> "!DIST_DIR!\BUILD_INFO.txt"
+echo - matplotlib (visualization^) >> "!DIST_DIR!\BUILD_INFO.txt"
+echo - aiohttp (HTTP client^) >> "!DIST_DIR!\BUILD_INFO.txt"
 echo - Application modules (all^) >> "!DIST_DIR!\BUILD_INFO.txt"
 echo - Windows encoding modules >> "!DIST_DIR!\BUILD_INFO.txt"
-echo - MNE support (optional^) >> "!DIST_DIR!\BUILD_INFO.txt"
 
 echo.
 echo Step 14: Quick functionality test...
@@ -482,11 +562,13 @@ echo.
 echo This build includes comprehensive dependencies from successful configurations:
 echo ✅ Complete FastAPI/uvicorn support
 echo ✅ Full SQLite/aiosqlite integration  
+echo ✅ Comprehensive MNE support (based on macOS success^)
+echo ✅ matplotlib visualization support
+echo ✅ aiohttp HTTP client support
 echo ✅ All application modules
 echo ✅ Windows encoding modules
 echo ✅ Bluetooth (Bleak^) support
 echo ✅ Scientific computing (NumPy/SciPy^)
-echo ✅ Optional MNE support
 echo.
 echo To test the server:
 echo   cd !DIST_DIR!
